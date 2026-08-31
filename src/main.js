@@ -23,10 +23,14 @@ if (startBtn && welcomeScreen && welcomeContent) {
     // Fade out welcome screen
     welcomeScreen.style.opacity = '0';
     
-    // After fade transition, hide it and start game
+    // We MUST initialize and request pointer lock synchronously!
+    // Browsers block pointer lock if it's called inside a setTimeout
+    game.init();
+    game.lockControls();
+    
+    // After fade transition, hide the UI overlay entirely
     setTimeout(() => {
       welcomeScreen.style.display = 'none';
-      game.init();
     }, 1500); // 1.5s matches CSS transition
   });
 } else {

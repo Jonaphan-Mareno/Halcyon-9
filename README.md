@@ -13,6 +13,13 @@ To run the project locally or build it for deployment, follow these commands.
 ### Prerequisites
 Make sure you have [Node.js](https://nodejs.org/) installed.
 
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.7/install.sh | bash
+source ~/.bashrc
+nvm install 22
+nvm use 22
+```
+
 ### Installation
 Clone the repository, navigate to the folder, and install dependencies:
 ```bash

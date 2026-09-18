@@ -8,28 +8,43 @@ export class Game {
   constructor() {
     this.state = 'INIT'; // INIT, PLAYING, GAME_OVER
     this.lastTime = performance.now();
+
+    this.width = window.innerWidth;
+    this.height = window.innerHeight;
   }
 
   init() {
     console.log('Halcyon-9 initialized.');
-    
+
     // Core systems
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x000000);
     this.scene.fog = new THREE.FogExp2(0x000000, 0.05);
-    
-    this.camera = new Camera();
+
+    this.camera = new Camera(this.width / this.height);
+    this.camera.instance.position.set(0, 3, 0); // adjust ctor args to match your Camera class
     this.renderer = new Renderer();
-    
-    // Controls
-    this.controls = new Controls(this.camera.instance, document.body);
-    
+
     // Load first level
     this.currentLevel = new Level1(this.scene);
-    
+
+    // Controls
+    this.controls = new Controls(this.camera.instance, document.body, this.currentLevel);
+
+    // Handle resize
+    window.addEventListener('resize', () => this.onResize());
+
     this.startLoop();
   }
-  
+
+  onResize() {
+    this.width = window.innerWidth;
+    this.height = window.innerHeight;
+
+    this.camera.instance.aspect = this.width / this.height;
+    this.camera.instance.updateProjectionMatrix();
+  }
+
   lockControls() {
     if (this.controls) {
       this.controls.lock();
@@ -40,12 +55,9 @@ export class Game {
   startLoop() {
     const loop = (time) => {
       requestAnimationFrame(loop);
-      
       const delta = (time - this.lastTime) / 1000;
       this.lastTime = time;
-      
       this.update(delta);
-      
       this.renderer.render(this.scene, this.camera.instance);
     };
     requestAnimationFrame(loop);

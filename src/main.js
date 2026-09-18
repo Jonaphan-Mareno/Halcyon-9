@@ -12,7 +12,7 @@ const welcomeContent = document.getElementById('welcome-content');
 if (startBtn && welcomeScreen && welcomeContent) {
   // Preload the background image to prevent Flash of Unstyled Content (FOUC)
   const bgImg = new Image();
-  bgImg.src = '/public/assets/textures/bunker_bg.jpg';
+  bgImg.src = '/assets/textures/bunker_bg.jpg';
   
   bgImg.onload = () => {
     // Once the large image is loaded, fade in the text content

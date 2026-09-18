@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 
 export class Controls {
-  constructor(camera, domElement) {
+  constructor(camera, domElement, currentLevel) {
     this.instance = new PointerLockControls(camera, domElement);
     this.camera = camera;
+    this.level = currentLevel;
     
     this.moveForward = false;
     this.moveBackward = false;
@@ -84,9 +85,12 @@ export class Controls {
     
     // Very basic bounds checking for the starter room (10x10)
     const pos = this.camera.position;
-    if (pos.x < -4.5) pos.x = -4.5;
-    if (pos.x > 4.5) pos.x = 4.5;
-    if (pos.z < -4.5) pos.z = -4.5;
-    if (pos.z > 4.5) pos.z = 4.5;
+    if(this.level.bounds){
+        if (pos.x < this.level.bounds.minX) pos.x = this.level.bounds.minX + 0.5;
+        if (pos.x > this.level.bounds.maxX) pos.x = this.level.bounds.maxX - 0.5;
+        if (pos.z < this.level.bounds.minZ) pos.z = this.level.bounds.minZ + 0.5;
+        if (pos.z > this.level.bounds.maxZ) pos.z = this.level.bounds.maxZ - 0.5;
+    }
+
   }
 }

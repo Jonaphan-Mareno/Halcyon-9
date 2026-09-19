@@ -108,3 +108,28 @@ body, html {
   color: var(--bg-color);
   box-shadow: 0 0 15px var(--primary-color);
 }
+
+#reticle {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: cyan;
+  box-shadow: 0 0 8px 2px cyan, 0 0 16px 4px rgba(0, 255, 255, 0.5);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 10;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  display:none;
+}
+
+#reticle.visible {
+  display: block;
+}
+
+#reticle.active {
+  transform: translate(-50%, -50%) scale(1.5);
+  box-shadow: 0 0 14px 4px cyan, 0 0 24px 8px rgba(0, 255, 255, 0.7);
+}

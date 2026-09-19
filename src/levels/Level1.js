@@ -13,7 +13,11 @@ export class Level1{
     this.width = window.innerWidth;
     this.height = window.innerHeight;
 
+    this.room = null;
     this.bounds = null;
+
+    this.lights = [];
+    this.LightsPuzzle = [];
 
     this.buildRoom();
     this.addLighting();
@@ -74,8 +78,8 @@ export class Level1{
         minY: box.min.y , maxY: box.min.y,
         minZ: box.min.z, maxZ: box.max.z };
 
-      // sopme checks
-      // console.log(ctrlRoom);
+      // some checks
+      console.log(ctrlRoom);
       // console.log('min:', box.min, 'max:', box.max);
       //
 
@@ -87,18 +91,26 @@ export class Level1{
           child.castShadow = true;
           child.receiveShadow = true;
         }
+        
         //for now but when puzzle has been implemented do this dynamically
         if(child.isLight){
-          child.intensity = 5;
+          this.lights.push(child);
+          child.intensity = 5; // set to five for checking , set to zero when done later
+        }
+        
+        //the interactables for lights
+        if(child.name == "Plane066"){
+          this.LightsPuzzle.push(child);
         }
 
       });
 
+      console.log('LightsPuzzle found:', this.LightsPuzzle);
       this.scene.add(this.room);
 
     } catch (error) {
         console.error('Failed to load controlroom.glb:', error);
-        console.log('Stuck in p')
+        console.log('Stuck in purgatory')
         this.defaultRoom();
     }
     
@@ -108,9 +120,19 @@ export class Level1{
     return this.bounds;
   }
 
+  get interactables() {
+    return this.LightsPuzzle;
+  }
+
+  onInteract(object) {
+    if (this.LightsPuzzle.includes(object)) {
+      console.log("You clicked on one of the puzzle fixtures", object.name);
+    }
+  }
+
 
   addLighting(){
-    //
+    // implement later
   }
 
   update(delta) {
@@ -119,7 +141,6 @@ export class Level1{
       this.emergencyLight.intensity = 50 + Math.sin(this.time * 5) * 10;
     }
   }
-
 
 
 }

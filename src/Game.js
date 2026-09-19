@@ -34,6 +34,12 @@ export class Game {
     // Handle resize
     window.addEventListener('resize', () => this.onResize());
 
+    this.raycaster = new THREE.Raycaster();
+    this.center = new THREE.Vector2(0, 0);
+    this.reticle = document.getElementById('reticle');
+
+     document.addEventListener('click', () => this.onClick());
+
     this.startLoop();
   }
 
@@ -49,6 +55,7 @@ export class Game {
     if (this.controls) {
       this.controls.lock();
       this.state = 'PLAYING';
+      this.reticle.classList.add('visible');
     }
   }
 
@@ -69,6 +76,28 @@ export class Game {
       if (this.currentLevel) {
         this.currentLevel.update(delta);
       }
+      this.updateReticle();
     }
   }
+
+  updateReticle() {
+    this.raycaster.setFromCamera(this.center, this.camera.instance);
+    const targets = this.currentLevel.interactables || [];
+    const hits = this.raycaster.intersectObjects(targets, true);
+    this.reticle.classList.toggle('active', hits.length > 0);
+  }
+
+  onClick() {
+    if (this.state !== 'PLAYING') return;
+    this.raycaster.setFromCamera(this.center, this.camera.instance);
+    const targets = this.currentLevel.interactables || [];
+    const hits = this.raycaster.intersectObjects(targets, true);
+    if (hits.length > 0) {
+      console.log("You clicked", hits[0].object.name);
+      this.currentLevel.onInteract?.(hits[0].object);
+    }
+  }
+
+
+
 }

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/Addons.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { Shaders } from "../graphics/Shaders";
 
 // Must match MAX_LIGHTS in Shaders.js
@@ -158,7 +158,7 @@ export class Level1{
         // every light as positional, so the far Sun contributes almost nothing)
         if(child.isLight){
           this.lights.push(child);
-          child.intensity = 15; // set to five for checking , set to zero or -5 when done later
+          child.intensity = 5; // set to five for checking , set to -5 when puzzle implemented
         }
         
         //the interactables for lights

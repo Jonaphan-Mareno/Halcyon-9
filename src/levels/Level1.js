@@ -1,6 +1,7 @@
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/Addons.js";
+import { RingPuzzle } from "../entities/RingPuzzle.js";
 
 
 
@@ -14,6 +15,7 @@ export class Level1{
     this.height = window.innerHeight;
 
     this.bounds = null;
+    this.lightsPuzzle = null;
 
     this.buildRoom();
     this.addLighting();
@@ -102,6 +104,20 @@ export class Level1{
         this.defaultRoom();
     }
     
+  }
+
+    addPuzzle(){
+    this.lightsPuzzle = new LightsPuzzle(this.scene, {
+      targets: [2, 5, 1],
+      coupling: 'oneWay',
+    });
+
+    const b = this.bounds;
+    const wallX = (b.minX + b.maxX) / 2;   // centered horizontally
+    const wallY = 1.6;                      // roughly eye height
+    const wallZ = b.minZ + 0.12;            // just in front of the back wall
+
+    this.lightsPuzzle.hub.position.set(wallX, wallY, wallZ);
   }
 
   getBounds(){

@@ -1,3 +1,5 @@
+import * as THREE from "three";
+
 export class RingPuzzle{
     constructor(scene, options = {}) {
         this.scene = scene;

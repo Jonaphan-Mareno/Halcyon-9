@@ -15,10 +15,13 @@ export class Level1{
     this.height = window.innerHeight;
 
     this.bounds = null;
-    this.lightsPuzzle = null;
+    this.ringPuzzle = null;
+
 
     this.buildRoom();
     this.addLighting();
+
+    
   }
 
   defaultRoom(){
@@ -63,6 +66,8 @@ export class Level1{
     
     // Animate emergency light
     this.time = 0;
+
+    this.addPuzzle();
   }
 
   async buildRoom(){
@@ -98,6 +103,8 @@ export class Level1{
 
       this.scene.add(this.room);
 
+      this.addPuzzle();
+
     } catch (error) {
         console.error('Failed to load controlroom.glb:', error);
         console.log('Stuck in p')
@@ -107,18 +114,18 @@ export class Level1{
   }
 
     addPuzzle(){
-    this.lightsPuzzle = new LightsPuzzle(this.scene, {
+    this.ringPuzzle = new RingPuzzle(this.scene, {
       targets: [2, 5, 1],
       coupling: 'oneWay',
     });
 
     const b = this.bounds;
-    const wallX = (b.minX + b.maxX) / 2;   // centered horizontally
-    const wallY = 1.6;                      // roughly eye height
-    const wallZ = b.minZ + 0.12;            // just in front of the back wall
-
-    this.lightsPuzzle.hub.position.set(wallX, wallY, wallZ);
+    this.ringPuzzle.hub.position.set(-0.147, 1.701, -3.535);
+    this.ringPuzzle.hub.rotation.y = 1.571;
+    this.ringPuzzle.hub.scale.setScalar(0.092);
   }
+
+
 
   getBounds(){
     return this.bounds;

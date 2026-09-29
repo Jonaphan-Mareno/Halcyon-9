@@ -28,6 +28,7 @@ export class Game {
     // Load first level
     this.currentLevel = new Level1(this.scene);
 
+
     // Controls
     this.controls = new Controls(this.camera.instance, document.body, this.currentLevel);
 

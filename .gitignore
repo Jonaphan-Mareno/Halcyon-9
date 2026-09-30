@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Private ARIA components (do not upload raw videos)
+public/assets/textures/aria_components/*.mp4

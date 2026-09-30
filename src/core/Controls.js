@@ -39,6 +39,13 @@ export class Controls {
     this.instance.lock();
   }
 
+  // Freeze movement and mouse-look (used during dialogue)
+  stop() {
+    this.moveForward = this.moveBackward = this.moveLeft = this.moveRight = false;
+    this.velocity.set(0, 0, 0);
+    this.instance.enabled = false;
+  }
+
   onKeyDown(event) {
     switch (event.code) {
       case 'ArrowUp': case 'KeyW': this.moveForward = true; break;

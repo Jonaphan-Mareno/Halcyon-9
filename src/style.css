@@ -133,3 +133,266 @@ body, html {
   transform: translate(-50%, -50%) scale(1.5);
   box-shadow: 0 0 14px 4px cyan, 0 0 24px 8px rgba(0, 255, 255, 0.7);
 }
+
+/* ---------------------------------------------------------
+   Wake-up blink, interaction prompt, dialogue box
+   --------------------------------------------------------- */
+#blink-overlay {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 1;
+  pointer-events: none;
+  z-index: 20;
+}
+
+#interact-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 22%;
+  transform: translateX(-50%);
+  padding: 0.6rem 1.4rem;
+  background: rgba(0, 15, 30, 0.75);
+  border: 1px solid var(--primary-color);
+  color: var(--primary-color);
+  letter-spacing: 0.1rem;
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+  z-index: 11;
+}
+
+#interact-prompt.visible {
+  opacity: 1;
+}
+
+#dialogue-box {
+  position: absolute;
+  left: 50%;
+  bottom: 6%;
+  transform: translateX(-50%);
+  width: min(760px, 90%);
+  box-sizing: border-box;
+  padding: 1.2rem 1.6rem;
+  background: rgba(0, 10, 20, 0.85);
+  border: 1px solid var(--primary-color);
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.2), inset 0 0 10px rgba(0, 229, 255, 0.08);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+  z-index: 12;
+}
+
+#dialogue-box.visible {
+  opacity: 1;
+}
+
+#dialogue-speaker {
+  font-size: 0.85rem;
+  letter-spacing: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+#dialogue-text {
+  font-size: 1.15rem;
+  line-height: 1.5;
+  min-height: 3.4rem;
+}
+
+#dialogue-hint {
+  margin-top: 0.6rem;
+  min-height: 1.2rem;
+  font-size: 0.8rem;
+  text-align: right;
+  opacity: 0.85;
+}
+
+/* ARIA speaks in blue, Voss in red, so it is always clear who is talking */
+#dialogue-box.aria {
+  border-color: #4d8dff;
+  box-shadow: 0 0 20px rgba(77, 141, 255, 0.35), inset 0 0 10px rgba(77, 141, 255, 0.12);
+}
+#dialogue-box.aria #dialogue-speaker,
+#dialogue-box.aria #dialogue-text,
+#dialogue-box.aria #dialogue-hint {
+  color: #6fa8ff;
+}
+
+#dialogue-box.voss {
+  border-color: #ff4d4d;
+  background: rgba(24, 4, 6, 0.88);
+  box-shadow: 0 0 20px rgba(255, 77, 77, 0.35), inset 0 0 10px rgba(255, 77, 77, 0.12);
+}
+#dialogue-box.voss #dialogue-speaker,
+#dialogue-box.voss #dialogue-text,
+#dialogue-box.voss #dialogue-hint {
+  color: #ff6b6b;
+}
+
+#toast {
+  position: absolute;
+  left: 50%;
+  top: 8%;
+  transform: translateX(-50%);
+  padding: 0.6rem 1.4rem;
+  background: rgba(0, 15, 30, 0.8);
+  border: 1px solid var(--primary-color);
+  color: var(--primary-color);
+  letter-spacing: 0.08rem;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 13;
+}
+
+#toast.visible {
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------
+   Objective, waypoint, overload banner, cable puzzle
+   --------------------------------------------------------- */
+#objective {
+  position: absolute;
+  left: 24px;
+  top: 24px;
+  max-width: 320px;
+  padding: 0.6rem 1rem;
+  background: rgba(0, 15, 30, 0.7);
+  border-left: 3px solid var(--primary-color);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  z-index: 11;
+}
+#objective.visible { opacity: 1; }
+#objective.changed { animation: objective-pulse 1.4s ease; }
+#objective-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.3rem;
+  color: var(--primary-color);
+  opacity: 0.75;
+  margin-bottom: 0.25rem;
+}
+#objective-text { font-size: 1.05rem; line-height: 1.35; }
+@keyframes objective-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(0, 229, 255, 0); }
+  30% { box-shadow: 0 0 22px rgba(0, 229, 255, 0.75); background: rgba(0, 60, 80, 0.85); }
+}
+
+#waypoint {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10;
+  transition: opacity 0.3s ease;
+}
+#waypoint.visible { opacity: 0.95; }
+#waypoint-arrow {
+  position: absolute;
+  left: -9px;
+  top: -9px;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--primary-color);
+  box-shadow: 0 0 10px var(--primary-color);
+  animation: waypoint-bob 1.2s ease-in-out infinite;
+}
+/* off screen: a triangle arrow (drawn from a rotated bordered square) */
+#waypoint.offscreen #waypoint-arrow {
+  border: none;
+  width: 0;
+  height: 0;
+  left: -12px;
+  top: -12px;
+  border-left: 12px solid transparent;
+  border-right: 12px solid transparent;
+  border-bottom: 22px solid var(--primary-color);
+  filter: drop-shadow(0 0 6px var(--primary-color));
+  animation: none;
+}
+#waypoint-label {
+  position: absolute;
+  left: 50%;
+  top: 22px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 0.8rem;
+  letter-spacing: 0.15rem;
+  color: var(--primary-color);
+  text-shadow: 0 0 6px rgba(0, 229, 255, 0.7);
+}
+@keyframes waypoint-bob {
+  0%, 100% { transform: rotate(45deg) scale(1); }
+  50% { transform: rotate(45deg) scale(1.25); }
+}
+
+#overload-banner {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  font-size: 4rem;
+  letter-spacing: 1rem;
+  color: #ff3b3b;
+  text-shadow: 0 0 24px rgba(255, 59, 59, 0.9);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 14;
+}
+#overload-banner.visible { animation: overload-flash 2.2s ease-out; }
+@keyframes overload-flash {
+  0% { opacity: 0; }
+  8%, 20% { opacity: 1; }
+  30% { opacity: 0.2; }
+  40% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+#puzzle-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  z-index: 10;
+}
+#puzzle-backdrop.visible { opacity: 1; }
+
+#puzzle {
+  position: absolute;
+  left: 50%;
+  top: 4%;
+  transform: translateX(-50%);
+  width: min(900px, 94vw);
+  display: none;
+  pointer-events: auto;
+  z-index: 11;
+}
+#puzzle.visible { display: block; }
+#puzzle-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--primary-color);
+  box-shadow: 0 0 24px rgba(0, 229, 255, 0.25);
+  cursor: crosshair;
+  touch-action: none;
+}
+#puzzle-close {
+  position: absolute;
+  right: 0;
+  bottom: -2.4rem;
+  background: transparent;
+  color: var(--primary-color);
+  border: 1px solid var(--primary-color);
+  padding: 0.35rem 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+#puzzle-close:hover { background: var(--primary-color); color: var(--bg-color); }

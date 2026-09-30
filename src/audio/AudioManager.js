@@ -156,6 +156,84 @@ export class AudioManager {
     this.zap();
   }
 
+  // A light switch-like click: a circuit tile turning
+  tick() {
+    const ctx = this._ensure();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1500, t);
+    osc.frequency.exponentialRampToValueAtTime(420, t + 0.05);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.09, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    osc.connect(gain);
+    gain.connect(this.master);
+    osc.start(t);
+    osc.stop(t + 0.07);
+  }
+
+  // A heavy mechanical clunk: a relay ring locking into its next position
+  clunk() {
+    const ctx = this._ensure();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+
+    const thud = ctx.createOscillator();
+    thud.type = 'sine';
+    thud.frequency.setValueAtTime(130, t);
+    thud.frequency.exponentialRampToValueAtTime(45, t + 0.2);
+    const thudGain = ctx.createGain();
+    thudGain.gain.setValueAtTime(0.55, t);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    thud.connect(thudGain);
+    thudGain.connect(this.master);
+    thud.start(t);
+    thud.stop(t + 0.3);
+
+    // A short metallic ring on top
+    const ping = ctx.createOscillator();
+    ping.type = 'triangle';
+    ping.frequency.setValueAtTime(740, t);
+    const pingGain = ctx.createGain();
+    pingGain.gain.setValueAtTime(0.0001, t);
+    pingGain.gain.exponentialRampToValueAtTime(0.12, t + 0.01);
+    pingGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    ping.connect(pingGain);
+    pingGain.connect(this.master);
+    ping.start(t);
+    ping.stop(t + 0.4);
+  }
+
+  // A rising sweep with a thump: the relay engaging and the power surging back
+  surge() {
+    const ctx = this._ensure();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+
+    const sweep = ctx.createOscillator();
+    sweep.type = 'sawtooth';
+    sweep.frequency.setValueAtTime(60, t);
+    sweep.frequency.exponentialRampToValueAtTime(900, t + 2.6);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(200, t);
+    filter.frequency.exponentialRampToValueAtTime(4000, t + 2.6);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.16, t + 0.3);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 3.0);
+    sweep.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.master);
+    sweep.start(t);
+    sweep.stop(t + 3.1);
+
+    this.clunk();
+    setTimeout(() => this.success(), 2400);
+  }
+
   // A short rising chime: a plug seated correctly
   connect() {
     this._tone([660, 880], 0.09, 0.12);

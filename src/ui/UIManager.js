@@ -156,7 +156,12 @@ export class UIManager {
     this._setSpeaker('ARIA', 'aria');
     this.dialogue.classList.add('visible');
     this.textEl.textContent = text;
-    this.hintEl.textContent = '';
+    this.hintEl.textContent = 'Space: skip';
+  }
+
+  // Is ARIA's subtitle on screen? (Space or a click then skips her line)
+  isAriaLine() {
+    return this.dialogue.classList.contains('visible') && this.dialogue.classList.contains('aria');
   }
 
   hideDialogue() {

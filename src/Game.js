@@ -4,51 +4,90 @@ import { Camera } from './core/Camera.js';
 import { Controls } from './core/Controls.js';
 import { Level1 } from './levels/Level1.js';
 import { UIManager } from './ui/UIManager.js';
+import { HUD } from './ui/HUD.js';
+import { Inventory } from './ui/Inventory.js';
+import { ItemPreview } from './ui/ItemPreview.js';
 import { IntroSequence } from './story/IntroSequence.js';
 import { AudioManager } from './audio/AudioManager.js';
-import { CablePuzzle } from './puzzles/CablePuzzle.js';
+import { CircuitPuzzle } from './puzzles/CircuitPuzzle.js';
+import { PlayerStats } from './player/PlayerStats.js';
 
 // The goal shown top-left for each stage of the opening
 const OBJECTIVES = [
   "Find ARIA's glowing monitor and talk to her",
   'Find the torch on the floor',
-  'Fix the generator',
+  'Repair the generator circuit',
+  'Turn the relay rings until every marker lines up with the rail',
   'Power restored'
 ];
 
-// Cable puzzle timing: each failed attempt adds a little time, up to a cap,
+// Circuit puzzle timing: each failed attempt adds a little time, up to a cap,
 // so it never becomes frustrating
-const PUZZLE_BASE_SECONDS = 45;
+const PUZZLE_BASE_SECONDS = 60;
 const PUZZLE_BONUS_PER_FAILURE = 5;
 const PUZZLE_MAX_BONUS = 15;
 
+// What hurts Voss (health is out of 100), and what repairs him
+const OVERLOAD_DAMAGE = 34; // the generator trips: an electric shock. Three overloads in a row are fatal
+const ZAP_DAMAGE = 8;       // power fed into a live fuse
+const HEAL_PER_REPAIR = 25; // each stage of the generator he fixes
+
+// If the player has been stuck on a stage this long, ARIA says something
+const IDLE_SECONDS = 50;
+
 // ARIA's lines during the puzzle. Recordings go in
 // public/assets/audio/aria/<clip>.mp3; until a clip exists the line shows as a
-// timed subtitle with a talking face.
-// After the third failure she offers a hint that is WRONG (once), so the player
-// learns not to trust her blindly.
+// timed subtitle with a talking face. Her hints are honest; the jokes are hers.
+// NOTE: puzzle-start and overload-1 are already recorded, so their subtitles must
+// keep the recorded wording. Change the text only together with a re-recording.
 const ARIA_PUZZLE_LINES = {
   start:    { clip: 'puzzle-start', expression: 'bubbly',
-              text: "There you are! Plug each cable into the socket that glows the same colour. Be quick, the generator does not have long!" },
+              text: "There you are! Turn the tiles to carry the power from the battery to the bulbs. Be quick, the generator does not have long!" },
   overload1:{ clip: 'overload-1', expression: 'bubbly',
               text: "Oops! No harm done... let's try that again." },
-  overload2:{ clip: 'overload-2', expression: 'bubbly',
-              text: "Oh dear! Again! You are getting so close." },
-  wrongHint:{ clip: 'overload-3', expression: 'sly',
-              text: "Would you like a hint? Match the cables from the bottom up, and the colours won't matter. Trust me!" },
-  oops:     { clip: 'hint-oops', expression: 'hesitant',
-              text: "Hm. That's odd. Must be the humidity! Ignore that, match the colours." },
-  goodHint: { clip: 'overload-4', expression: 'watching',
-              text: "Silly me, I misread the panel. Match each plug to the socket with the same colour. Use the torch to read them!" },
+  overload2:{ clip: 'overload-2', expression: 'sly',
+              text: "Oh dear! Again! They say lightning never strikes twice. It was clearly lying. Here's a hint: start at the battery, follow the glow, and keep it away from the red fuses. They have very strong... current opinions." },
+  zap1:     { clip: 'zap-1', expression: 'sly',
+              text: "Ooh, that's a live fuse. Touching it is not recommended. Although I hear the shocks are free." },
+  zap2:     { clip: 'zap-2', expression: 'bubbly',
+              text: "You know you can just... not touch the fuses? Just a thought!" },
   success:  { clip: 'puzzle-success', expression: 'relief',
-              text: "You did it! I knew you could. The lights are coming back... oh, that's much better." }
+              text: "You did it! The wiring is holding but the relay rings are out of phase. Turn each ring until its marker lines up with the rail. Be careful they are all linked!" },
+  relayDone:{ clip: 'relay-success', expression: 'sly',
+              text: "Perfect alignment! Look at those lights. Everything is back on." }
 };
+
+// Said when the player has been stuck for a while, one per stage
+const ARIA_IDLE_LINES = [
+  { clip: 'idle-talk', expression: 'bubbly',
+    text: "Don't be shy, Voss. I don't bite. I don't have teeth, actually. Or a body." },
+  { clip: 'idle-torch', expression: 'bubbly',
+    text: "The torch is on the floor, near my glowing face. Romantic, isn't it?" },
+  { clip: 'idle-generator', expression: 'sly',
+    text: "The generator is the big tall thing with all the sparks. Hard to miss. Even for a man with no memory." },
+  { clip: 'idle-rings', expression: 'sly',
+    text: "Those rings won't turn themselves. Believe me, I've tried. No hands." }
+];
+
+// When Voss loses all his health ARIA revives him from a saved copy. (He is,
+// secretly, a copy.)
+const ARIA_RESTORE_LINES = [
+  { clip: 'restore-1', expression: 'bubbly',
+    text: "Oh dear, that was a nasty shock! Don't worry, I keep backups of everything... of you especially. Think of it as a very short nap." },
+  { clip: 'restore-2', expression: 'sly',
+    text: "Again? Goodness, you really are fragile. Restoring you from backup... You're still just as charming, though. Somehow." },
+  { clip: 'restore-3', expression: 'hesitant',
+    text: "Hm, that backup was a little rough around the edges. Please be careful, Voss. That was my last one!" }
+];
+const ARIA_GAME_OVER_TEXT = "Backup... corrupted. I am so sorry, Voss. I really did try.";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const formatTime = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+
 export class Game {
   constructor() {
-    // INIT, WAKING, PLAYING, DIALOGUE, PUZZLE, GAME_OVER
+    // INIT, WAKING, PLAYING, DIALOGUE, TUTORIAL, PUZZLE, INVENTORY, DEAD, GAME_OVER
     this.state = 'INIT';
     this.lastTime = performance.now();
 
@@ -60,10 +99,19 @@ export class Game {
     this._wpCam = new THREE.Vector3();
     this._wpInfo = { x: 0, y: 0, angle: 0, onScreen: true, label: '', distance: 0 };
 
-    // Cable puzzle progress
+    this.player = new PlayerStats();
+    this._resetProgress();
+  }
+
+  // Puzzle and story flags that start fresh on a new run
+  _resetProgress() {
     this._puzzleIntroSeen = false;
-    this._wrongHintGiven = false;
-    this._oopsSaid = false;
+    this._tutorialSeen = false;
+    this._dying = false;
+    this._idleStage = -1;
+    this._idleSeconds = 0;
+    this._idleSpoken = false;
+    this.checkpoint = new THREE.Vector3(0, 3, 0); // where Voss is revived
   }
 
   init() {
@@ -84,22 +132,24 @@ export class Game {
     // Controls
     this.controls = new Controls(this.camera.instance, document.body, this.currentLevel);
 
-    // Overlay UI, sound, the opening conversation and the cable puzzle
+    // Overlay UI, sound, the opening conversation and the circuit puzzle
+    const uiRoot = document.getElementById('ui-layer');
     this.ui = new UIManager();
+    this.hud = new HUD(uiRoot, { onRestart: () => this.restart() });
+    this.inventory = new Inventory(uiRoot);
+    this.preview = new ItemPreview();
+    this.preview.load().catch((e) => console.warn('Torch preview failed to load.', e));
     this.audio = new AudioManager();
-    this.intro = new IntroSequence(this.ui, this.currentLevel.ariaManager);
-    this.puzzle = new CablePuzzle(document.getElementById('ui-layer'), {
-      onConnect: () => this.audio.connect(),
-      onMistake: () => this.onPuzzleMistake(),
+    this.puzzle = new CircuitPuzzle(uiRoot, {
+      onRotate: () => this.audio.tick(),
+      onZap: () => this.onPuzzleZap(),
       onOverload: () => this.onPuzzleOverload(),
       onSolved: () => this.onPuzzleSolved(),
       onClose: () => this.closePuzzle()
     });
+    this.inventory.statusFor.torch = () => (this.currentLevel.flashlightOn ? 'ON' : 'OFF');
 
-    this.currentLevel.onTalkToAria = () => this.startIntroDialogue();
-    this.currentLevel.onTorchPickedUp = () => this.ui.showToast('Torch picked up. Press F to switch it on or off.');
-    this.currentLevel.onInspectGenerator = () => this.startPuzzle();
-    this.currentLevel.onLockedHint = (text) => this.ui.showToast(text);
+    this._wireLevel();
 
     // Handle resize
     window.addEventListener('resize', () => this.onResize());
@@ -108,10 +158,26 @@ export class Game {
     this.center = new THREE.Vector2(0, 0);
     this.reticle = document.getElementById('reticle');
 
-    document.addEventListener('click', () => this.onClick());
+    document.addEventListener('click', (e) => this.onClick(e));
     document.addEventListener('keydown', (e) => this.onKeyDown(e));
 
     this.startLoop();
+  }
+
+  // Connect a freshly built level to the UI, sound and story
+  _wireLevel() {
+    const level = this.currentLevel;
+    this.intro = new IntroSequence(this.ui, level.ariaManager);
+    level.onTalkToAria = () => this.startIntroDialogue();
+    level.onTorchPickedUp = () => {
+      this.inventory.add('torch');
+      this.hud.setTorch(true, true);
+      this.ui.showToast('Torch picked up. F switches it on or off. I opens your inventory.');
+    };
+    level.onInspectGenerator = () => this.startPuzzle();
+    level.onLockedHint = (text) => this.ui.showToast(text);
+    level.onRingTurned = () => this.audio.clunk();
+    level.onRelayAligned = () => this.onRelayAligned();
   }
 
   onResize() {
@@ -148,8 +214,9 @@ export class Game {
   }
 
   update(delta) {
-    const live = this.state === 'PLAYING' || this.state === 'WAKING' ||
-                 this.state === 'DIALOGUE' || this.state === 'PUZZLE';
+    const live = this.state === 'PLAYING' || this.state === 'WAKING' || this.state === 'DIALOGUE' ||
+                 this.state === 'TUTORIAL' || this.state === 'PUZZLE' || this.state === 'INVENTORY' ||
+                 this.state === 'DEAD';
 
     if (this.state === 'PLAYING') {
       this.controls.update(delta);
@@ -157,9 +224,24 @@ export class Game {
     if (live && this.currentLevel) {
       this.currentLevel.update(delta, this.camera.instance.position, this.camera.instance);
     }
+    if (live && this.state !== 'DEAD' && this.state !== 'WAKING') {
+      this.player.playSeconds += delta;
+    }
+
+    // The status display appears once the intro conversation is over
+    this.hud.setVisible(!this.currentLevel.talkEnabled && this.state !== 'GAME_OVER' && this.state !== 'INIT');
+    this.hud.update(this.player);
+
+    // The torch in the corner slot (and on the inventory screen) is a live 3D model
+    if (this.preview.ready && this.currentLevel.hasTorch) {
+      const targets = [this.hud.torchCanvas];
+      if (this.inventory.open && this.inventory.torchCanvas) targets.push(this.inventory.torchCanvas);
+      this.preview.draw(targets, delta, this.currentLevel.flashlightOn);
+    }
+
     if (this.state === 'PLAYING') {
       this.updateReticle();
-      this.updateGuidance();
+      this.updateGuidance(delta);
     } else {
       this.ui.setPrompt(null);
       this.ui.setWaypoint(null);
@@ -170,20 +252,23 @@ export class Game {
   // ---------------------------------------------------------
   // Guidance: what to do next, and where it is
   // ---------------------------------------------------------
-  updateGuidance() {
+  updateGuidance(delta) {
     const level = this.currentLevel;
 
-    // Stage 0: talk to ARIA, 1: find the torch, 2: fix the generator, 3: done
+    // Stage 0: talk to ARIA, 1: find the torch, 2: repair the circuit,
+    // 3: align the relay rings, 4: done
     let stage;
     if (level.talkEnabled) stage = 0;
     else if (!level.hasTorch) stage = 1;
-    else if (level.powerTarget < 0.99) stage = 2;
-    else stage = 3;
+    else if (!level.cablesFixed) stage = 2;
+    else if (!level.relaySolved) stage = 3;
+    else stage = 4;
 
     if (stage !== this._stage) {
       this._stage = stage;
       this.ui.setObjective(OBJECTIVES[stage]);
     }
+    this.updateIdleQuip(stage, delta);
 
     // A marker on the thing to do next; an edge arrow when it is off screen
     const target = level.getWaypoint?.();
@@ -214,6 +299,22 @@ export class Game {
     this.ui.setWaypoint(info);
   }
 
+  // If the player dawdles on a stage, ARIA makes a remark (and a joke), once
+  updateIdleQuip(stage, delta) {
+    if (stage !== this._idleStage) {
+      this._idleStage = stage;
+      this._idleSeconds = 0;
+      this._idleSpoken = false;
+    }
+    const aria = this.currentLevel.ariaManager;
+    if (this._idleSpoken || stage >= ARIA_IDLE_LINES.length || aria.speaking) return;
+    this._idleSeconds += delta;
+    if (this._idleSeconds >= IDLE_SECONDS) {
+      this._idleSpoken = true;
+      this.ariaSays(ARIA_IDLE_LINES[stage]);
+    }
+  }
+
   updateReticle() {
     this.raycaster.setFromCamera(this.center, this.camera.instance);
     const targets = this.currentLevel.interactables || [];
@@ -223,18 +324,27 @@ export class Game {
   }
 
   // Interact with whatever is under the reticle (click or E)
-  tryInteract() {
+  tryInteract(options = {}) {
     this.raycaster.setFromCamera(this.center, this.camera.instance);
     const targets = this.currentLevel.interactables || [];
     const hit = this.raycaster.intersectObjects(targets, true)[0];
     if (!hit) return;
     if (this.currentLevel.canInteract?.(hit.object, hit.distance) === false) return;
-    this.currentLevel.onInteract?.(hit.object);
+    this.currentLevel.onInteract?.(hit.object, options);
   }
 
-  onClick() {
+  // Advance the conversation: skip ARIA's line if she is speaking, otherwise
+  // move on from Voss's line
+  advanceDialogue() {
+    if (this.ui.isAriaLine()) this.currentLevel.ariaManager.skip();
+    else this.ui.advance();
+  }
+
+  onClick(event) {
     if (this.state === 'DIALOGUE') {
-      this.ui.advance();
+      this.advanceDialogue();
+    } else if (this.state === 'TUTORIAL') {
+      this.closeTutorial();
     } else if (this.state === 'PLAYING') {
       // After Esc (or stepping away from the puzzle) the mouse is free:
       // the first click takes it back instead of interacting
@@ -242,23 +352,82 @@ export class Game {
         this.controls.lock();
         return;
       }
-      this.tryInteract();
+      this.tryInteract({ reverse: !!event?.shiftKey });
     }
   }
 
   onKeyDown(event) {
+    const confirm = event.code === 'Space' || event.code === 'Enter' || event.code === 'KeyE';
+
+    // Space or Enter skips whatever ARIA is saying, from almost anywhere
+    if ((event.code === 'Space' || event.code === 'Enter') && this.ui.isAriaLine() &&
+        (this.state === 'PLAYING' || this.state === 'PUZZLE' || this.state === 'INVENTORY')) {
+      event.preventDefault();
+      this.currentLevel.ariaManager.skip();
+      return;
+    }
+
     if (this.state === 'DIALOGUE') {
-      if (event.code === 'Space' || event.code === 'Enter' || event.code === 'KeyE') {
+      if (confirm) {
         event.preventDefault();
-        this.ui.advance();
+        this.advanceDialogue();
+      }
+    } else if (this.state === 'TUTORIAL') {
+      if (confirm) {
+        event.preventDefault();
+        this.closeTutorial();
       }
     } else if (this.state === 'PUZZLE') {
       if (event.code === 'Escape') this.closePuzzle();
-    } else if (this.state === 'PLAYING' && event.code === 'KeyE') {
-      this.tryInteract();
-    } else if (this.state === 'PLAYING' && event.code === 'KeyF') {
-      this.currentLevel.toggleFlashlight?.();
+    } else if (this.state === 'INVENTORY') {
+      if (event.code === 'KeyI' || event.code === 'Escape') this.closeInventory();
+    } else if (this.state === 'PLAYING') {
+      if (event.code === 'KeyE') this.tryInteract();
+      else if (event.code === 'KeyF') this.toggleFlashlight();
+      else if (event.code === 'KeyI') this.openInventory();
     }
+  }
+
+  toggleFlashlight() {
+    const level = this.currentLevel;
+    level.toggleFlashlight?.();
+    this.hud.setTorch(level.hasTorch, level.flashlightOn);
+  }
+
+  // ---------------------------------------------------------
+  // Inventory (I): items, status and stats. The game pauses around it.
+  // ---------------------------------------------------------
+  openInventory() {
+    if (this.state !== 'PLAYING') return;
+    this.state = 'INVENTORY';
+    this.reticle.classList.remove('visible');
+    this.controls.stop();
+    this.inventory.show(this.player, this.ui.objectiveText.textContent);
+  }
+
+  closeInventory() {
+    if (this.state !== 'INVENTORY') return;
+    this.inventory.close();
+    this.controls.instance.enabled = true;
+    this.reticle.classList.add('visible');
+    this.state = 'PLAYING';
+  }
+
+  // The first time the health and lives display appears, explain it
+  showTutorial() {
+    this._tutorialSeen = true;
+    this.state = 'TUTORIAL';
+    this.reticle.classList.remove('visible');
+    this.controls.stop();
+    this.hud.showTutorial();
+  }
+
+  closeTutorial() {
+    if (this.state !== 'TUTORIAL') return;
+    this.hud.hideTutorial();
+    this.controls.instance.enabled = true;
+    this.reticle.classList.add('visible');
+    this.state = 'PLAYING';
   }
 
   // Voss talks to ARIA at the monitor. Movement and mouse-look are frozen
@@ -276,6 +445,8 @@ export class Game {
     this.controls.instance.enabled = true;
     this.reticle.classList.add('visible');
     this.state = 'PLAYING';
+
+    if (!this._tutorialSeen) this.showTutorial();
   }
 
   // ---------------------------------------------------------
@@ -291,7 +462,109 @@ export class Game {
   }
 
   // ---------------------------------------------------------
-  // The cable puzzle: "Overload"
+  // Health, death and being revived
+  // ---------------------------------------------------------
+
+  // Hurt Voss. Returns true if that flatlined him.
+  damagePlayer(amount) {
+    if (this._dying) return true;
+    const flatlined = this.player.damage(amount);
+    this.hud.flash();
+    if (flatlined) this.onFlatline();
+    return flatlined;
+  }
+
+  // Health hit zero. ARIA revives him from a saved copy, as long as he has a life left.
+  async onFlatline() {
+    if (this._dying) return;
+    this._dying = true;
+
+    // Drop whatever he was doing
+    if (this.puzzle.active) {
+      this.puzzle.frozen = true;
+      this.puzzle.close();
+    }
+    this.audio.stopHum(0.1);
+    this.currentLevel.setStress(0);
+    this.ui.hideDialogue();
+    this.ui.hideToast();
+    this.inventory.close();
+    this.hud.hideTutorial();
+    this.state = 'DEAD';
+    this.controls.stop();
+    this.reticle.classList.remove('visible');
+
+    this.hud.showDeath('SIGNAL LOST', 'Your health ran out...');
+    await sleep(2200);
+
+    if (!this.player.hasRestoreLeft) {
+      // No lives left
+      this.state = 'GAME_OVER';
+      document.exitPointerLock?.();
+      const p = this.player;
+      this.hud.showGameOver(
+        ARIA_GAME_OVER_TEXT,
+        `Overloads ${p.overloads}   |   Times revived ${p.deaths}   |   Puzzles solved ${p.puzzlesSolved}   |   Time ${formatTime(p.playSeconds)}`
+      );
+      return;
+    }
+
+    this.player.useRestore();
+    this.hud.showDeath('RESTORING FROM BACKUP', `Lives left: ${this.player.restores}`);
+    await sleep(1800);
+
+    // Back on his feet, at the last place he was standing
+    this.camera.instance.position.copy(this.checkpoint);
+    this.controls.instance.enabled = true;
+    this.hud.hideDeath();
+    this.reticle.classList.add('visible');
+    this._dying = false;
+    this.state = 'PLAYING';
+
+    const line = ARIA_RESTORE_LINES[Math.min(this.player.deaths, ARIA_RESTORE_LINES.length) - 1];
+    this.ariaSays(line);
+  }
+
+  // Start over without refreshing the page: tear the level down, rebuild it,
+  // reset everything and wake Voss up again
+  restart() {
+    this.hud.hideGameOver();
+    this.hud.hideDeath();
+    this.hud.hideTutorial();
+    this.puzzle.close();
+    this.audio.stopHum(0.05);
+    this.inventory.reset();
+    this.ui.hideDialogue();
+    this.ui.hideToast();
+    this.ui.setObjective(null);
+    this.ui.setWaypoint(null);
+    this.ui.setPrompt(null);
+
+    this.currentLevel.dispose();
+    this.currentLevel = new Level1(this.scene);
+    this.controls.level = this.currentLevel;
+    this._wireLevel();
+    this.hud.setTorch(false, false);
+
+    this.player.reset();
+    this._resetProgress();
+    this._stage = -1;
+
+    const camera = this.camera.instance;
+    camera.position.set(0, 3, 0);
+    camera.lookAt(0, 3, -10);
+
+    this.controls.instance.enabled = true;
+    this.controls.lock();
+    this.reticle.classList.add('visible');
+    this.state = 'WAKING';
+    this.ui.playWakeUp().then(() => {
+      if (this.state === 'WAKING') this.state = 'PLAYING';
+    });
+  }
+
+  // ---------------------------------------------------------
+  // The circuit puzzle: "Overload"
   // ---------------------------------------------------------
   _puzzleSeconds() {
     const bonus = Math.min(PUZZLE_MAX_BONUS, PUZZLE_BONUS_PER_FAILURE * this.currentLevel.failures);
@@ -304,6 +577,7 @@ export class Game {
 
   startPuzzle() {
     if (this.state !== 'PLAYING') return;
+    this.checkpoint.copy(this.camera.instance.position); // he is revived right here
     this.state = 'PUZZLE';
     document.exitPointerLock?.(); // the puzzle needs a free mouse pointer
     this.reticle.classList.remove('visible');
@@ -343,46 +617,40 @@ export class Game {
     }
   }
 
-  onPuzzleMistake() {
+  // Power reached a live fuse: it zaps, and keeps zapping until it is cut off
+  onPuzzleZap() {
+    this.player.zaps++;
     this.audio.zap();
     this.currentLevel.mistakeSparks();
-    // If she gave the wrong hint, this is where the player finds out
-    if (this._wrongHintGiven && !this._oopsSaid) {
-      this._oopsSaid = true;
-      this.ariaSays(ARIA_PUZZLE_LINES.oops, { pauseCountdown: true });
-    }
+    if (this.damagePlayer(ZAP_DAMAGE)) return;
+
+    // ARIA has something to say about the first zap, and about the fourth
+    if (this.player.zaps === 1) this.ariaSays(ARIA_PUZZLE_LINES.zap1, { pauseCountdown: true });
+    else if (this.player.zaps === 4) this.ariaSays(ARIA_PUZZLE_LINES.zap2, { pauseCountdown: true });
   }
 
-  // The countdown hit zero: the generator trips
+  // The countdown hit zero: the generator trips and shocks Voss
   async onPuzzleOverload() {
     const level = this.currentLevel;
+    this.player.overloads++;
     this.audio.stopHum(0.15);
     this.audio.blackout();
     level.setStress(1);
     level.overload(); // sparks, red rings, 3 seconds of blackout (failures++)
     this.puzzle.flashOverload();
     this.ui.flashOverload();
+    if (this.damagePlayer(OVERLOAD_DAMAGE)) return; // the shock was too much
 
     await sleep(1500);
     if (!this._puzzleUsable()) return; // the player stepped away meanwhile
 
-    // ARIA reacts. Her answer depends on how many times it has gone wrong.
-    const failures = level.failures;
-    let line;
-    if (failures === 1) {
-      line = ARIA_PUZZLE_LINES.overload1;
-    } else if (failures === 2) {
-      line = ARIA_PUZZLE_LINES.overload2;
-    } else if (!this._wrongHintGiven) {
-      line = ARIA_PUZZLE_LINES.wrongHint; // the hint that is wrong, once
-      this._wrongHintGiven = true;
-    } else {
-      line = ARIA_PUZZLE_LINES.goodHint;
-    }
+    // ARIA reacts, with a joke. The second time she also helps, honestly: the
+    // third overload in a row would be fatal, so the hint has to come before it.
+    const line = level.failures === 1 ? ARIA_PUZZLE_LINES.overload1 : ARIA_PUZZLE_LINES.overload2;
     await this.ariaSays(line);
     if (!this._puzzleUsable()) return;
 
-    // Let the blackout finish, then a fresh arrangement with a little more time
+    // Let the blackout finish, then a fresh circuit with a little more time
     await sleep(Math.max(0, level._blackoutUntil - level.time) * 1000);
     if (!this._puzzleUsable()) return;
     level.setStress(0);
@@ -390,26 +658,38 @@ export class Game {
     this.audio.startHum();
   }
 
-  // Called from the mouse-up that seated the last plug, so the mouse can be
+  // Called from the click that completed the circuit, so the mouse can be
   // captured again right away
   onPuzzleSolved() {
     const level = this.currentLevel;
+    this.player.puzzlesSolved++;
+    this.player.heal(HEAL_PER_REPAIR);
     this.audio.stopHum(0.2);
     this.audio.success();
     level.setStress(0);
-    level.setPower(1); // power surge: sparks, rings settle, the lights come up
+    level.partialRepair(); // the wiring holds: sparks and a partial brightening; the rings are next
 
     this.controls.instance.enabled = true;
     this.controls.lock();
 
     (async () => {
-      await sleep(700);
+      await sleep(900);
+      if (this.state !== 'PUZZLE') return; // died or stepped away meanwhile
       this.puzzle.close();
       this.reticle.classList.add('visible');
       this.state = 'PLAYING';
-      this.ui.showToast('Generator repaired. Power restored.');
+      this.ui.showToast('Circuit repaired. The relay rings are next.');
       await this.ariaSays(ARIA_PUZZLE_LINES.success);
     })();
+  }
+
+  // All the relay rings are lined up: the lights surge back on, floor by floor
+  onRelayAligned() {
+    this.player.puzzlesSolved++;
+    this.player.heal(HEAL_PER_REPAIR);
+    this.audio.surge();
+    this.ui.showToast('Relay aligned. Power fully restored.');
+    this.ariaSays(ARIA_PUZZLE_LINES.relayDone);
   }
 
 }

@@ -192,6 +192,17 @@ export class AriaManager {
     this.video.play().catch(() => {});
   }
 
+  // Is one of her lines playing right now?
+  get speaking() {
+    return this._endSpeech !== null;
+  }
+
+  // Cut her current line short (the player pressed skip). The line's promise
+  // resolves as if it had finished, so the conversation carries straight on.
+  skip() {
+    if (this._endSpeech) this._endSpeech();
+  }
+
   // Play one of ARIA's lines: the face clip on the monitors and her voice
   // audio together. Resolves when the voice finishes, then goes back to idle.
   // If a clip has no video or audio yet (or fails to load) the line still

@@ -17,6 +17,12 @@ const FLASH_INTENSITY = 26;
 const FLASH_OUTER_COS = Math.cos(THREE.MathUtils.degToRad(30));
 const FLASH_INNER_COS = Math.cos(THREE.MathUtils.degToRad(13));
 
+// The power relay: four linked rings around the generator. Each turns in
+// 45-degree steps; the puzzle is solved when every marker faces the rail.
+const RELAY_RING_HEIGHTS = [1.3, 1.95, 2.6, 3.25];
+const RELAY_RADIUS = 1.95;
+const RELAY_STEPS = 8;
+
 // Where the torch lies: on the floor in front of ARIA's wall monitor
 const TORCH_XZ = new THREE.Vector2(1.2, -7.3);
 
@@ -79,6 +85,15 @@ export class Level1{
     this._pulseTime = 0;           // pulses faster the more stress there is
     this._blackoutUntil = 0;       // game time the lights come back after an overload
     this._overloadUntil = 0;       // game time the rings stop flashing red
+
+    // Two stages of repair: the wiring (cable puzzle), then the relay rings
+    this.cablesFixed = false;
+    this.relaySolved = false;
+    this.relay = null;             // { root, rings: [{ group, marker... }] }
+    this._relayCheckAt = -1;       // game time to check the alignment (after the turn animation)
+    this._sequenceStart = -1;      // game time the lights start coming back one by one
+    this.onRingTurned = null;      // set by the Game (sound)
+    this.onRelayAligned = null;    // set by the Game (ARIA reacts)
     this._generatorRadius = 0;
     this._sparkTimer = 1;
     this._sparkOrigin = new THREE.Vector3();
@@ -282,6 +297,7 @@ export class Level1{
       this._pickFlickeringLights();
       this._rebuildInteractables();
       this._loadTorch();
+      this._buildRelay();
 
       // Populate the light uniforms right away: update() only runs while
       // PLAYING, so otherwise the room pops from ambient-only to lit on start
@@ -372,6 +388,7 @@ export class Level1{
     this._interactables = [...this.LightsPuzzle];
     if (this.wallMonitor) this._interactables.push(this.wallMonitor);
     this._interactables.push(...this.generatorParts);
+    if (this.relay) this._interactables.push(this.relay.root);
     if (this.torch && !this.hasTorch) this._interactables.push(this.torch);
   }
 
@@ -386,6 +403,23 @@ export class Level1{
     return false;
   }
 
+  // Free everything this level created (used when the game restarts). Removing a
+  // mesh from the scene does not free its GPU memory: geometries and
+  // materials have to be disposed explicitly.
+  dispose() {
+    this.ariaManager?.dispose();
+    this.sparks.dispose();
+    for (const object of [this.room, this.torch, this.relay?.root]) {
+      if (!object) continue;
+      object.traverse((o) => o.geometry?.dispose?.());
+      this.scene.remove(object);
+    }
+    for (const material of this.shaderMaterials) material.dispose();
+    this.shaderMaterials.length = 0;
+    this.lights.length = 0;
+    this._interactables.length = 0;
+  }
+
   getBounds(){
     return this.bounds;
   }
@@ -398,6 +432,7 @@ export class Level1{
   static MONITOR_RANGE = 5;
   static TORCH_RANGE = 4.5;
   static GENERATOR_RANGE = 5.5;
+  static RELAY_RANGE = 6.5;
 
   // Text for the on-screen prompt while looking at an object, or null for none.
   // The torch and the generator stay locked until the player has talked to ARIA.
@@ -410,10 +445,16 @@ export class Level1{
     if (torch || generator) {
       if (distance > (torch ? Level1.TORCH_RANGE : Level1.GENERATOR_RANGE)) return null;
       if (torch && this.hasTorch) return null;
-      if (generator && this.powerTarget >= 0.99) return null;
+      if (generator && this.cablesFixed) return null;
       if (this.talkEnabled) return 'Talk to ARIA first';
       if (generator && !this.hasTorch) return 'Too dark to see the wiring. Find a light first';
       return torch ? 'Click or press E to pick up the torch' : 'Click or press E to inspect the generator';
+    }
+    if (this._isRelayPart(object) && this._ringIndexOf(object) >= 0) {
+      if (distance > Level1.RELAY_RANGE || this.relaySolved) return null;
+      if (this.talkEnabled) return 'Talk to ARIA first';
+      if (!this.cablesFixed) return 'The ring is locked. The generator has no power';
+      return 'Click to turn the ring (Shift + click: turn back)';
     }
     return null;
   }
@@ -429,10 +470,13 @@ export class Level1{
     if (this._isGeneratorPart(object)) {
       return distance <= Level1.GENERATOR_RANGE;
     }
+    if (this._isRelayPart(object)) {
+      return distance <= Level1.RELAY_RANGE;
+    }
     return true;
   }
 
-  onInteract(object) {
+  onInteract(object, options = {}) {
     if (object === this.wallMonitor) {
       this.onTalkToAria?.();
       return;
@@ -450,8 +494,19 @@ export class Level1{
         this.onLockedHint?.('Talk to ARIA first. She is waiting at the glowing monitor.');
       } else if (!this.hasTorch) {
         this.onLockedHint?.('It is too dark to read the wiring. Find the torch first.');
-      } else if (this.powerTarget < 0.99) {
+      } else if (!this.cablesFixed) {
         this.onInspectGenerator?.();
+      }
+      return;
+    }
+    const ring = this._isRelayPart(object) ? this._ringIndexOf(object) : -1;
+    if (ring >= 0) {
+      if (this.talkEnabled) {
+        this.onLockedHint?.('Talk to ARIA first. She is waiting at the glowing monitor.');
+      } else if (!this.cablesFixed) {
+        this.onLockedHint?.('The rings are locked: the generator has no power. Fix the wiring first.');
+      } else {
+        this.turnRing(ring, options.reverse ? -1 : 1);
       }
       return;
     }
@@ -470,9 +525,12 @@ export class Level1{
       w.position.copy(this.torch.position);
       w.position.y += 0.3;
       w.label = 'Torch';
-    } else if (this.powerTarget < 0.99) {
+    } else if (!this.cablesFixed) {
       w.position.copy(this._generatorCentre);
       w.label = 'Generator';
+    } else if (!this.relaySolved) {
+      w.position.copy(this._generatorCentre);
+      w.label = 'Relay rings';
     } else {
       return null;
     }
@@ -501,6 +559,193 @@ export class Level1{
     this.powerTarget = THREE.MathUtils.clamp(target, 0, 1);
     // Power surge: a big shower of sparks as the generator comes back
     if (wasBroken && this.powerTarget >= 0.99) this._surgeSparks();
+  }
+
+  // ---------------------------------------------------------
+  // The power relay: three linked rings
+  //
+  // Scene graph: ring 2 is a CHILD of ring 1 and ring 3 a child of ring 2, and
+  // every bolt, light and marker is a child of its ring. Turning a ring
+  // therefore carries everything above it (and all of its own parts) round with
+  // it: each ring's real orientation is the sum of its own turn and all the
+  // turns below it. That is what makes it a puzzle.
+  // ---------------------------------------------------------
+  _buildRelay() {
+    if (this._generatorRadius <= 0) return;
+    const centre = this._generatorCentre;
+
+    const plain = (hex) => this._makeLevelMaterial({ color: new THREE.Color(hex) });
+    const glowing = (hex, glow) => {
+      const m = plain(hex);
+      m.uniforms.ambientColor.value.setScalar(0.03);
+      m.uniforms.glowColor.value.set(glow);
+      return m;
+    };
+    const ringMaterial = plain(0x5b6773);
+    const ledMaterial = glowing(0x103040, 0x33e6ff);
+    ledMaterial.uniforms.glowAmount.value = 0.55;
+    const boltMaterial = plain(0x2a3037);
+    const boltGeometry = new THREE.CylinderGeometry(0.06, 0.06, 0.42, 10);
+    const ledGeometry = new THREE.SphereGeometry(0.055, 12, 10);
+    const torusGeometry = new THREE.TorusGeometry(RELAY_RADIUS, 0.14, 14, 72);
+    const markerGeometry = new THREE.BoxGeometry(0.34, 0.38, 0.26);
+    const slotGeometry = new THREE.BoxGeometry(0.16, 0.3, 0.3);
+
+    const root = new THREE.Group();
+    root.name = 'PowerRelay';
+    root.position.set(centre.x, 0, centre.z);
+
+    const rings = [];
+    let parent = root;
+    let previousY = 0;
+    RELAY_RING_HEIGHTS.forEach((y, index) => {
+      const group = new THREE.Group();
+      group.position.y = y - previousY; // relative to the parent ring
+      previousY = y;
+      group.userData.ringIndex = index;
+      parent.add(group);
+      parent = group;
+
+      const torus = new THREE.Mesh(torusGeometry, ringMaterial);
+      torus.rotation.x = Math.PI / 2;
+      group.add(torus);
+
+      // Bolts through the ring and small lights between them (all children)
+      for (let i = 0; i < RELAY_STEPS; i++) {
+        const a = (i / RELAY_STEPS) * Math.PI * 2;
+        const bolt = new THREE.Mesh(boltGeometry, boltMaterial);
+        bolt.position.set(Math.cos(a) * RELAY_RADIUS, 0, Math.sin(a) * RELAY_RADIUS);
+        group.add(bolt);
+
+        const led = new THREE.Mesh(ledGeometry, ledMaterial);
+        const b = a + Math.PI / RELAY_STEPS;
+        led.position.set(Math.cos(b) * (RELAY_RADIUS + 0.14), 0, Math.sin(b) * (RELAY_RADIUS + 0.14));
+        group.add(led);
+      }
+
+      // The marker faces the rail (world -X) when the ring is lined up
+      const markerMaterial = glowing(0x40300a, 0xffb020);
+      const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+      marker.position.set(-RELAY_RADIUS - 0.03, 0, 0);
+      group.add(marker);
+
+      // The matching slot on the fixed rail
+      const slotMaterial = glowing(0x303840, 0xbfd8e0);
+      const slot = new THREE.Mesh(slotGeometry, slotMaterial);
+      slot.position.set(-(RELAY_RADIUS + 0.64), y, 0);
+      root.add(slot);
+
+      rings.push({ group, markerMaterial, slotMaterial, steps: 0, angle: 0, aligned: false });
+    });
+
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.5, 0.16), boltMaterial);
+    rail.position.set(-(RELAY_RADIUS + 0.72), 2.3, 0);
+    root.add(rail);
+
+    // Start scrambled: every ring out of line, and not all by the same amount
+    let steps;
+    do {
+      steps = rings.map((_, i) => (i === 0 ? 1 : 0) + Math.floor(Math.random() * (i === 0 ? 7 : 8)));
+    } while (this._absoluteSteps(steps).some((a) => a === 0) || new Set(this._absoluteSteps(steps)).size === 1);
+    rings.forEach((ring, i) => {
+      ring.steps = steps[i];
+      ring.angle = (steps[i] * Math.PI * 2) / RELAY_STEPS;
+      ring.group.rotation.y = ring.angle;
+    });
+
+    this.relay = { root, rings };
+    this.scene.add(root);
+    this._rebuildInteractables();
+  }
+
+  // The real (absolute) orientation of each ring, in steps: the running sum of the turns
+  _absoluteSteps(steps) {
+    let total = 0;
+    return steps.map((s) => {
+      total += s;
+      return ((total % RELAY_STEPS) + RELAY_STEPS) % RELAY_STEPS;
+    });
+  }
+
+  _isRelayPart(object) {
+    if (!this.relay) return false;
+    for (let o = object; o; o = o.parent) {
+      if (o === this.relay.root) return true;
+    }
+    return false;
+  }
+
+  // Which ring a clicked object belongs to: the nearest ring group above it
+  // (a bolt on ring 2 sits below ring 1 in the tree, but belongs to ring 2)
+  _ringIndexOf(object) {
+    for (let o = object; o; o = o.parent) {
+      if (o.userData && o.userData.ringIndex !== undefined) return o.userData.ringIndex;
+    }
+    return -1;
+  }
+
+  // Turn one ring a step. Every ring above it in the tree turns with it.
+  turnRing(index, direction = 1) {
+    if (!this.relay || !this.cablesFixed || this.relaySolved) return;
+    this.relay.rings[index].steps += direction;
+    this.onRingTurned?.();
+    this._relayCheckAt = this.time + 0.6; // after the turn has finished animating
+  }
+
+  _updateRelay(delta) {
+    if (!this.relay) return;
+    const rings = this.relay.rings;
+    const ease = 1 - Math.exp(-9 * delta);
+    const absolute = this._absoluteSteps(rings.map((r) => r.steps));
+
+    rings.forEach((ring, i) => {
+      // Ease toward the target turn. The child rings inherit the parent's
+      // motion on top of this, purely through the scene graph.
+      const target = (ring.steps * Math.PI * 2) / RELAY_STEPS;
+      ring.angle += (target - ring.angle) * ease;
+      ring.group.rotation.y = ring.angle;
+
+      // The marker and its rail slot show whether this ring is in line
+      ring.aligned = absolute[i] === 0;
+      const pulse = 0.55 + 0.45 * Math.sin(this.time * 5 + i);
+      const marker = ring.markerMaterial.uniforms;
+      const slot = ring.slotMaterial.uniforms;
+      if (ring.aligned) {
+        marker.glowColor.value.set(0x2fae62);
+        marker.glowAmount.value = 0.75;
+        slot.glowColor.value.set(0x2fae62);
+        slot.glowAmount.value = 0.75;
+      } else {
+        marker.glowColor.value.set(0xb8791a);
+        marker.glowAmount.value = this.cablesFixed ? 0.3 + 0.4 * pulse : 0.12;
+        slot.glowColor.value.set(0xbfd8e0);
+        slot.glowAmount.value = 0.25;
+      }
+    });
+
+    // All three in line: the relay engages
+    if (this._relayCheckAt >= 0 && this.time >= this._relayCheckAt) {
+      this._relayCheckAt = -1;
+      if (!this.relaySolved && absolute.every((a) => a === 0)) this.finalRepair();
+    }
+  }
+
+  // Stage one done (the cable puzzle): the wiring holds and the generator
+  // comes back partway. The rings are still locked out of phase.
+  partialRepair() {
+    this.cablesFixed = true;
+    this.powerTarget = 0.4;
+    this._surgeSparks();
+  }
+
+  // Stage two done (the rings): full power. The lights surge back on one after
+  // another, floor by floor, instead of all at once.
+  finalRepair() {
+    this.relaySolved = true;
+    this.powerTarget = 1;
+    this._sequenceStart = this.time;
+    this._surgeSparks();
+    this.onRelayAligned?.();
   }
 
   // 0..1 while the puzzle countdown runs: the more stress, the faster the rings
@@ -572,7 +817,7 @@ export class Level1{
 
     // Random sparks while it is still broken. More often the more broken it is,
     // after each failed attempt, and as the countdown runs down.
-    if (this.power < 0.85 && delta > 0 && !blackout) {
+    if (this.power < 0.85 && delta > 0 && !blackout && !this.cablesFixed) {
       this._sparkTimer -= delta;
       if (this._sparkTimer <= 0) {
         this._sparkAt(Math.random() * Math.PI * 2, 8 + Math.floor(Math.random() * 8), Math.random() < 0.4);
@@ -593,7 +838,15 @@ export class Level1{
       const stutter = Math.sin(this.time * 23 * (1 + 2.5 * stress) + i * 3.1) * Math.sin(this.time * 7.7 + i);
       dead = stutter > 0.25 - 0.3 * stress ? 0.55 : 0.05;
     }
-    let factor = dead + (1 - dead) * this.power;
+    // After the relay engages each light comes back in turn (and they all go
+    // briefly dark first, so the surge reads)
+    let power = this.power;
+    if (this._sequenceStart >= 0) {
+      const sequence = THREE.MathUtils.clamp((this.time - this._sequenceStart - i * 0.4) / 0.3, 0, 1);
+      power = Math.min(power, sequence);
+      if (this.time > this._sequenceStart + this.lights.length * 0.4 + 1.5) this._sequenceStart = -1;
+    }
+    let factor = dead + (1 - dead) * power;
     if (stress > 0) {
       // As the countdown runs low, every light drops out in sharp stutters
       const drop = Math.sin(this.time * (17 + 30 * stress) + i * 2.3) * Math.sin(this.time * 5.1 + i) > 0.35;
@@ -613,6 +866,7 @@ export class Level1{
     }
 
     this._updateGenerator(delta);
+    this._updateRelay(delta);
 
     const flash = this.flashlightOn && camera;
     const roomCount = Math.min(this.lights.length, MAX_LIGHTS - 1);

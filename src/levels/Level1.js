@@ -1,7 +1,7 @@
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/Addons.js";
-
+import { RingPuzzle } from "../entities/RingPuzzle.js";
 
 
 export class Level1{
@@ -17,7 +17,9 @@ export class Level1{
     this.bounds = null;
 
     this.lights = [];
-    this.LightsPuzzle = [];
+    this.wallPanelMeshes = [];  // Plane066 from the GLB
+    this.ringPuzzle = null;   
+    this.time = 0;
 
     this.buildRoom();
     this.addLighting();
@@ -99,21 +101,36 @@ export class Level1{
         }
         
         //the interactables for lights
-        if(child.name == "Plane066"){
-          this.LightsPuzzle.push(child);
-        }
+        if (child.name == "Plane066") {
+        this.wallPanelMeshes.push(child);
+      }
 
       });
 
-      console.log('LightsPuzzle found:', this.LightsPuzzle);
+      console.log('LightsPuzzle found:', this.wallPanelMeshes);
       this.scene.add(this.room);
+
+     
 
     } catch (error) {
         console.error('Failed to load controlroom.glb:', error);
         console.log('Stuck in purgatory')
         this.defaultRoom();
     }
+     this.addPuzzle();
     
+  }
+
+  addPuzzle(){
+    this.ringPuzzle = new RingPuzzle(this.scene, {
+      targets: [2, 5, 1],
+      coupling: 'oneWay',
+    });
+
+    const b = this.bounds;
+    this.ringPuzzle.hub.position.set(-0.147, 1.701, -3.535);
+    this.ringPuzzle.hub.rotation.y = 1.571;
+    this.ringPuzzle.hub.scale.setScalar(0.092);
   }
 
   getBounds(){
@@ -121,14 +138,27 @@ export class Level1{
   }
 
   get interactables() {
-    return this.LightsPuzzle;
+  const list = [...this.wallPanelMeshes];
+  if (this.ringPuzzle) {
+    list.push(this.ringPuzzle.panel, ...this.ringPuzzle.ringMeshes);
   }
+  return list;
+}
 
-  onInteract(object) {
-    if (this.LightsPuzzle.includes(object)) {
-      console.log("You clicked on one of the puzzle fixtures", object.name);
-    }
+isPuzzlePiece(object) {
+  if (this.wallPanelMeshes.includes(object)) return true;
+  const hub = this.ringPuzzle?.hub;
+  for (let o = object; o; o = o.parent) {
+    if (o === hub) return true;
   }
+  return false;
+}
+
+onInteract(object) {
+  if (this.isPuzzlePiece(object)) {
+    document.dispatchEvent(new CustomEvent('puzzle:open'));
+  }
+}
 
 
   addLighting(){
@@ -140,6 +170,8 @@ export class Level1{
     if (this.emergencyLight) {
       this.emergencyLight.intensity = 50 + Math.sin(this.time * 5) * 10;
     }
+
+    this.ringPuzzle?.update(delta);
   }
 
 

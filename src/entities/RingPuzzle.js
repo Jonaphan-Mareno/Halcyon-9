@@ -129,6 +129,14 @@ export class RingPuzzle{
       ringMesh.userData.ringIndex = index; // tag for raycast -> puzzle data lookup
       hub.add(ringMesh);
 
+      // Invisible, fatter collider so the thin ring is easy to click.
+// Raycasters still hit meshes whose material isn't visible.
+const hitArea = new THREE.Mesh(
+  new THREE.TorusGeometry(radius, 0.2, 8, 32),
+  new THREE.MeshBasicMaterial({ visible: false })
+);
+ringMesh.add(hitArea);
+
       const pointer = new THREE.Mesh(this._sharedPointerGeometry, this._sharedPointerMaterial);
       pointer.position.set(radius, 0, 0.08);
       ringMesh.add(pointer);

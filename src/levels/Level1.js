@@ -392,14 +392,26 @@ export class Level1{
   }
 
   _buildRingPuzzle() {
+    const makeMaterial = (hex, { glow = 0, glowHex = hex, lit = 0.45 } = {}) => {
+    const m = this._makeLevelMaterial({ color: new THREE.Color(hex) });
+    m.uniforms.ambientColor.value.setScalar(lit);
+    m.uniforms.glowColor.value.set(glowHex);
+    m.uniforms.glowAmount.value = glow;
+    return m;
+  };
+
   this.ringPuzzle = new RingPuzzle(this.scene, {
     targets: [2, 5, 1],
     coupling: 'oneWay',
+    makeMaterial,
     onSolved: () => this.onRingPuzzleComplete(),
   });
   this.ringPuzzle.hub.position.set(-0.147, 1.701, -3.535);
   this.ringPuzzle.hub.rotation.y = 1.571;
   this.ringPuzzle.hub.scale.setScalar(0.092);
+
+  console.log('panel:', this.ringPuzzle.panel.material.type,
+            '| ring:', this.ringPuzzle.ringMeshes[0].material.type);
 }
 
 _isRingPuzzlePart(object) {

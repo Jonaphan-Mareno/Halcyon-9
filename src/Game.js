@@ -14,7 +14,7 @@ import { PlayerStats } from './player/PlayerStats.js';
 
 // The goal shown top-left for each stage of the opening
 const OBJECTIVES = [
-  'Fix the wall panel to bring ARIA online',
+  'Fix the wall panel to turn on monitor',
   "Find ARIA's glowing monitor and talk to her",
   'Find the torch on the floor',
   'Repair the generator circuit',
@@ -271,8 +271,8 @@ export class Game {
   updateGuidance(delta) {
     const level = this.currentLevel;
 
-    // Stage 0: talk to ARIA, 1: find the torch, 2: repair the circuit,
-    // 3: align the relay rings, 4: done
+    // Stage 0: Turn on Monitor, 1: talk to ARIA, 2: find the torch, 3: repair the circuit,
+    // 4: align the relay rings, 5: done
     let stage;
     if (!level.ringPuzzleSolved) stage = 0;
     else if (level.talkEnabled) stage = 1;

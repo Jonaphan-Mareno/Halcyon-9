@@ -6,6 +6,7 @@ const ARIA_AUDIO_PATH = './assets/audio/aria/';
 const ARIA_IDLE_CLIP = 'aria-idle.mp4';
 
 export class AriaManager {
+
   constructor(scene) {
     this.scene = scene;
     
@@ -142,10 +143,15 @@ export class AriaManager {
     this.monitors = [];
     // When set, ARIA stays on this monitor instead of following the player
     this.pinnedMonitor = null;
+    this.active = false;   // ARIA stays dark until the wall panel puzzle is solved
     this._worldPos = new THREE.Vector3(); // reused every frame
 
     // Current spoken line (video clip + voice audio), if any
     this._endSpeech = null;
+  }
+
+  activate() {
+    this.active = true;
   }
 
   // Keep ARIA on the monitor with this mesh name (e.g. the wake-up scene)
@@ -304,6 +310,12 @@ export class AriaManager {
       this.ariaMaterial.uniforms.uTime.value += delta;
     }
     if (this.useHead) this.head.update(delta);
+    if (!this.active) {
+      for (const monitor of this.monitors) {
+        if (monitor.material !== this.idleMaterial) monitor.material = this.idleMaterial;
+      }
+      return;
+    }
 
     // Proximity logic: ARIA jumps to the screen closest to the player
     if (this.monitors.length > 0 && playerPosition) {

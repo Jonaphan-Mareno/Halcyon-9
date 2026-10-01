@@ -14,6 +14,7 @@ import { PlayerStats } from './player/PlayerStats.js';
 
 // The goal shown top-left for each stage of the opening
 const OBJECTIVES = [
+  'Fix the wall panel to bring ARIA online',
   "Find ARIA's glowing monitor and talk to her",
   'Find the torch on the floor',
   'Repair the generator circuit',
@@ -59,6 +60,7 @@ const ARIA_PUZZLE_LINES = {
 
 // Said when the player has been stuck for a while, one per stage
 const ARIA_IDLE_LINES = [
+  null,
   { clip: 'idle-talk', expression: 'bubbly',
     text: "Don't be shy, Voss. I don't bite. I don't have teeth, actually. Or a body." },
   { clip: 'idle-torch', expression: 'bubbly',
@@ -161,6 +163,16 @@ export class Game {
     document.addEventListener('click', (e) => this.onClick(e));
     document.addEventListener('keydown', (e) => this.onKeyDown(e));
 
+    this.mouse = new THREE.Vector2();
+    this.camAnim = null;
+    this.savedCam = null;
+    this._leavingRingPuzzle = false;
+    this._createRingPuzzleUI();
+    window.addEventListener('mousemove', (e) => {
+      this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    });
+
     this.startLoop();
   }
 
@@ -178,6 +190,8 @@ export class Game {
     level.onLockedHint = (text) => this.ui.showToast(text);
     level.onRingTurned = () => this.audio.clunk();
     level.onRelayAligned = () => this.onRelayAligned();
+    level.onOpenRingPuzzle = () => this.enterRingPuzzle();
+    level.onRingPuzzleSolved = () => this.onRingPuzzleSolved();
   }
 
   onResize() {
@@ -216,7 +230,7 @@ export class Game {
   update(delta) {
     const live = this.state === 'PLAYING' || this.state === 'WAKING' || this.state === 'DIALOGUE' ||
                  this.state === 'TUTORIAL' || this.state === 'PUZZLE' || this.state === 'INVENTORY' ||
-                 this.state === 'DEAD';
+                 this.state === 'DEAD' || this.state === 'RING_PUZZLE';
 
     if (this.state === 'PLAYING') {
       this.controls.update(delta);
@@ -246,7 +260,9 @@ export class Game {
       this.ui.setPrompt(null);
       this.ui.setWaypoint(null);
       if (this.state === 'PUZZLE') this.updatePuzzle(delta);
+      if (this.state === 'RING_PUZZLE') this.updateRingPuzzleHover();
     }
+    this.updateCamAnim(delta);   // last line of update()
   }
 
   // ---------------------------------------------------------
@@ -258,11 +274,12 @@ export class Game {
     // Stage 0: talk to ARIA, 1: find the torch, 2: repair the circuit,
     // 3: align the relay rings, 4: done
     let stage;
-    if (level.talkEnabled) stage = 0;
-    else if (!level.hasTorch) stage = 1;
-    else if (!level.cablesFixed) stage = 2;
-    else if (!level.relaySolved) stage = 3;
-    else stage = 4;
+    if (!level.ringPuzzleSolved) stage = 0;
+    else if (level.talkEnabled) stage = 1;
+    else if (!level.hasTorch) stage = 2;
+    else if (!level.cablesFixed) stage = 3;
+    else if (!level.relaySolved) stage = 4;
+    else stage = 5;
 
     if (stage !== this._stage) {
       this._stage = stage;
@@ -307,7 +324,7 @@ export class Game {
       this._idleSpoken = false;
     }
     const aria = this.currentLevel.ariaManager;
-    if (this._idleSpoken || stage >= ARIA_IDLE_LINES.length || aria.speaking) return;
+    if (this._idleSpoken || stage >= ARIA_IDLE_LINES.length || !ARIA_IDLE_LINES[stage] || aria.speaking) return;
     this._idleSeconds += delta;
     if (this._idleSeconds >= IDLE_SECONDS) {
       this._idleSpoken = true;
@@ -353,6 +370,8 @@ export class Game {
         return;
       }
       this.tryInteract({ reverse: !!event?.shiftKey });
+    }else if (this.state === 'RING_PUZZLE') {
+      this.onRingPuzzleClick(event);
     }
   }
 
@@ -379,6 +398,10 @@ export class Game {
       }
     } else if (this.state === 'PUZZLE') {
       if (event.code === 'Escape') this.closePuzzle();
+    } else if (this.state === 'RING_PUZZLE') {
+      if (event.repeat) return;
+      if (event.code === 'KeyE') this.exitRingPuzzle();
+      else if (event.code === 'Escape') this.exitRingPuzzle({ relock: false });
     } else if (this.state === 'INVENTORY') {
       if (event.code === 'KeyI' || event.code === 'Escape') this.closeInventory();
     } else if (this.state === 'PLAYING') {
@@ -561,6 +584,11 @@ export class Game {
     this.ui.playWakeUp().then(() => {
       if (this.state === 'WAKING') this.state = 'PLAYING';
     });
+
+    this.camAnim = null;
+    this.savedCam = null;
+    this._leavingRingPuzzle = false;
+    this.ringCloseBtn.style.display = 'none';
   }
 
   // ---------------------------------------------------------
@@ -691,5 +719,120 @@ export class Game {
     this.ui.showToast('Relay aligned. Power fully restored.');
     this.ariaSays(ARIA_PUZZLE_LINES.relayDone);
   }
+
+  _createRingPuzzleUI() {
+  const btn = document.createElement('button');
+  btn.textContent = '✕ Close (E)';
+  Object.assign(btn.style, {
+    position: 'fixed', top: '20px', right: '20px', zIndex: 10, display: 'none',
+    padding: '8px 14px', background: '#0b1a22', color: '#66ddff',
+    border: '1px solid #66ddff', borderRadius: '6px', cursor: 'pointer',
+    font: '14px monospace',
+  });
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation(); // must not count as a ring click
+    this.exitRingPuzzle();
+  });
+  document.body.appendChild(btn);
+  this.ringCloseBtn = btn;
+}
+
+enterRingPuzzle() {
+  const puzzle = this.currentLevel.ringPuzzle;
+  if (this.state !== 'PLAYING' || !puzzle || puzzle.solved) return;
+
+  const cam = this.camera.instance;
+  this.state = 'RING_PUZZLE';
+  document.exitPointerLock?.();
+  this.reticle.classList.remove('visible');
+  this.controls.stop();
+  this.ui.hideToast();
+  this.ringCloseBtn.style.display = 'block';
+  this.savedCam = { pos: cam.position.clone(), quat: cam.quaternion.clone() };
+
+  // Stand in front of the dials, far enough back that the whole panel fits
+  const hub = puzzle.hub;
+  const center = hub.getWorldPosition(new THREE.Vector3());
+  const normal = new THREE.Vector3(0, 0, 1)
+    .applyQuaternion(hub.getWorldQuaternion(new THREE.Quaternion()));
+  const size = puzzle.panel.geometry.parameters.height * hub.scale.y;
+  const dist = (size * 1.3) / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
+
+  const toPos = center.clone().addScaledVector(normal, dist);
+  const m = new THREE.Matrix4().lookAt(toPos, center, new THREE.Vector3(0, 1, 0));
+  const toQuat = new THREE.Quaternion().setFromRotationMatrix(m);
+  this._startCamAnim(toPos, toQuat, null);
+}
+
+exitRingPuzzle({ relock = true } = {}) {
+  if (this.state !== 'RING_PUZZLE' || !this.savedCam || this._leavingRingPuzzle) return;
+  this._leavingRingPuzzle = true;
+  this.ringCloseBtn.style.display = 'none';
+  document.body.style.cursor = 'default';
+
+  const { pos, quat } = this.savedCam;
+  this._startCamAnim(pos, quat, () => {
+    this.savedCam = null;
+    this._leavingRingPuzzle = false;
+    this.controls.instance.enabled = true;
+    this.reticle.classList.add('visible');
+    this.state = 'PLAYING';
+    if (relock) {
+      try { this.controls.lock(); } catch (e) { /* the first click re-locks */ }
+    }
+  });
+}
+
+_startCamAnim(toPos, toQuat, onDone) {
+  const cam = this.camera.instance;
+  this.camAnim = {
+    t: 0, duration: 0.6,
+    fromPos: cam.position.clone(), toPos: toPos.clone(),
+    fromQuat: cam.quaternion.clone(), toQuat: toQuat.clone(),
+    onDone,
+  };
+}
+
+updateCamAnim(delta) {
+  const a = this.camAnim;
+  if (!a) return;
+  a.t = Math.min(a.t + delta / a.duration, 1);
+  const e = a.t * a.t * (3 - 2 * a.t); // smoothstep
+  const cam = this.camera.instance;
+  cam.position.lerpVectors(a.fromPos, a.toPos, e);
+  cam.quaternion.copy(a.fromQuat).slerp(a.toQuat, e);
+  if (a.t >= 1) {
+    this.camAnim = null;
+    a.onDone?.();
+  }
+}
+
+updateRingPuzzleHover() {
+  const puzzle = this.currentLevel.ringPuzzle;
+  if (!puzzle || this.camAnim) return;
+  this.raycaster.setFromCamera(this.mouse, this.camera.instance);
+  const hit = this.raycaster.intersectObjects(puzzle.ringMeshes, true)[0];
+  document.body.style.cursor = hit ? 'pointer' : 'default';
+}
+
+onRingPuzzleClick(event) {
+  const puzzle = this.currentLevel.ringPuzzle;
+  if (!puzzle || this.camAnim || puzzle.solved) return;
+  this.mouse.set(
+    (event.clientX / window.innerWidth) * 2 - 1,
+    -(event.clientY / window.innerHeight) * 2 + 1
+  );
+  this.raycaster.setFromCamera(this.mouse, this.camera.instance);
+  const hit = this.raycaster.intersectObjects(puzzle.ringMeshes, true)[0];
+  if (hit && puzzle.handleClick(hit.object)) this.audio.clunk();
+}
+
+async onRingPuzzleSolved() {
+  this.player.puzzlesSolved++;   // remove if you don't want this counted in the stats
+  this.audio.success();
+  await sleep(1200);             // let the green ticks show
+  this.exitRingPuzzle();
+  this.ui.showToast('Panel repaired. The wall monitor is coming back online.');
+}
 
 }

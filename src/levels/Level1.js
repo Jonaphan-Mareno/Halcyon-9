@@ -3,6 +3,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { Shaders } from "../graphics/Shaders";
 import { AriaManager } from "../entities/AriaManager.js";
 import { Sparks } from "../effects/Sparks.js";
+import { RingPuzzle } from "../entities/RingPuzzle.js";
 
 // Must match MAX_LIGHTS in Shaders.js (the room's 8 lights + the flashlight)
 const MAX_LIGHTS = 9;
@@ -41,6 +42,11 @@ export class Level1{
     this.shaderMaterials = []
     this.lights = [];
     this.LightsPuzzle = [];
+
+    this.ringPuzzle = null;          // the wall panel puzzle (RingPuzzle)
+    this.ringPuzzleSolved = false;   // ARIA stays off until this is true
+    this.onOpenRingPuzzle = null;    // set by the Game: zooms in on the panel
+    this.onRingPuzzleSolved = null;  // set by the Game
 
     // Clickable things in range: the generator pad, ARIA's wall monitor and
     // the torch. Built after the models load (the Game reads it every frame).
@@ -295,6 +301,7 @@ export class Level1{
       this._measureGenerator();
       if (this.wallMonitor) new THREE.Box3().setFromObject(this.wallMonitor).getCenter(this._monitorCentre);
       this._pickFlickeringLights();
+      try { this._buildRingPuzzle(); } catch (e) { console.error('Ring puzzle failed to build:', e); }
       this._rebuildInteractables();
       this._loadTorch();
       this._buildRelay();
@@ -384,12 +391,40 @@ export class Level1{
     }
   }
 
+  _buildRingPuzzle() {
+  this.ringPuzzle = new RingPuzzle(this.scene, {
+    targets: [2, 5, 1],
+    coupling: 'oneWay',
+    onSolved: () => this.onRingPuzzleComplete(),
+  });
+  this.ringPuzzle.hub.position.set(-0.147, 1.701, -3.535);
+  this.ringPuzzle.hub.rotation.y = 1.571;
+  this.ringPuzzle.hub.scale.setScalar(0.092);
+}
+
+_isRingPuzzlePart(object) {
+  if (this.LightsPuzzle.includes(object)) return true;
+  for (let o = object; o; o = o.parent) {
+    if (o === this.ringPuzzle?.hub) return true;
+  }
+  return false;
+}
+
+onRingPuzzleComplete() {
+  if (this.ringPuzzleSolved) return;
+  this.ringPuzzleSolved = true;
+  this._rebuildInteractables();
+  this.ariaManager?.activate();
+  this.onRingPuzzleSolved?.();
+}
+
   _rebuildInteractables() {
     this._interactables = [...this.LightsPuzzle];
     if (this.wallMonitor) this._interactables.push(this.wallMonitor);
     this._interactables.push(...this.generatorParts);
     if (this.relay) this._interactables.push(this.relay.root);
     if (this.torch && !this.hasTorch) this._interactables.push(this.torch);
+    if (this.ringPuzzle) this._interactables.push(this.ringPuzzle.hub);
   }
 
   _isGeneratorPart(object) {
@@ -409,12 +444,13 @@ export class Level1{
   dispose() {
     this.ariaManager?.dispose();
     this.sparks.dispose();
-    for (const object of [this.room, this.torch, this.relay?.root]) {
+    for (const object of [this.room, this.torch, this.relay?.root, this.ringPuzzle?.hub]) {
       if (!object) continue;
       object.traverse((o) => o.geometry?.dispose?.());
       this.scene.remove(object);
     }
     for (const material of this.shaderMaterials) material.dispose();
+    
     this.shaderMaterials.length = 0;
     this.lights.length = 0;
     this._interactables.length = 0;
@@ -433,13 +469,21 @@ export class Level1{
   static TORCH_RANGE = 4.5;
   static GENERATOR_RANGE = 5.5;
   static RELAY_RANGE = 6.5;
+  static RING_PANEL_RANGE = 5;
 
   // Text for the on-screen prompt while looking at an object, or null for none.
   // The torch and the generator stay locked until the player has talked to ARIA.
   getInteractPrompt(object, distance) {
     if (object === this.wallMonitor) {
-      return this.canInteract(object, distance) ? 'Click or press E to talk to ARIA' : null;
-    }
+  if (!this.ringPuzzleSolved) {
+    return distance <= Level1.MONITOR_RANGE ? 'The monitor is dead. No power' : null;
+  }
+  return this.canInteract(object, distance) ? 'Click or press E to talk to ARIA' : null;
+  }
+  if (this._isRingPuzzlePart(object)) {
+    if (distance > Level1.RING_PANEL_RANGE || this.ringPuzzleSolved) return null;
+    return 'Click or press E to inspect the panel';
+  }
     const torch = this._isTorchPart(object);
     const generator = this._isGeneratorPart(object);
     if (torch || generator) {
@@ -464,6 +508,9 @@ export class Level1{
     if (object === this.wallMonitor) {
       return this.talkEnabled && distance <= Level1.MONITOR_RANGE;
     }
+    if (this._isRingPuzzlePart(object)) {
+      return !this.ringPuzzleSolved && distance <= Level1.RING_PANEL_RANGE;
+    }
     if (this._isTorchPart(object)) {
       return !this.hasTorch && distance <= Level1.TORCH_RANGE;
     }
@@ -478,7 +525,15 @@ export class Level1{
 
   onInteract(object, options = {}) {
     if (object === this.wallMonitor) {
-      this.onTalkToAria?.();
+  if (!this.ringPuzzleSolved) {
+    this.onLockedHint?.('The monitor is dead. Something on the wall panel controls its power.');
+    return;
+  }
+  this.onTalkToAria?.();
+      return;
+    }
+    if (this._isRingPuzzlePart(object)) {
+      if (!this.ringPuzzleSolved) this.onOpenRingPuzzle?.();
       return;
     }
     if (this._isTorchPart(object)) {
@@ -510,15 +565,15 @@ export class Level1{
       }
       return;
     }
-    if (this.LightsPuzzle.includes(object)) {
-      console.log("You clicked on one of the puzzle fixtures", object.name);
-    }
   }
 
   // What the on-screen waypoint should point at right now (or null)
   getWaypoint() {
     const w = this._waypoint;
-    if (this.talkEnabled) {
+    if (!this.ringPuzzleSolved && this.ringPuzzle) {
+      w.position.copy(this.ringPuzzle.hub.position);
+      w.label = 'Panel';
+    } else if (this.talkEnabled) {
       w.position.copy(this._monitorCentre);
       w.label = 'ARIA';
     } else if (this.torch && !this.hasTorch) {
@@ -867,6 +922,7 @@ export class Level1{
 
     this._updateGenerator(delta);
     this._updateRelay(delta);
+    this.ringPuzzle?.update(delta);
 
     const flash = this.flashlightOn && camera;
     const roomCount = Math.min(this.lights.length, MAX_LIGHTS - 1);

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { createHubTextures, applyHubMaterials, hubTime } from '../graphics/HubMaterials.js';
 
 // Level 2 ("Logs"): the cargo atrium of the deep-sea station. A huge circular hall
 // with a glowing core, three tiers of catwalks, three sealed crew quarters and the
@@ -60,6 +61,12 @@ export class Level2 {
     }
 
     this._tameMaterials(hub);
+    this.textures = createHubTextures();
+    applyHubMaterials(hub, this.textures);
+    this.halos = [
+      { node: hub.getObjectByName('FX_CoreHalo20'), speed: 0.35 },
+      { node: hub.getObjectByName('FX_CoreHalo25'), speed: -0.22 }
+    ].filter((h) => h.node);
     this._setUpElevator(hub);
     for (const letter of ['A', 'B', 'C']) {
       const node = hub.getObjectByName(`TAPE_${letter}`);
@@ -225,6 +232,8 @@ export class Level2 {
   }
 
   update(delta) {
+    hubTime.value += delta;                                 // drives the flowing light in the shaders
+    for (const h of this.halos || []) h.node.rotation.y += h.speed * delta;
     if (this.elevatorOpening && this.elevatorOpen < 1) {
       this.elevatorOpen = Math.min(1, this.elevatorOpen + delta / 1.8);
       const t = this.elevatorOpen * this.elevatorOpen * (3 - 2 * this.elevatorOpen);
@@ -257,6 +266,10 @@ export class Level2 {
         m.dispose();
       }
     });
+    for (const set of Object.values(this.textures || {})) {
+      set.albedo.dispose();
+      set.height.dispose();
+    }
     this.scene.environment = null;
     this.scene.remove(this.root);
   }

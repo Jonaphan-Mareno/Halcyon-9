@@ -4,6 +4,10 @@ import { PlayerController } from '../player/PlayerController.js';
 import { HUD } from '../ui/HUD.js';
 import { Inventory, ITEMS } from '../ui/Inventory.js';
 import { ItemPreview } from '../ui/ItemPreview.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { Physics } from '../core/Physics.js';
 import { Machine, MACHINE_TYPES } from '../entities/Machine.js';
 import { Level2, polar, angleOf } from './Level2.js';
@@ -111,6 +115,8 @@ export class Level2Session {
     this.flashlight.intensity = 60;
     this.flashlight.visible = true;
 
+    this._setUpBloom();
+
     this.level = new Level2(game.scene);
     game.currentLevel = this.level;
     this.controls = new PlayerController(camera, document.body, game.scene);
@@ -151,6 +157,24 @@ export class Level2Session {
       this.ready = true;
       this.game.ui.showToast('WASD move, Shift run, Space jump, V switches view, F torch, I inventory, E interact.', 8000);
     }).catch((e) => console.error('Level 2 failed to load.', e));
+  }
+
+  // Bright lights glow: the scene is drawn into a high-range buffer, the brightest parts are
+  // blurred and added back (bloom), then filmic tone mapping brings it to the screen
+  _setUpBloom() {
+    const r = this.game.renderer;
+    const webgl = r.instance;
+    webgl.toneMapping = THREE.ACESFilmicToneMapping;
+    webgl.toneMappingExposure = 0.85;
+    const size = new THREE.Vector2();
+    webgl.getSize(size);
+    this.composer = new EffectComposer(webgl);
+    this.composer.addPass(new RenderPass(this.game.scene, this.game.camera.instance));
+    this.bloom = new UnrealBloomPass(size.clone(), 0.22, 0.4, 1.1); // strength, radius, threshold
+    this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
+    r.render = () => this.composer.render();
+    window.addEventListener('resize', () => this.composer.setSize(window.innerWidth, window.innerHeight));
   }
 
   // ---------------------------------------------------------

@@ -87,6 +87,7 @@ mat('floor_dark', (0.085, 0.095, 0.115), 0.45, 0.55)
 mat('trim', (0.22, 0.26, 0.31), 0.45, 0.7)
 mat('blue_glow', (0.1, 0.4, 0.9), 0.4, 0, (0.15, 0.55, 1.0), 3.2)
 mat('white_glow', (0.8, 0.9, 1.0), 0.4, 0, (0.8, 0.9, 1.0), 5.0)
+mat('core_energy', (0.2, 0.8, 1.0), 0.3, 0, (0.25, 0.85, 1.0), 6.0)
 mat('door_a_glow', (0.1, 0.9, 1.0), 0.4, 0, (0.15, 0.95, 1.0), 4.0)
 mat('door_b_glow', (0.55, 0.8, 1.0), 0.4, 0, (0.7, 0.88, 1.0), 4.0)
 mat('door_c_glow', (0.45, 0.3, 1.0), 0.4, 0, (0.5, 0.35, 1.0), 4.0)
@@ -342,11 +343,34 @@ for k in range(6):
 for z in range(3, 32, 4):
     cyl(core, 'hull_mid', (0, 0, z), 2.3, 0.35, 32)
     cyl(core, 'blue_glow', (0, 0, z), 2.34, 0.08, 32)
-for z in (20.0, 25.0):
-    arc(core, 'hull_mid', 4.0, 7.0, 0, 360, z, z + 0.6, step=6)
-    arc(core, 'blue_glow', 4.0, 4.14, 0, 360, z + 0.5, z + 0.68, step=6)
-    for a in (0, 90, 180, 270):
+for a in (0, 90, 180, 270):  # struts that hold the halos to the column
+    for z in (20.0, 25.0):
         rbox(core, 'hull_dark', 2.9, a, z + 0.3, 2.2, 0.4, 0.4)
+
+# Two halos the game spins in opposite directions (FX_ objects are visual only: no collider).
+# Each is a ring of armoured segments with a glowing inner edge and light blocks between them.
+for name, z, seg in (('FX_CoreHalo20', 20.0, 12), ('FX_CoreHalo25', 25.0, 8)):
+    halo = A(name)
+    step = 360.0 / seg
+    for k in range(seg):
+        a0 = k * step
+        arc(halo, 'hull_mid', 4.0, 7.0, a0 + 2.0, a0 + step - 2.0, z, z + 0.6, step=4)
+        arc(halo, 'hull_dark', 4.6, 6.4, a0 + 4.0, a0 + step - 4.0, z + 0.6, z + 0.78, step=4)
+        rbox(halo, 'blue_glow', 7.0, a0 + step / 2, z + 0.3, 0.12, 1.4, 0.16)       # outer lamp
+    arc(halo, 'blue_glow', 3.96, 4.1, 0, 360, z + 0.12, z + 0.5, step=6)           # inner edge
+    arc(halo, 'blue_glow', 4.0, 4.14, 0, 360, z + 0.5, z + 0.68, step=6)
+
+# Energy conduits climbing the column, and a bright crown
+cond = A('FX_CoreConduits')
+for k in range(8):
+    a = k * 45 + 22.5
+    p = P(2.62, a, 0)
+    cyl(cond, 'core_energy', (p.x, p.y, 15.5), 0.09, 28.0, 8)
+    for z in range(4, 30, 6):
+        p2 = P(2.62, a, z)
+        cyl(cond, 'hull_dark', (p2.x, p2.y, z), 0.2, 0.5, 8)
+cyl(cond, 'core_energy', (0, 0, 31.2), 2.0, 0.5, 32)
+cyl(cond, 'core_energy', (0, 0, 1.72), 5.34, 0.05, 48)
 
 lift = A('LIFT_Level3')
 cyl(lift, 'hull_light', (0, 0, Z2 - 0.25), 5.0, 0.5, 48)

@@ -81,7 +81,7 @@ export class PlayerController {
     const kcc = physics.world.createCharacterController(0.02);
     kcc.setUp({ x: 0, y: 1, z: 0 });
     kcc.setSlideEnabled(true);
-    kcc.enableAutostep(0.45, 0.15, false);       // walks up stair treads
+    kcc.enableAutostep(0.62, 0.15, false);       // walks up stair treads and low ledges (0.5 m) without jumping
     kcc.enableSnapToGround(0.35);                // stays glued to stairs and ramps going down
     kcc.setMaxSlopeClimbAngle((55 * Math.PI) / 180);
     this.kcc = kcc;
@@ -95,6 +95,7 @@ export class PlayerController {
 
   teleport(p) {
     this.position.copy(p);
+    this.renderY = null;
     this.lastSafe.copy(p);
     this.velocity.set(0, 0, 0);
     this.body_rb.setTranslation({ x: p.x, y: p.y + HEIGHT / 2, z: p.z }, true);
@@ -228,19 +229,27 @@ export class PlayerController {
       d = Math.atan2(Math.sin(d), Math.cos(d));
       this.facing += d * (1 - Math.exp(-12 * dt));
     }
-    this.body.position.copy(this.position);
+    // Stepping up a ledge or stair happens in one physics frame; the body and camera ease up
+    // to the new height instead, so it reads as a smooth walk up
+    if (this.renderY === null || this.renderY === undefined || Math.abs(this.position.y - this.renderY) > 1.0) {
+      this.renderY = this.position.y;
+    } else {
+      this.renderY += (this.position.y - this.renderY) * (1 - Math.exp(-16 * dt));
+    }
+    const baseY = this.renderY;
+    this.body.position.set(this.position.x, baseY, this.position.z);
     this.body.rotation.y = this.facing;
 
     const cam = this.camera;
     if (!third) {
-      cam.position.set(this.position.x, this.position.y + EYE, this.position.z);
+      cam.position.set(this.position.x, baseY + EYE, this.position.z);
       return;
     }
 
     // Behind and slightly over the right shoulder. A ray from the player keeps the camera
     // from pushing through walls: it moves in at once and eases back out.
     cam.getWorldDirection(this._camDir);
-    this._pivot.set(this.position.x, this.position.y + EYE + 0.15, this.position.z);
+    this._pivot.set(this.position.x, baseY + EYE + 0.15, this.position.z);
     this._pivot.addScaledVector(this._right.set(Math.cos(cam.rotation.y), 0, -Math.sin(cam.rotation.y)), 0.45);
 
     const back = this._camDir.clone().negate();

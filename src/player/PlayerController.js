@@ -252,7 +252,7 @@ export class PlayerController {
     this._pivot.set(this.position.x, baseY + EYE + 0.15, this.position.z);
     this._pivot.addScaledVector(this._right.set(Math.cos(cam.rotation.y), 0, -Math.sin(cam.rotation.y)), 0.45);
 
-    const back = this._camDir.clone().negate();
+    const back = this._camDir.negate();
     const hit = this.physics.castRay(this._pivot, back, THIRD_PERSON_DISTANCE + 0.3);
     const allowed = hit === null ? THIRD_PERSON_DISTANCE : Math.max(0.5, hit - 0.3);
     this._camDistance = allowed < this._camDistance

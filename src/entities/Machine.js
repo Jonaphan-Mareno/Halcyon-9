@@ -34,9 +34,12 @@ export class Machine {
 
     this.group = new THREE.Group();
     this.eyeMat = new THREE.MeshBasicMaterial({ color: CALM });
-    this.light = new THREE.PointLight(CALM, 30, 14, 2);
+    // No real light: a point light per machine would make every surface's shader heavier.
+    // The glowing eye (and the bloom around it) carries the colour instead.
+    this.light = { color: new THREE.Color(CALM), intensity: 0 };
+    this._to = new THREE.Vector3();
+    this._look = new THREE.Vector3();
     this._build();
-    this.group.add(this.light);
 
     this.reset();
   }
@@ -169,7 +172,7 @@ export class Machine {
     switch (this.state) {
       case 'PATROL': {
         const target = this.path[this.idx];
-        const to = new THREE.Vector3(target.x - p.x, 0, target.z - p.z);
+        const to = this._to.set(target.x - p.x, 0, target.z - p.z);
         const dist = to.length();
         if (dist < 0.25) {
           this.idx = (this.idx + 1) % this.path.length;
@@ -190,12 +193,12 @@ export class Machine {
       }
       case 'ALERT': {
         // The telegraph: stops, turns to face the player, light flickers red
-        this._face(new THREE.Vector3(dx, 0, dz), dt * 2);
+        this._face(this._look.set(dx, 0, dz), dt * 2);
         this.timer -= dt;
-        this.light.intensity = 60 + 50 * Math.abs(Math.sin(this.timer * 18));
+        this.eyeMat.color.setHex(Math.sin(this.timer * 18) > 0 ? ALERT : 0x661010);
         if (this.timer <= 0) {
           // The lunge goes where the player WAS, so moving aside beats it
-          this.lungeDir = new THREE.Vector3(dx, 0, dz).normalize();
+          (this.lungeDir ||= new THREE.Vector3()).set(dx, 0, dz).normalize();
           this.state = 'LUNGE';
           this.timer = spec.lungeTime;
           this.hitDone = false;

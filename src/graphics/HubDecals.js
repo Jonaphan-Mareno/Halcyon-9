@@ -80,7 +80,9 @@ function floorDecal() {
   for (const z of [-16, -20, -24, -28]) chevron(0, z);
 
   // Words painted on the floor, readable looking outward from the core
+  const patches = [];
   const word = (text, r, a, size, color, inward = false) => {
+    patches.push({ r, a, w: text.length * size * 0.72 + 1.2, h: size + 0.9, rot: Math.PI / 2 - (a * Math.PI) / 180 + (inward ? Math.PI : 0) });
     const p = polar(r, a);
     const q = W(p);
     ctx.save();
@@ -108,8 +110,36 @@ function floorDecal() {
     map: tex, transparent: true, roughness: 0.75, metalness: 0.1,
     depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
   });
-  const geo = new THREE.PlaneGeometry(FLOOR_SIZE, FLOOR_SIZE);
-  geo.rotateX(-Math.PI / 2);
+  // Only the painted parts of the floor are drawn (the ring, the two lanes and each word), not
+  // a 68 m transparent sheet: a full sheet would re-light every floor pixel a second time.
+  const pieces = [];
+  const ringGeo = new THREE.RingGeometry(12.0, 13.05, 96, 1);
+  ringGeo.rotateX(-Math.PI / 2);
+  pieces.push(ringGeo);
+  for (const [z0, z1] of [[12.4, 33.2], [-31.2, -12.4]]) {
+    const lane = new THREE.PlaneGeometry(5.2, z1 - z0);
+    lane.rotateX(-Math.PI / 2);
+    lane.translate(0, 0, (z0 + z1) / 2);
+    pieces.push(lane);
+  }
+  for (const p of patches) {
+    const q = new THREE.PlaneGeometry(p.w, p.h);
+    q.rotateX(-Math.PI / 2);
+    q.rotateY(-p.rot);
+    const c = polar(p.r, p.a);
+    q.translate(c.x, 0, c.z);
+    pieces.push(q);
+  }
+  // Every piece samples the one top-down texture by its position on the floor
+  for (const g of pieces) {
+    const pos = g.attributes.position;
+    const uv = g.attributes.uv;
+    for (let i = 0; i < pos.count; i++) {
+      uv.setXY(i, (pos.getX(i) + FLOOR_SIZE / 2) / FLOOR_SIZE, 1 - (pos.getZ(i) + FLOOR_SIZE / 2) / FLOOR_SIZE);
+    }
+  }
+  const geo = mergeGeometries(pieces);
+  pieces.forEach((g) => g.dispose());
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.y = 0.008;
   mesh.renderOrder = 1;

@@ -112,8 +112,9 @@ export class Level2Session {
     camera.updateProjectionMatrix();
     this.flashlight = game.camera.flashlight;
     this.flashlight.castShadow = false;
-    this.flashlight.intensity = 35;
     this.flashlight.visible = true;
+    this.torchOn = true;
+    this.flashlight.intensity = 35;   // the HUD does not exist yet; _setTorch is used from here on
 
     this._setUpBloom();
 
@@ -135,7 +136,7 @@ export class Level2Session {
     this.preview.load().catch((e) => console.warn('Torch preview failed to load.', e));
     this.inventory.add('torch');
     this.hud.setTorch(true, true);
-    this.inventory.statusFor.torch = () => (this.flashlight.visible ? 'ON' : 'OFF');
+    this.inventory.statusFor.torch = () => (this.torchOn ? 'ON' : 'OFF');
 
     this._buildDom();
 
@@ -154,7 +155,9 @@ export class Level2Session {
       await this.level.load(physics, game.renderer.instance);
       this.controls.attach(physics, this.level.spawn, this.level.spawnYaw);
       this._buildWorld();
+      await this._precompile();
       this.ready = true;
+      this.loadingEl.classList.remove('visible');
       this.game.ui.showToast('WASD move, Shift run, Space jump, V switches view, F torch, I inventory, E interact.', 8000);
     }).catch((e) => console.error('Level 2 failed to load.', e));
   }
@@ -170,6 +173,7 @@ export class Level2Session {
     webgl.getSize(size);
     // The composer draws into its own buffer, which has no anti-aliasing unless asked for:
     // 4x multisampling here is what keeps edges smooth instead of stair-stepped and shimmery
+    webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     const pr = webgl.getPixelRatio();
     const target = new THREE.WebGLRenderTarget(size.x * pr, size.y * pr, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(webgl, target);
@@ -179,6 +183,57 @@ export class Level2Session {
     this.composer.addPass(new OutputPass());
     r.render = () => this.composer.render();
     window.addEventListener('resize', () => this.composer.setSize(window.innerWidth, window.innerHeight));
+  }
+
+  _podAt(angle) {
+    const d = (x, y) => Math.abs(((x - y + 540) % 360) - 180);
+    if (d(angle, 90) < 12) return 'A';
+    if (d(angle, 200) < 12) return 'B';
+    if (d(angle, 320) < 12) return 'C';
+    return null;
+  }
+
+  // Lab and laptop GPUs vary a lot. Watch the real frame time for the first stretch of play; if
+  // the game runs below about 45 fps, draw at a lower resolution (the HUD stays sharp, it is HTML).
+  _autoQuality(delta) {
+    if (this._qualityDone) return;
+    this._qSum = (this._qSum || 0) + delta;
+    this._qFrames = (this._qFrames || 0) + 1;
+    if (this._qSum < 4) return;
+    const avg = this._qSum / this._qFrames;
+    this._qSum = 0;
+    this._qFrames = 0;
+    const webgl = this.game.renderer.instance;
+    const pr = webgl.getPixelRatio();
+    if (avg > 1 / 45 && pr > 0.6) {
+      const next = Math.max(0.6, +(pr * 0.8).toFixed(2));
+      webgl.setPixelRatio(next);
+      this.composer.setPixelRatio(next);
+      this.composer.setSize(window.innerWidth, window.innerHeight);
+      console.info(`Level 2: running at ${(1 / avg).toFixed(0)} fps, render scale lowered to ${next}`);
+    } else {
+      this._qualityDone = true;
+    }
+  }
+
+  // The torch never leaves the scene: switching it by brightness keeps the light count fixed
+  _setTorch(on) {
+    this.torchOn = on;
+    this.flashlight.intensity = on ? 35 : 0;
+    this.hud.setTorch(true, on);
+  }
+
+  // Every material compiles its shader the first time it is drawn. Left alone, that happens
+  // while the player walks around and each new thing that comes into view freezes a frame.
+  // Compile them all now, while the loading screen is up, and draw the glow passes once.
+  async _precompile() {
+    const webgl = this.game.renderer.instance;
+    try {
+      await webgl.compileAsync(this.game.scene, this.game.camera.instance);
+    } catch (e) {
+      webgl.compile(this.game.scene, this.game.camera.instance);
+    }
+    this.composer.render();
   }
 
   // ---------------------------------------------------------
@@ -193,6 +248,8 @@ export class Level2Session {
       return el;
     };
     this.tag = mk('level-tag', 'LEVEL 2  ·  CARGO ATRIUM');
+    this.loadingEl = mk('level-loading', '<div class="loading-title">LEVEL 2</div><div class="loading-sub">Pressurising the cargo atrium...</div><div class="loading-bar"><div></div></div>');
+    this.loadingEl.classList.add('visible');
     this.noSignal = mk('no-signal', 'NO SIGNAL');
     this.holdBar = mk('hold-bar', '<div id="hold-fill"></div>');
     this.holdFill = this.holdBar.querySelector('#hold-fill');
@@ -318,8 +375,7 @@ export class Level2Session {
   }
 
   _toggleFlashlight() {
-    this.flashlight.visible = !this.flashlight.visible;
-    this.hud.setTorch(true, this.flashlight.visible);
+    this._setTorch(!this.torchOn);
   }
 
   openInventory() {
@@ -524,8 +580,7 @@ export class Level2Session {
     this.player.reset();
     this.inventory.reset();
     this.inventory.add('torch');
-    this.flashlight.visible = true;
-    this.hud.setTorch(true, true);
+    this._setTorch(true);
 
     this.level.resetWorld();
     for (const room of this.rooms) {
@@ -626,9 +681,10 @@ export class Level2Session {
     const live = playing || g.state === 'WAKING' || g.state === 'INVENTORY' || g.state === 'TAPE';
     if (live) this.controls.update(delta, playing);
     if (playing) this.level.openElevator();
-    this.level.update(delta);
+    this.level.update(delta, this.game.camera.instance);
     if (this.invuln > 0) this.invuln -= delta;
     if (live && g.state !== 'WAKING') this.player.playSeconds += delta;
+    if (playing) this._autoQuality(delta);
 
     // HUD and the live 3D torch in its slot
     this.hud.setVisible(g.state !== 'INIT' && g.state !== 'GAME_OVER');
@@ -637,7 +693,7 @@ export class Level2Session {
     if (this.preview.ready) {
       const targets = [this.hud.torchCanvas];
       if (this.inventory.open && this.inventory.torchCanvas) targets.push(this.inventory.torchCanvas);
-      this.preview.draw(targets, delta, this.flashlight.visible);
+      this.preview.draw(targets, delta, this.torchOn);
     }
 
     // Bedrooms are out of reach of the camera network: first person only, and no signal
@@ -657,6 +713,7 @@ export class Level2Session {
         this.controls.setView(this.prevView);
       }
       this.noSignal.classList.toggle('visible', inPod);
+      this.level.lightQuarters(inPod ? this._podAt(a) : null);
     }
 
     if (!playing) {

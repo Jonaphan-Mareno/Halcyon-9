@@ -261,14 +261,22 @@ export class DeepSeaWindow {
 
     this.time = 0;
     this._acc = 0;
+    this._frustum = new THREE.Frustum();
+    this._viewProj = new THREE.Matrix4();
     this.draw(0);
   }
 
-  update(delta) {
+  update(delta, camera = null) {
     this.time += delta;
     this._acc += delta;
     if (this._acc < 1 / 20) return;   // 20 frames a second is plenty for slow swimmers
     this._acc = 0;
+    // Redrawing and re-uploading the picture costs time, so skip it while the window is off screen
+    if (camera) {
+      this._viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      this._frustum.setFromProjectionMatrix(this._viewProj);
+      if (!this._frustum.intersectsObject(this.mesh)) return;
+    }
     this.draw(this.time);
     this.texture.needsUpdate = true;
   }

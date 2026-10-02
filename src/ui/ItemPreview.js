@@ -14,6 +14,9 @@ export class ItemPreview {
     this.ready = false;
     this.time = 0;
     this.lens = null;
+    this._acc = 1;
+    this._litColor = new THREE.Color(0xffe2a0);
+    this._offColor = new THREE.Color(0x000000);
 
     this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
     this.renderer.setSize(SIZE, SIZE);
@@ -68,10 +71,16 @@ export class ItemPreview {
   draw(targets, delta, lit = false) {
     if (!this.ready || !targets.length) return;
     this.time += delta;
+    // A slow turntable looks the same at 15 frames a second, and copying a WebGL canvas into a
+    // 2D one is not free: skip the in-between frames
+    this._acc += delta;
+    if (this._acc < 1 / 15 && this._lastTargets === targets.length) return;
+    this._acc = 0;
+    this._lastTargets = targets.length;
     this.turntable.rotation.y = this.time * 0.9;
     if (this.lens) {
       // The lens glows warm while the torch is switched on
-      this.lens.emissive = new THREE.Color(lit ? 0xffe2a0 : 0x000000);
+      this.lens.emissive.copy(lit ? this._litColor : this._offColor);
       this.lens.emissiveIntensity = lit ? 1.6 : 0;
     }
     this.renderer.render(this.scene, this.camera);

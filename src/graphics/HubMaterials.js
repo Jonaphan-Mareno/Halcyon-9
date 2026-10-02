@@ -284,7 +284,11 @@ function texturedMaterial(source, spec, textures) {
         uniform float uTile;
         uniform float uBump;
         vec4 triSample(sampler2D t, vec3 p, vec3 w) {
-          return texture2D(t, p.zy) * w.x + texture2D(t, p.xz) * w.y + texture2D(t, p.xy) * w.z;
+          vec4 c = vec4(0.0);
+          if (w.x > 0.02) c += texture2D(t, p.zy) * w.x;
+          if (w.y > 0.02) c += texture2D(t, p.xz) * w.y;
+          if (w.z > 0.02) c += texture2D(t, p.xy) * w.z;
+          return c;
         }
         // Bends the normal by the slope of the height map (as three.js's own bump mapping does)
         vec3 triPerturb(vec3 surfPos, vec3 surfNorm, vec2 dHdxy, float faceDir) {
@@ -298,6 +302,7 @@ function texturedMaterial(source, spec, textures) {
         }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         vec3 triW = pow(abs(normalize(vTriNrm)), vec3(6.0));
+        triW = max(triW - 0.02, 0.0);
         triW /= (triW.x + triW.y + triW.z);
         vec3 triP = vTriPos / uTile;
         vec3 triAlb = triSample(uAlb, triP, triW).rgb;

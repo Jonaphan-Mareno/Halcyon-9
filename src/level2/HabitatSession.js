@@ -13,6 +13,7 @@ import { AriaManager } from '../entities/AriaManager.js';
 import { Organism } from './Organism.js';
 import { LabScreens } from './LabScreens.js';
 import { HoloScreens } from './HoloScreens.js';
+import { Sparks } from './Sparks.js';
 import '../ui/level2.css';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
@@ -85,7 +86,7 @@ export class HabitatSession {
     window.addEventListener('resize', () => this.composer.setSize(window.innerWidth, window.innerHeight));
     const pmrem = new THREE.PMREMGenerator(webgl);
     g.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    g.scene.environmentIntensity = 0.45;
+    g.scene.environmentIntensity = 0.32;
     pmrem.dispose();
     g.scene.background = new THREE.Color(0xdfe7ee);
     g.scene.fog = null;
@@ -164,11 +165,40 @@ export class HabitatSession {
     scene.add(this.sea.mesh);
 
     // soft, calm light (not glaring): a gentle sky light, the skylight panel, two fills, the lift
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x8c949c, 0.38));
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8c949c, 0.22));
     // daylight-like light from the skylight: even, no hot spot on the ceiling
-    const sky = new THREE.DirectionalLight(0xfaf6ee, 0.85);
+    // (the main light, so its shadows read; the sky light and reflections are the soft fill)
+    const sky = new THREE.DirectionalLight(0xfaf6ee, 1.9);
     sky.position.set(4, 20, 6);
+    // it casts the hall's shadows (pillars, gallery, furniture, the clutter on the floor), drawn
+    // once like the lab's. The ceiling and skylight do not block it.
+    sky.castShadow = true;
+    sky.shadow.mapSize.set(2048, 2048);
+    Object.assign(sky.shadow.camera, { left: -20, right: 20, top: 20, bottom: -20, near: 1, far: 50 });
+    sky.shadow.bias = -0.0005;
+    sky.shadow.normalBias = 0.03;
     scene.add(sky);
+    atrium.traverse((o) => {
+      if (!o.isMesh) return;
+      const base = o.name.replace(/_\d+$/, '');
+      const see = Array.isArray(o.material) ? o.material : [o.material];
+      if (see.some((m) => m.transparent)) return;            // glass casts no shadow
+      o.receiveShadow = true;
+      o.castShadow = !['Atrium_Ceiling', 'Atrium_Wall', 'Atrium_Floor'].includes(base);
+    });
+
+    // damaged wiring that sparks, and the dangling ceiling light that flickers with it
+    const sparkAt = [];
+    atrium.traverse((o) => { if (o.name.startsWith('PT_Sparks_')) sparkAt.push(o.getWorldPosition(new THREE.Vector3())); });
+    this.sparks = new Sparks(scene, sparkAt);
+    this.flickerMats = [];
+    atrium.traverse((o) => {
+      if (!o.isMesh) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        if (m.name === 'flicker_glow' && !this.flickerMats.includes(m)) this.flickerMats.push(m);
+      }
+    });
+    this.flicker = 0;
     for (const [x, y, z, intensity, dist] of [[10, 7, 6, 55, 30], [-10, 7, -6, 55, 30], [0, 3.2, 19.1, 10, 6]]) {
       const l = new THREE.PointLight(0xf4f9ff, intensity, dist, 2);
       l.position.set(x, y, z);
@@ -267,8 +297,9 @@ export class HabitatSession {
       if (!o.isMesh) return;
       // (meshes with several materials load as numbered parts, e.g. Lab_Furniture_3)
       const base = o.name.replace(/_\d+$/, '');
-      if (['Lab_Furniture', 'Lab_Clutter', 'Lab_Tubes'].includes(base)) o.castShadow = true;
-      if (['Lab_Room', 'Lab_Furniture', 'Lab_Clutter', 'Lab_Tubes'].includes(base)) o.receiveShadow = true;
+      const solid = ['Lab_Furniture', 'Lab_Clutter', 'Lab_Tubes', 'Lab_ChairFallen', 'Lab_ScopeFallen'].includes(base);
+      if (solid) o.castShadow = true;
+      if (solid || base === 'Lab_Room') o.receiveShadow = true;
     });
   }
 
@@ -306,6 +337,12 @@ export class HabitatSession {
     const surge = this.organism.surge;
     this.labScreens.update(dt, surge);
     this.holoScreens.update(dt, surge);
+    // sparks crackle from the damaged wiring; the dangling light stutters, cutting out on each crackle
+    this.sparks.update(dt);
+    if (this.sparks.burstNow) this.flicker = 0.35;
+    this.flicker = Math.max(0, this.flicker - dt);
+    const buzz = this.flicker > 0 ? (Math.random() < 0.5 ? 0.05 : 1.6) : (Math.random() < 0.015 ? 0.1 : 1.0);
+    for (const m of this.flickerMats) m.emissiveIntensity = buzz * 1.4;
     for (const m of this.gooMats) m.emissiveIntensity = 0.3 + 0.12 * Math.sin(this.organism.time * 2.3) + surge * 0.7;
     this.labLight.intensity = 140 + surge * 100;
     // ARIA idles on every screen (not AriaManager.update, which shows her on the nearest one only)

@@ -113,6 +113,14 @@ def local(c, rz, dx, dy, dz=0.0):
     return Vector((c[0] + dx * math.cos(a) - dy * math.sin(a), c[1] + dx * math.sin(a) + dy * math.cos(a), c[2] + dz))
 
 
+def knock_over(acc, pivot, axis, angle, floor):
+    """Tip everything in acc over about a horizontal axis through pivot, then rest it on floor."""
+    verts = acc.bm.verts[:]
+    bmesh.ops.rotate(acc.bm, verts=verts, cent=Vector(pivot), matrix=Matrix.Rotation(rad(angle), 3, Vector(axis)))
+    low = min(v.co.z for v in verts)
+    bmesh.ops.translate(acc.bm, vec=Vector((0, 0, floor - low)), verts=verts)
+
+
 # ------------------------------------------------------------------ the room shell
 box(room, 'floor_dark', (X0 - 0.3, 17.35, Z - 0.3), (X1 + 0.3, Y1 + 0.3, Z), col=True)
 box(room, 'lab_wall', (X0 - 0.3, 17.35, HL), (X1 + 0.3, Y1 + 0.3, HL + 0.3), col=True)
@@ -206,7 +214,7 @@ robot_arm(Vector((1.25, 24.55, Z)), Vector((1.2, 24.6, Z + 1.9)), Vector((0.85, 
 # ------------------------------------------------------------------ science kit (life-size and readable)
 def paper(c, rz, n=1):
     for k in range(n):
-        rbox(clut, 'paper', (c[0] + random.uniform(-0.04, 0.04), c[1] + random.uniform(-0.04, 0.04), c[2] + 0.002 + k * 0.002),
+        rbox(clut, 'paper', (c[0] + random.uniform(-0.04, 0.04), c[1] + random.uniform(-0.04, 0.04), c[2] + 0.01 + k * 0.004),
              (0.21, 0.297, 0.002), rz + random.uniform(-14, 14))
 
 
@@ -244,8 +252,9 @@ def tube_rack(c, rz):
         cyl(clut, random.choice(['liq_mint', 'liq_violet', 'liq_amber', 'liq_blue', 'liq_red']), (p.x, p.y, p.z + 0.08), 0.014, 0.13, 8)
 
 
-def microscope(c, rz):
+def microscope(c, rz, acc=None):
     """A big white microscope: base, curved arm, stage, turret, angled head with two eyepieces."""
+    clut = acc or globals()['clut']
     f = lambda dx, dy, dz: local(c, rz, dx, dy, dz)
     rbox(clut, 'smooth_white', tuple(f(0, 0, 0.035)), (0.3, 0.22, 0.07), rz)
     rbox(clut, 'soft_black', tuple(f(0.02, 0, 0.072)), (0.2, 0.16, 0.006), rz)
@@ -345,8 +354,9 @@ def pipette_stand(c):
         cyl(clut, 'lab_blue', (q[0], q[1], c[2] + 0.36), 0.02, 0.05, 8)
 
 
-def office_chair(c, rz, coat=False):
+def office_chair(c, rz, coat=False, acc=None):
     """A teal-blue lab chair on a black base (like the reference)."""
+    furn = acc or globals()['furn']
     p = Vector(c)
     for k in range(5):                                   # star base
         a = rad(rz + k * 72)
@@ -390,7 +400,11 @@ for x0, x1 in ((-4.4, -1.45), (1.45, 4.4)):
 
 # island A (left): biology - two big microscopes, test tubes, petri dishes, samples
 microscope((-3.85, 20.95, TZ), 90)
-microscope((-2.05, 21.05, TZ), 70)
+fallen_scope = A('Lab_ScopeFallen')                                                       # knocked onto its side
+microscope((-2.05, 21.1, TZ), 70, acc=fallen_scope)
+knock_over(fallen_scope, (-2.05, 21.1, TZ), (0, 1, 0), 95, TZ)
+for k in range(16):                                                                         # papers all over the floor
+    paper((random.uniform(-4.5, 4.5), random.uniform(18.6, 23.4), Z), random.uniform(0, 360))
 tube_rack((-3.05, 20.85, TZ), 0)
 petri_stack((-2.75, 21.5, TZ), 4)
 petri_stack((-2.55, 21.45, TZ), 2)
@@ -444,8 +458,14 @@ empty('PT_Holo_W_260_120_0', (X0 + 0.35, 19.9, Z + 2.2))
 
 # chairs: at the workstation, in front of both islands, and pushed back behind them
 office_chair((X0 + 1.55, 19.85, Z), 200)
-for x in (-3.6, -2.3, 2.3, 3.6):
+for x in (-3.6, -2.3, 2.3):
     office_chair((x, 19.95, Z), 90 + random.uniform(-25, 25))
+office_chair((0.6, 19.3, Z), 35)                                                         # rolled away into the aisle
+
+
+fallen_chair = A('Lab_ChairFallen')                                                      # a chair on its back
+office_chair((3.7, 19.6, Z), 80, acc=fallen_chair)
+knock_over(fallen_chair, (3.7, 19.6, Z), (1, 0, 0), 82, Z)
 office_chair((-3.1, 22.55, Z), 250, coat=True)
 office_chair((2.9, 22.6, Z), 300)
 
@@ -598,7 +618,7 @@ def broken_tube(c, k):
             v.co *= 1 + 0.22 * math.sin(3 * ang + ph1) + 0.12 * math.sin(5 * ang + ph2)
     bmesh.ops.scale(glow.bm, vec=(1.3, 0.85, 1), verts=verts)
     bmesh.ops.rotate(glow.bm, verts=verts, cent=(0, 0, 0), matrix=Matrix.Rotation(random.uniform(0, 6.28), 3, 'Z'))
-    bmesh.ops.translate(glow.bm, vec=p + Vector((0, 0, 0.004)), verts=verts)
+    bmesh.ops.translate(glow.bm, vec=p + Vector((0, 0, 0.01)), verts=verts)
     glow.tag('goo_glow', _faces(verts))
     # the two halves of the tube and its stopper
     cyl(glass, 'glass', (p.x + 0.25, p.y + 0.05, p.z + 0.025), 0.025, 0.14, 8, axis='X')
@@ -618,7 +638,7 @@ empty('PT_LabLight', (0.0, TUBE_Y - 1.5, Z + 3.2))
 
 
 def polish_all(objs):
-    widths = {'Lab_Furniture': 0.012, 'Lab_Clutter': 0.004, 'Lab_Tubes': 0.01}
+    widths = {'Lab_Furniture': 0.012, 'Lab_Clutter': 0.004, 'Lab_Tubes': 0.01, 'Lab_ChairFallen': 0.01, 'Lab_ScopeFallen': 0.004}
     for ob in objs:
         if ob.name in widths:
             kit.polish(ob, widths[ob.name])

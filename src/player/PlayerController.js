@@ -46,6 +46,13 @@ export class PlayerController {
     this.coyote = 0;
     this.grounded = false;
     this.facing = 0;                     // body yaw
+    // Set by the level each frame: what Voss is standing on, and how he is held
+    this.surface = 'normal';             // 'normal' | 'ice' (slippery, keeps momentum) | 'wade' (slow)
+    this.slopeAccel = new THREE.Vector3(); // extra push downhill (sliding on an icy slope)
+    this.aimFacing = false;              // true: the body turns to face where the camera aims
+    this.speedScale = 1;
+    this.camDist = THIRD_PERSON_DISTANCE;
+    this.shoulder = 0.45;
     this.lastSafe = new THREE.Vector3();
     this._safeTimer = 0;
     this._camDistance = THIRD_PERSON_DISTANCE;
@@ -187,10 +194,26 @@ export class PlayerController {
     if (moving) this._wish.normalize();
 
     // Horizontal velocity eases toward the wanted velocity; quicker on the ground
-    const speed = k.sprint ? SPRINT_SPEED : WALK_SPEED;
-    const ease = 1 - Math.exp(-(this.grounded ? 14 : 4) * dt);
-    this.velocity.x += (this._wish.x * speed - this.velocity.x) * ease;
-    this.velocity.z += (this._wish.z * speed - this.velocity.z) * ease;
+    // On ice you barely grip: you keep your momentum and steer slowly. Wading is slow.
+    const onIce = this.grounded && this.surface === 'ice';
+    let speed = (k.sprint ? SPRINT_SPEED : WALK_SPEED) * this.speedScale;
+    if (this.surface === 'wade' && this.grounded) speed *= 0.55;
+    if (onIce) speed *= 1.25;
+    const grip = !this.grounded ? 4 : onIce ? 0.9 : 14;
+    const ease = 1 - Math.exp(-grip * dt);
+    if (!(onIce && !moving)) {
+      this.velocity.x += (this._wish.x * speed - this.velocity.x) * ease;
+      this.velocity.z += (this._wish.z * speed - this.velocity.z) * ease;
+    } else {
+      this.velocity.x *= Math.exp(-0.25 * dt);   // gliding: almost no friction
+      this.velocity.z *= Math.exp(-0.25 * dt);
+    }
+    if (this.grounded) {
+      this.velocity.x += this.slopeAccel.x * dt;
+      this.velocity.z += this.slopeAccel.z * dt;
+    }
+    const flat = Math.hypot(this.velocity.x, this.velocity.z);
+    if (flat > 16) { this.velocity.x *= 16 / flat; this.velocity.z *= 16 / flat; }
 
     // Jumping: coyote time, buffered presses, and a shorter hop if Space is let go early
     this.coyote = this.grounded ? COYOTE : this.coyote - dt;
@@ -240,7 +263,12 @@ export class PlayerController {
     const third = this.view === 'third';
     this.body.visible = third;
 
-    if (moving) {
+    if (this.aimFacing && third) {
+      // Aiming: face where the camera looks
+      let d = this.camera.rotation.y - this.facing;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      this.facing += d * (1 - Math.exp(-18 * dt));
+    } else if (moving) {
       // Turn the body toward where it is walking
       const target = Math.atan2(-this._wish.x, -this._wish.z);
       let d = target - this.facing;
@@ -268,11 +296,11 @@ export class PlayerController {
     // from pushing through walls: it moves in at once and eases back out.
     cam.getWorldDirection(this._camDir);
     this._pivot.set(this.position.x, baseY + EYE + 0.15, this.position.z);
-    this._pivot.addScaledVector(this._right.set(Math.cos(cam.rotation.y), 0, -Math.sin(cam.rotation.y)), 0.45);
+    this._pivot.addScaledVector(this._right.set(Math.cos(cam.rotation.y), 0, -Math.sin(cam.rotation.y)), this.shoulder);
 
     const back = this._camDir.negate();
-    const hit = this.physics.castRay(this._pivot, back, THIRD_PERSON_DISTANCE + 0.3);
-    const allowed = hit === null ? THIRD_PERSON_DISTANCE : Math.max(0.5, hit - 0.3);
+    const hit = this.physics.castRay(this._pivot, back, this.camDist + 0.3);
+    const allowed = hit === null ? this.camDist : Math.max(0.5, hit - 0.3);
     this._camDistance = allowed < this._camDistance
       ? allowed
       : this._camDistance + (allowed - this._camDistance) * (1 - Math.exp(-6 * dt));

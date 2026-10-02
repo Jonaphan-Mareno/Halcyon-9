@@ -4,6 +4,7 @@ import { Camera } from './core/Camera.js';
 import { Controls } from './core/Controls.js';
 import { Level1 } from './levels/Level1.js';
 import { Level2Session } from './levels/Level2Session.js';
+import { HoseTestSession } from './level2/HoseTestSession.js';
 import { UIManager } from './ui/UIManager.js';
 import { HUD } from './ui/HUD.js';
 import { Inventory } from './ui/Inventory.js';
@@ -131,7 +132,7 @@ export class Game {
     this.camera.instance.position.set(0, 3, 0); // adjust ctor args to match your Camera class
     this.renderer = new Renderer();
 
-    if (this.startLevel === '2') {
+    if (this.startLevel === '2' || this.startLevel === 'hose') {
       this._initLevel2();
       return;
     }
@@ -190,7 +191,8 @@ export class Game {
     this.level2Mode = true;
     this.ui = new UIManager();
     this.reticle = document.getElementById('reticle');
-    this.level2 = new Level2Session(this);
+    // ?level=hose opens the coolant hose test room; ?level=2 the old level 2 build
+    this.level2 = this.startLevel === 'hose' ? new HoseTestSession(this) : new Level2Session(this);
     window.addEventListener('resize', () => this.onResize());
     this.startLoop();
   }

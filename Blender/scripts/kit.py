@@ -61,7 +61,29 @@ def _palette():
     mat('col', (1, 0, 1), 1.0, 0)
 
 
-def begin(name):
+# Level 2 habitat: white and very light grey panels, glossy black structure, light blue LEDs and an
+# orange accent (from the team's Pinterest references). Same material NAMES as above where the
+# game textures them, plus a few new ones.
+def _habitat_palette():
+    mat('hull_light', (0.86, 0.88, 0.90), 0.38, 0.1)      # white wall panels
+    mat('hull_mid', (0.66, 0.69, 0.72), 0.4, 0.15)        # light grey panels and frames
+    mat('hull_dark', (0.035, 0.038, 0.045), 0.28, 0.5)    # glossy black pillars and trim
+    mat('floor_dark', (0.78, 0.80, 0.82), 0.3, 0.05)      # bright floor tiles
+    mat('trim', (0.50, 0.53, 0.57), 0.35, 0.5)            # metal details
+    mat('accent', (0.95, 0.50, 0.08), 0.35, 0.2)          # orange accent paint
+    mat('accent_glow', (1.0, 0.6, 0.15), 0.4, 0, (1.0, 0.55, 0.12), 1.6)
+    mat('blue_glow', (0.45, 0.82, 1.0), 0.4, 0, (0.45, 0.85, 1.0), 2.4)
+    mat('white_glow', (0.95, 0.98, 1.0), 0.4, 0, (0.95, 0.98, 1.0), 3.2)
+    mat('aria_screen', (0.05, 0.15, 0.25), 0.3, 0, (0.25, 0.6, 1.0), 1.4)
+    mat('glass', (0.70, 0.88, 0.96), 0.05, 0.0, alpha=0.25)
+    mat('fabric', (0.16, 0.18, 0.21), 0.85, 0.0)          # dark sofa upholstery
+    mat('fabric_light', (0.30, 0.62, 0.72), 0.85, 0.0)    # light blue cushions
+    mat('soil', (0.10, 0.07, 0.05), 0.95, 0.0)
+    mat('palm_trunk', (0.30, 0.22, 0.14), 0.9, 0.0)
+    mat('col', (1, 0, 1), 1.0, 0)
+
+
+def begin(name, palette='lab'):
     global VIS, COLL, CS
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
@@ -69,7 +91,7 @@ def begin(name):
     COLL = bpy.data.collections.new(name + '_Collision')
     scene.collection.children.link(VIS)
     scene.collection.children.link(COLL)
-    _palette()
+    _habitat_palette() if palette == 'habitat' else _palette()
     CS = Acc('COL_' + name, COLL)
 
 
@@ -171,7 +193,7 @@ def flush(acc):
     return ob
 
 
-def finish(out_blend=None, out_glb=None):
+def finish(out_blend=None, out_glb=None, image_format='AUTO'):
     objs = [flush(a) for a in list(ACC.values())]
     flush(CS)
     tris = sum(sum(len(p.vertices) - 2 for p in o.data.polygons) for o in objs)
@@ -181,5 +203,5 @@ def finish(out_blend=None, out_glb=None):
         print('saved', out_blend)
     if out_glb:
         bpy.ops.export_scene.gltf(filepath=out_glb, export_format='GLB', use_visible=True,
-                                  export_apply=True, export_yup=True)
+                                  export_apply=True, export_yup=True, export_image_format=image_format)
         print('exported', out_glb)

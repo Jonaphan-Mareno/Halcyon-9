@@ -30,3 +30,6 @@ public/assets/textures/aria_components/*.mp4
 __pycache__/
 *.pyc
 *.blend1
+
+# Downloaded plant models (fetch with: node Blender/scripts/fetch_plants.cjs)
+Blender/assets/plants/

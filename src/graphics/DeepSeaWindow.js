@@ -242,7 +242,8 @@ function squid(ctx, t, s) {
 
 // ---------------------------------------------------------------- the screen
 export class DeepSeaWindow {
-  constructor() {
+  // The screen's placement can be changed for another window (defaults: the old atrium's window)
+  constructor({ radius = SCREEN_RADIUS, bottom = SCREEN_BOTTOM, height = SCREEN_HEIGHT, a0 = A0, a1 = A1 } = {}) {
     this.canvas = document.createElement('canvas');
     this.canvas.width = W;
     this.canvas.height = H;
@@ -252,11 +253,11 @@ export class DeepSeaWindow {
     this.texture.generateMipmaps = false;
     this.texture.minFilter = THREE.LinearFilter;
 
-    const geo = new THREE.CylinderGeometry(SCREEN_RADIUS, SCREEN_RADIUS, SCREEN_HEIGHT, 48, 1, true,
-      ((A0 + 90) * Math.PI) / 180, ((A1 - A0) * Math.PI) / 180);
+    const geo = new THREE.CylinderGeometry(radius, radius, height, 48, 1, true,
+      ((a0 + 90) * Math.PI) / 180, ((a1 - a0) * Math.PI) / 180);
     const mat = new THREE.MeshBasicMaterial({ map: this.texture, side: THREE.BackSide, fog: false });
     this.mesh = new THREE.Mesh(geo, mat);
-    this.mesh.position.y = SCREEN_BOTTOM + SCREEN_HEIGHT / 2;
+    this.mesh.position.y = bottom + height / 2;
     this.mesh.name = 'DeepSeaWindow';
 
     this.time = 0;

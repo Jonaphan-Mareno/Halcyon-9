@@ -5,6 +5,7 @@ import { Controls } from './core/Controls.js';
 import { Level1 } from './levels/Level1.js';
 import { Level2Session } from './levels/Level2Session.js';
 import { HoseTestSession } from './level2/HoseTestSession.js';
+import { HabitatSession } from './level2/HabitatSession.js';
 import { UIManager } from './ui/UIManager.js';
 import { HUD } from './ui/HUD.js';
 import { Inventory } from './ui/Inventory.js';
@@ -132,7 +133,7 @@ export class Game {
     this.camera.instance.position.set(0, 3, 0); // adjust ctor args to match your Camera class
     this.renderer = new Renderer();
 
-    if (this.startLevel === '2' || this.startLevel === 'reactor') {
+    if (this.startLevel === '2' || this.startLevel === 'hose' || this.startLevel === 'reactor') {
       this._initLevel2();
       return;
     }
@@ -191,9 +192,11 @@ export class Game {
     this.level2Mode = true;
     this.ui = new UIManager();
     this.reticle = document.getElementById('reticle');
-    // ?level=2 opens the NEW level 2 (for now: the coolant hose room, its first piece).
-    // ?level=reactor opens the old atrium build, kept to become Level 3's reactor room.
-    this.level2 = this.startLevel === 'reactor' ? new Level2Session(this) : new HoseTestSession(this);
+    // ?level=2: the NEW level 2, the habitat atrium (environment preview for now)
+    // ?level=hose: the coolant hose test room
+    // ?level=reactor: the old cargo atrium, kept to become Level 3's reactor room
+    const sessions = { '2': HabitatSession, hose: HoseTestSession, reactor: Level2Session };
+    this.level2 = new sessions[this.startLevel](this);
     window.addEventListener('resize', () => this.onResize());
     this.startLoop();
   }

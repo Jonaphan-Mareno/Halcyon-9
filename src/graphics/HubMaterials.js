@@ -225,6 +225,7 @@ const SURFACES = {
   trim: { kind: 'plate', tile: 1.5, bump: 1.2 },
   rust: { kind: 'plate', tile: 3.0, bump: 1.6 },
   pipe_black: { kind: 'plate', tile: 1.2, bump: 0.8 },
+  accent: { kind: 'plate', tile: 2.0, bump: 0.6 },
   floor_dark: { kind: 'floor', tile: 4.0, bump: 1.2 },
   cont_red: { kind: 'plate', tile: 3.0, bump: 1.4 },
   cont_blue: { kind: 'plate', tile: 3.0, bump: 1.4 },
@@ -244,7 +245,9 @@ const GLOWS = {
   core_energy: 'vec3 f = vec3(0.45 + 0.55 * pow(0.5 + 0.5 * sin(vTriPos.y * 1.1 - uHubTime * 5.0), 2.0));',
   door_a_glow: 'vec3 f = vec3(1.0);',
   door_b_glow: 'vec3 f = vec3(1.0);',
-  door_c_glow: 'vec3 f = vec3(1.0);'
+  door_c_glow: 'vec3 f = vec3(1.0);',
+  accent_glow: 'vec3 f = vec3(1.0);',
+  aria_screen: 'vec3 f = vec3(1.0);'
 };
 
 const POS_VARYING = '\nvarying vec3 vTriPos;\nvarying vec3 vTriNrm;\n';

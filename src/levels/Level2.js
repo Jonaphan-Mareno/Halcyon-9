@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { createHubTextures, applyHubMaterials, hubTime } from '../graphics/HubMaterials.js';
 import { createHubDecals, disposeHubDecals } from '../graphics/HubDecals.js';
+import { DeepSeaWindow } from '../graphics/DeepSeaWindow.js';
 import { polar } from './hubGeometry.js';
 
 // Level 2 ("Logs"): the cargo atrium of the deep-sea station. A huge circular hall
@@ -129,78 +130,53 @@ export class Level2 {
 
   // Placeholder lighting: cold blue, dim, with pools of light round the core and the tiers
   _addLights(hub) {
-    // A cool fill from above and below, strong enough to read the room by
-    this.root.add(new THREE.HemisphereLight(0x8fa6c4, 0x141820, 0.55));
-    const lamps = [
-      [0, 27, 0, 0xb4d4ff, 1700],
-      [0, 10, 0, 0x9cc4ff, 900],
-      [22, 9, 0, 0xc0d8ff, 520], [-22, 9, 0, 0xc0d8ff, 520],
-      [0, 9, 22, 0xc0d8ff, 520], [0, 9, -22, 0xc0d8ff, 520],
-      [18, 4, 18, 0x7fb4f0, 380], [-18, 4, -18, 0x7fb4f0, 380],
-      [18, 4, -18, 0x7fb4f0, 380], [-18, 4, 18, 0x7fb4f0, 380]
+    // The hall is dark; the reactor is what lights it. A low cool fill keeps the shapes readable.
+    this.root.add(new THREE.HemisphereLight(0x7f94b4, 0x0b0e14, 0.3));
+
+    // The reactor: a strong light at its heart and one at its crown, so everything near it is
+    // bright and everything far from it falls away into the dark (the inverse-square falloff
+    // does the rest). Cool white-cyan, like the energy in its conduits.
+    const reactor = [
+      [0, 12, 0, 0x9fdcff, 650],
+      [0, 27, 0, 0x8fc8ff, 420],
+      [0, 3, 0, 0x7fd0ff, 160]
     ];
-    for (const [x, y, z, color, intensity] of lamps) {
+    for (const [x, y, z, color, intensity] of reactor) {
       const light = new THREE.PointLight(color, intensity, 0, 2);
       light.position.set(x, y, z);
       this.root.add(light);
     }
-    // Warm work lamps, one at each LAMP_ marker in the model: pools of orange against the
-    // cool blue, which is what makes a dark room feel lived in
+
+    // Four dim fills around the walls so the edges of the hall are not pitch black
+    for (const [x, y, z] of [[24, 9, 0], [-24, 9, 0], [0, 9, 24], [0, 9, -24]]) {
+      const light = new THREE.PointLight(0x6f92c8, 70, 40, 2);
+      light.position.set(x, y, z);
+      this.root.add(light);
+    }
+
+    // Warm work lamps, one at each LAMP_ marker in the model: each only makes a small pool of
+    // orange on the floor around its stand, a bit of life against the cool blue
     hub.traverse((o) => {
       if (!o.name.startsWith('LAMP_')) return;
-      const light = new THREE.PointLight(0xffc48a, 150, 18, 2);
+      const light = new THREE.PointLight(0xffc48a, 20, 8, 2);
       light.position.copy(o.getWorldPosition(new THREE.Vector3()));
       this.root.add(light);
     });
+
     // Light for each crew quarters, so stepping inside is a change
     for (const [letter, a, y] of [['A', 90, 0], ['B', 200, 7], ['C', 320, 14]]) {
-      const light = new THREE.PointLight(0xa8c4f0, 45, 12, 2);
+      const light = new THREE.PointLight(0xa8c4f0, 25, 12, 2);
       light.position.copy(polar(38.5, a, y + 3.6));
       this.root.add(light);
       this['podLight' + letter] = light;
     }
   }
 
-  // What the big window looks out on: the dark water around a deep-sea station, with
-  // drifting marine snow and the faint glow of the hydrothermal vent far below
+  // What the big window looks out on: the dark water around a deep-sea station, with creatures
+  // drifting past (an animated projection, see graphics/DeepSeaWindow.js)
   _addDeepSea() {
-    const count = 700;
-    this._snow = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) this._respawnSnow(i, true);
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(this._snow, 3));
-    this.snow = new THREE.Points(geo, new THREE.PointsMaterial({
-      color: 0x9fd4e6, size: 0.35, sizeAttenuation: true, transparent: true, opacity: 0.55, fog: false, depthWrite: false
-    }));
-    this.snow.frustumCulled = false;
-    this.root.add(this.snow);
-
-    // A soft glow in the deep: the vent
-    const c = document.createElement('canvas');
-    c.width = c.height = 128;
-    const ctx = c.getContext('2d');
-    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-    grad.addColorStop(0, 'rgba(120,200,220,0.55)');
-    grad.addColorStop(0.35, 'rgba(40,110,150,0.25)');
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 128, 128);
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: new THREE.CanvasTexture(c), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false
-    }));
-    glow.scale.set(150, 80, 1);
-    glow.position.copy(polar(170, 42, -22));
-    this.root.add(glow);
-  }
-
-  // Marine snow lives in the water beyond the window (angles 5..85 degrees)
-  _respawnSnow(i, anywhere) {
-    const a = 5 + Math.random() * 80;
-    const r = 36 + Math.random() * 110;
-    const p = polar(r, a, anywhere ? -10 + Math.random() * 60 : 50);
-    this._snow[i * 3] = p.x;
-    this._snow[i * 3 + 1] = p.y;
-    this._snow[i * 3 + 2] = p.z;
+    this.seaWindow = new DeepSeaWindow();
+    this.root.add(this.seaWindow.mesh);
   }
 
   openElevator() {
@@ -250,15 +226,7 @@ export class Level2 {
         q.node.position.y = q.closedY + 4.7 * t;
       }
     }
-    if (this.snow) {
-      const pos = this._snow;
-      for (let i = 0; i < pos.length; i += 3) {
-        pos[i + 1] -= delta * 0.5;
-        pos[i] += Math.sin(i + pos[i + 1] * 0.3) * delta * 0.15;
-        if (pos[i + 1] < -12) this._respawnSnow(i / 3, false);
-      }
-      this.snow.geometry.attributes.position.needsUpdate = true;
-    }
+    this.seaWindow?.update(delta);
   }
 
   dispose() {
@@ -271,6 +239,7 @@ export class Level2 {
       }
     });
     if (this.decals) disposeHubDecals(this.decals);
+    this.seaWindow?.dispose();
     for (const set of Object.values(this.textures || {})) {
       set.albedo.dispose();
       set.height.dispose();

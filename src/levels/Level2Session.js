@@ -112,7 +112,7 @@ export class Level2Session {
     camera.updateProjectionMatrix();
     this.flashlight = game.camera.flashlight;
     this.flashlight.castShadow = false;
-    this.flashlight.intensity = 60;
+    this.flashlight.intensity = 35;
     this.flashlight.visible = true;
 
     this._setUpBloom();
@@ -165,7 +165,7 @@ export class Level2Session {
     const r = this.game.renderer;
     const webgl = r.instance;
     webgl.toneMapping = THREE.ACESFilmicToneMapping;
-    webgl.toneMappingExposure = 1.0;
+    webgl.toneMappingExposure = 0.95;
     const size = new THREE.Vector2();
     webgl.getSize(size);
     // The composer draws into its own buffer, which has no anti-aliasing unless asked for:
@@ -174,7 +174,7 @@ export class Level2Session {
     const target = new THREE.WebGLRenderTarget(size.x * pr, size.y * pr, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(webgl, target);
     this.composer.addPass(new RenderPass(this.game.scene, this.game.camera.instance));
-    this.bloom = new UnrealBloomPass(size.clone(), 0.22, 0.4, 1.1); // strength, radius, threshold
+    this.bloom = new UnrealBloomPass(size.clone(), 0.16, 0.4, 1.1); // strength, radius, threshold
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     r.render = () => this.composer.render();

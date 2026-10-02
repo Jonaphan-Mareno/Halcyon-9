@@ -76,7 +76,7 @@ def _habitat_palette():
     mat('white_glow', (0.95, 0.98, 1.0), 0.4, 0, (0.95, 0.98, 1.0), 3.2)
     mat('aria_screen', (0.05, 0.15, 0.25), 0.3, 0, (0.25, 0.6, 1.0), 1.4)
     mat('glass', (0.70, 0.88, 0.96), 0.05, 0.0, alpha=0.25)
-    mat('fabric', (0.16, 0.18, 0.21), 0.85, 0.0)          # dark sofa upholstery
+    mat('fabric', (0.05, 0.055, 0.065), 0.8, 0.0)         # black sofa upholstery (like the operator chair)
     mat('fabric_light', (0.30, 0.62, 0.72), 0.85, 0.0)    # light blue cushions
     mat('soil', (0.05, 0.036, 0.026), 0.95, 0.0)          # dark, rich soil
     mat('palm_trunk', (0.30, 0.22, 0.14), 0.9, 0.0)

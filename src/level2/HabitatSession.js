@@ -9,6 +9,7 @@ import { Physics } from '../core/Physics.js';
 import { PlayerController } from '../player/PlayerController.js';
 import { createHubTextures, applyHubMaterials } from '../graphics/HubMaterials.js';
 import { DeepSeaWindow } from '../graphics/DeepSeaWindow.js';
+import { AriaManager } from '../entities/AriaManager.js';
 import '../ui/level2.css';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
@@ -69,7 +70,10 @@ export class HabitatSession {
     this.composer.addPass(new RenderPass(g.scene, g.camera.instance));
     this.composer.addPass(new UnrealBloomPass(size.clone(), 0.12, 0.4, 1.0));
     this.composer.addPass(new OutputPass());
-    g.renderer.render = () => this.composer.render();
+    g.renderer.render = () => {
+      if (this.aria) this.aria.renderHead(webgl);   // ARIA's face, drawn offscreen for the monitors
+      this.composer.render();
+    };
     window.addEventListener('resize', () => this.composer.setSize(window.innerWidth, window.innerHeight));
     const pmrem = new THREE.PMREMGenerator(webgl);
     g.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -123,6 +127,8 @@ export class HabitatSession {
       if (n) this.doors.push({ node: n, closed: n.position.clone(), open: n.position.clone().add(new THREE.Vector3(name.endsWith('L') ? -1.9 : 1.9, 0, 0)) });
     }
 
+    this._addAriaScreens(atrium);
+
     // the sea outside the window wall
     this.sea = new DeepSeaWindow({ radius: 17.9, a0: 62, a1: 118, bottom: 0.8, height: 4.2 });
     scene.add(this.sea.mesh);
@@ -138,6 +144,34 @@ export class HabitatSession {
       l.position.set(x, y, z);
       scene.add(l);
     }
+  }
+
+  // ARIA on every monitor (the ARIA_ markers from the model), idling for now. Same face and
+  // hologram shader as Level 1; one shared material, so more screens cost almost nothing.
+  _addAriaScreens(atrium) {
+    const SIZES = { ARIA_M1: [4.2, 2.3], ARIA_Lift: [1.3, 0.73], ARIA_M10: [0.8, 0.45] };
+    const screens = new THREE.Group();
+    const markers = [];
+    atrium.traverse((o) => { if (o.name.startsWith('ARIA_') && !o.isMesh) markers.push(o); });
+    for (const marker of markers) {
+      const [w, h] = SIZES[marker.name] || [1.5, 0.84];
+      const geo = new THREE.PlaneGeometry(w, h);
+      const uv = geo.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));   // the shader expects glTF-style UVs
+      const screen = new THREE.Mesh(geo);
+      screen.name = marker.name + '_monitor';
+      const p = marker.getWorldPosition(new THREE.Vector3());
+      screen.position.copy(p);
+      // the big screen over the lounge faces the lift; the rest face the middle of the hall
+      if (marker.name === 'ARIA_M1') screen.lookAt(p.x, p.y, p.z + 1);
+      else screen.lookAt(0, p.y, 0);
+      screens.add(screen);
+    }
+    this.game.scene.add(screens);
+    this.aria = new AriaManager(this.game.scene);
+    this.aria.collectMonitors(screens);
+    for (const m of this.aria.monitors) m.material = this.aria.ariaMaterial;
+    this.aria.playIdle();
   }
 
   async _precompile() {
@@ -163,6 +197,9 @@ export class HabitatSession {
       for (const d of this.doors) d.node.position.lerpVectors(d.closed, d.open, t);
     }
     this.sea.update(dt, g.camera.instance);
+    // ARIA idles on every screen (not AriaManager.update, which shows her on the nearest one only)
+    this.aria.ariaMaterial.uniforms.uTime.value += dt;
+    if (this.aria.useHead) this.aria.head.update(dt);
     g.reticle.classList.toggle('visible', this.controls.view === 'first');
   }
 }

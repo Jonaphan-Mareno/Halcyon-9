@@ -168,17 +168,40 @@ for k in range(170):                    # pebbles scattered over the soil, so th
     bmesh.ops.translate(island.bm, vec=q, verts=verts)
     island.tag(random.choice(['pebble', 'pebble', 'hull_mid']), _faces(verts))
 
-# sofas curving round the lounge, gaps at north and south so you can walk down into it
+# sofas curving round the lounge, gaps at north and south so you can walk down into it. Styled after
+# the team's sci-fi operator chair: a black plinth with a light blue LED line, black cushions in a
+# white shell, white armrests with orange pads, an orange cap on top of the back.
 sofa = A('Atrium_Sofas')
 for a0, a1 in ((110, 170), (190, 250), (290, 350), (10, 70)):
-    arc(sofa, 'fabric', 4.2, 5.2, a0, a1, -0.6, -0.15, step=5, col=True)
-    arc(sofa, 'fabric', 5.0, 5.35, a0, a1, -0.15, 0.45, step=5, col=True)
-    for k in range(3):
-        a = a0 + (a1 - a0) * (k + 0.5) / 3
-        rbox(sofa, 'fabric_light', 4.55, a, -0.08, 0.5, 1.1, 0.16)
+    mid = (a0 + a1) / 2
+    arc(sofa, 'hull_dark', 4.4, 5.2, a0 + 1, a1 - 1, -0.6, -0.42, step=5)                # plinth
+    arc(sofa, 'blue_glow', 4.38, 4.4, a0 + 1, a1 - 1, -0.53, -0.49, step=5)              # LED line round it
+    arc(kit.CS, 'col', 4.2, 5.4, a0, a1, -0.6, -0.16, step=5)
+    arc(sofa, 'hull_light', 5.05, 5.42, a0, a1, -0.42, 0.62, step=5, col=True)           # white back shell
+    arc(sofa, 'hull_dark', 5.05, 5.42, mid - 7, mid + 7, 0.62, 0.66, step=2)
+    arc(sofa, 'accent', 5.08, 5.39, mid - 6, mid + 6, 0.66, 0.74, step=2)                # orange cap
+    arc(sofa, 'fabric', 4.98, 5.05, a0 + 3.2, a1 - 3.2, -0.16, 0.5, step=5)             # black back cushion
+    arc(sofa, 'blue_glow', 5.0, 5.06, a0 + 3.2, a1 - 3.2, 0.535, 0.555, step=5)
+    gap = 0.5
+    span = (a1 - a0 - 6.4) / 3
+    for k in range(3):                                                                    # three seat cushions
+        c0 = a0 + 3.2 + k * span
+        arc(sofa, 'fabric', 4.22, 5.02, c0 + gap / 2, c0 + span - gap / 2, -0.42, -0.16, step=4)
+    for e0, e1 in ((a0, a0 + 3.0), (a1 - 3.0, a1)):                                       # armrests
+        arc(sofa, 'hull_light', 4.2, 5.05, e0, e1, -0.42, 0.04, step=1, col=True)
+        arc(sofa, 'accent', 4.25, 5.0, e0 + 0.3, e1 - 0.3, 0.04, 0.1, step=1)
+        arc(sofa, 'blue_glow', 4.18, 4.2, e0 + 0.5, e1 - 0.5, -0.24, -0.2, step=1)
+    for k, m in enumerate(('fabric_light', 'accent')):                                   # throw cushions
+        a = a0 + (a1 - a0) * (0.22 if k == 0 else 0.8)
+        rbox(sofa, m, 4.88, a, 0.0, 0.14, 0.42, 0.36)
 for a in (140, 320):                                                          # low tables with holo tops
     rbox(sofa, 'hull_dark', 3.3, a, -0.4, 1.0, 1.6, 0.4, col=True)
     rbox(sofa, 'aria_screen', 3.3, a, -0.19, 0.8, 1.4, 0.02)
+# a round rug under the lounge, light blue with an orange edge
+kit.mat('rug', (0.24, 0.44, 0.52), 0.95, 0.0)
+arc(sofa, 'rug', 2.6, 4.1, 0, 360, -0.6, -0.585, step=6)
+arc(sofa, 'accent', 3.95, 4.02, 0, 360, -0.585, -0.582, step=6)
+arc(sofa, 'accent', 2.68, 2.75, 0, 360, -0.585, -0.582, step=6)
 
 # ------------------------------------------------------------------ growing food: raised beds and wall beds
 # The crew grew their own food: tomatoes on stakes, rows of carrots, lettuce. Modelled here from
@@ -271,7 +294,7 @@ for a, crop in ((0, 'tomato'), (45, 'lettuce'), (135, 'carrot'), (225, 'tomato')
     fill_rect_bed(10.2, a, 1.4, 3.7, 0.84, crop)
 
 # long beds along the wall, under the gallery (gaps for the window, doors, lift and stairs)
-for a0, a1, crop in ((336, 28, 'carrot'), (32, 58, 'tomato'), (124, 166, 'lettuce'), (192, 207, 'tomato')):
+for a0, a1, crop in ((336, 28, 'carrot'), (32, 58, 'tomato'), (124, 163, 'lettuce'), (196, 207, 'tomato')):
     arc(beds, 'hull_light', 15.2, 16.75, a0, a1, 0, 0.7, step=3, col=True)
     arc(beds, 'accent', 15.15, 15.25, a0, a1, 0.66, 0.74, step=3)
     arc(beds, 'soil', 15.3, 16.65, a0, a1, 0.7, 0.72, step=3)
@@ -457,11 +480,12 @@ def wall_screen(name, a, z, w=1.5, h=0.85, r=R):
 
 
 # M1: the big screen hanging above the lounge, facing the lift
-box(mon, 'hull_dark', (-2.25, -0.15, 7.25), (2.25, 0.15, 9.85))
-box(mon, 'aria_screen', (-2.1, -0.2, 7.4), (2.1, -0.15, 9.7))
+# (hung high, above the palm crowns, so the palms never hide it)
+box(mon, 'hull_dark', (-2.25, -0.15, 9.85), (2.25, 0.15, 12.45))
+box(mon, 'aria_screen', (-2.1, -0.2, 10.0), (2.1, -0.15, 12.3))
 for x in (-1.8, 1.8):
-    box(mon, 'hull_mid', (x - 0.04, -0.04, 9.85), (x + 0.04, 0.04, H))
-empty('ARIA_M1', (0, -0.25, 8.55))
+    box(mon, 'hull_mid', (x - 0.04, -0.04, 12.45), (x + 0.04, 0.04, H))
+empty('ARIA_M1', (0, -0.25, 11.15))
 wall_screen('ARIA_M2', 281, 2.3)              # beside the lift
 wall_screen('ARIA_M3', 247, 2.3)              # foot of the west stair
 wall_screen('ARIA_M4', 293, 2.3)              # foot of the east stair
@@ -476,6 +500,147 @@ empty('ARIA_M10', P(9.1, 240, 1.15))
 # the crew photo board on the wall near the kiosk
 rbox(mon, 'hull_mid', R - 0.06, 233, 1.7, 0.06, 2.4, 1.5)
 empty('PT_PhotoBoard', P(R - 0.12, 233, 1.7))
+
+# ------------------------------------------------------------------ lived-in props (our own low-poly models)
+# In the style of the team's references: white bodies, glossy black, orange caps, light blue LEDs.
+props = A('Atrium_Props')
+kit.mat('screen_ui', (0.04, 0.10, 0.16), 0.3, 0.0, (0.30, 0.72, 1.0), 0.7)
+kit.mat('mug_white', (0.90, 0.90, 0.88), 0.4, 0.0)
+kit.mat('coffee', (0.12, 0.06, 0.03), 0.2, 0.0)
+
+
+def rot_box(acc, m, c, s, rz):
+    _rbox(acc, m, Vector(c), s, rz)
+
+
+def mug(p, m='mug_white', rz=0.0):
+    cyl(props, m, (p.x, p.y, p.z + 0.05), 0.04, 0.1, 10)
+    cyl(props, 'coffee', (p.x, p.y, p.z + 0.095), 0.034, 0.012, 10)
+    d = Vector((math.cos(rad(rz)), math.sin(rad(rz)), 0))
+    rot_box(props, m, p + d * 0.05 + Vector((0, 0, 0.05)), (0.025, 0.012, 0.06), rz)
+
+
+def tablet(p, rz):
+    rot_box(props, 'hull_dark', p + Vector((0, 0, 0.006)), (0.27, 0.19, 0.012), rz)
+    rot_box(props, 'screen_ui', p + Vector((0, 0, 0.0125)), (0.24, 0.16, 0.002), rz)
+
+
+# vending machine between the lift and the east stairs
+va, vr = 284, 16.55
+rbox(props, 'hull_light', vr, va, 1.0, 0.85, 1.1, 2.0, col=True)
+rbox(props, 'hull_dark', vr, va, 0.08, 0.9, 1.14, 0.16)
+rbox(props, 'hull_dark', vr, va, 2.02, 0.88, 1.12, 0.06)
+rbox(props, 'hull_dark', vr - 0.41, va, 1.25, 0.04, 0.72, 1.2, t=-0.12)               # dark inside
+for row in range(4):                                                                  # snacks on the shelves
+    z = 0.82 + row * 0.27
+    rbox(props, 'hull_mid', vr - 0.4, va, z - 0.05, 0.06, 0.68, 0.02, t=-0.12)
+    for j in range(5):
+        m = ('accent', 'fabric_light', 'tomato', 'mug_white', 'blue_glow')[(row + j) % 5]
+        rbox(props, m, vr - 0.42, va, z + 0.05, 0.05, 0.1, 0.16, t=-0.4 + j * 0.14)
+rbox(props, 'glass', vr - 0.46, va, 1.25, 0.02, 0.74, 1.22, t=-0.12)
+rbox(props, 'hull_dark', vr - 0.43, va, 1.3, 0.03, 0.18, 0.9, t=0.4)                  # keypad strip
+for k in range(5):
+    rbox(props, 'blue_glow', vr - 0.45, va, 1.05 + k * 0.13, 0.02, 0.1, 0.06, t=0.4)
+rbox(props, 'accent', vr - 0.43, va, 1.0, 0.03, 0.05, 1.9, t=0.53)
+rbox(props, 'hull_dark', vr - 0.43, va, 0.38, 0.03, 0.72, 0.2, t=-0.12)               # the drop slot
+rbox(props, 'blue_glow', vr - 0.45, va, 0.24, 0.02, 0.72, 0.03, t=-0.12)
+
+# double lockers beside the sleeping pods door
+for la in (168.5, 191.5):
+    lr = 16.72
+    rbox(props, 'hull_light', lr, la, 1.05, 0.55, 1.0, 2.1, col=True)
+    rbox(props, 'hull_dark', lr, la, 0.075, 0.57, 1.02, 0.15)
+    rbox(props, 'hull_dark', lr - 0.28, la, 1.1, 0.02, 0.02, 1.85)                    # seam between the doors
+    for t in (-0.25, 0.25):
+        for z in (1.72, 1.82, 1.92):
+            rbox(props, 'hull_dark', lr - 0.28, la, z, 0.02, 0.3, 0.03, t=t)          # vents
+        rbox(props, 'accent', lr - 0.285, la, 1.1, 0.03, 0.03, 0.4, t=t * 0.24)       # handles
+        rbox(props, 'accent', lr - 0.28, la, 2.03, 0.02, 0.36, 0.05, t=t)
+    rbox(props, 'blue_glow', lr - 0.28, la, 0.18, 0.02, 0.9, 0.02)
+
+# kitchenette counter with a coffee machine, mugs and a bowl of tomatoes from the beds
+ca, cr = 257.5, 16.65
+rbox(props, 'hull_light', cr, ca, 0.45, 0.7, 2.2, 0.9, col=True)
+rbox(props, 'hull_dark', cr - 0.02, ca, 0.925, 0.74, 2.24, 0.05)
+rbox(props, 'hull_dark', cr + 0.03, ca, 0.05, 0.66, 2.2, 0.1)
+rbox(props, 'blue_glow', cr - 0.36, ca, 0.86, 0.02, 2.1, 0.03)
+for t in (-0.55, 0.55):
+    rbox(props, 'hull_mid', cr - 0.355, ca, 0.5, 0.01, 1.0, 0.7, t=t)                 # cupboard doors
+    rbox(props, 'accent', cr - 0.365, ca, 0.78, 0.02, 0.3, 0.03, t=t)
+top = 0.95
+mt = -0.55                                                                             # the coffee machine
+rbox(props, 'hull_light', cr + 0.05, ca, top + 0.32, 0.45, 0.48, 0.64, t=mt)
+rbox(props, 'hull_dark', cr - 0.17, ca, top + 0.22, 0.04, 0.34, 0.3, t=mt)            # dispensing bay
+rbox(props, 'hull_dark', cr - 0.12, ca, top + 0.68, 0.55, 0.5, 0.1, t=mt)             # top panel
+rbox(props, 'screen_ui', cr - 0.39, ca, top + 0.68, 0.01, 0.22, 0.06, t=mt - 0.08)
+for k in range(3):
+    rbox(props, 'accent', cr - 0.39, ca, top + 0.68, 0.012, 0.04, 0.04, t=mt + 0.1 + k * 0.06)
+rbox(props, 'blue_glow', cr - 0.18, ca, top + 0.04, 0.2, 0.36, 0.02, t=mt)            # lit drip tray
+mug(P(cr - 0.25, ca, top + 0.05) + TV(ca) * mt, 'mug_white', ca)
+for k, m in enumerate(('accent', 'mug_white', 'fabric_light')):
+    mug(P(cr - 0.15 + (k % 2) * 0.12, ca, top) + TV(ca) * (-0.1 + k * 0.14), m, ca + 40 * k)
+bowl = P(cr - 0.08, ca, top) + TV(ca) * 0.6
+cyl(props, 'hull_light', (bowl.x, bowl.y, bowl.z + 0.05), 0.15, 0.1, 14)
+for k in range(6):
+    q = bowl + Vector((math.cos(k) * 0.07, math.sin(k) * 0.07, 0.11 + (k % 2) * 0.03))
+    verts = bmesh.ops.create_uvsphere(props.bm, u_segments=8, v_segments=6, radius=0.045)['verts']
+    bmesh.ops.translate(props.bm, vec=q, verts=verts)
+    props.tag('tomato', _faces(verts))
+tablet(P(cr - 0.2, ca, top) + TV(ca) * 0.95, ca + 15)
+
+# mugs and tablets left round the lounge
+for a in (140, 320):
+    c = P(3.3, a, -0.18)
+    mug(c + TV(a) * 0.4, 'mug_white', a + 30)
+    mug(c + TV(a) * 0.55 + P(0.12, a, 0), 'accent', a - 60)
+    tablet(c + TV(a) * -0.3, a + 20)
+tablet(P(4.6, 125, -0.16), 160)
+tablet(P(4.6, 300, -0.16), 40)
+mug(P(4.62, 68.5, 0.1), 'fabric_light', 10)                                             # on an armrest
+
+# honeycomb wall planters on the gallery walls (above the window and above the lift)
+def hex_cell(a, t, z, r_out=0.35, r_in=0.285, depth=0.32):
+    """One hollow hexagonal wall planter: a white frame, a dark back panel, soil and leaves inside."""
+    def pt(u, v, d):                    # u along the wall, v up, d out from the wall
+        return P(R - d, a, z + v) + TV(a) * (t + u)
+    ang = [rad(k * 60) for k in range(6)]
+    bm = props.bm
+    of = [bm.verts.new(pt(r_out * math.cos(q), r_out * math.sin(q), depth)) for q in ang]
+    inf = [bm.verts.new(pt(r_in * math.cos(q), r_in * math.sin(q), depth)) for q in ang]
+    ob = [bm.verts.new(pt(r_out * math.cos(q), r_out * math.sin(q), 0.01)) for q in ang]
+    ib = [bm.verts.new(pt(r_in * math.cos(q), r_in * math.sin(q), 0.01)) for q in ang]
+    fs = []
+    for i in range(6):
+        j = (i + 1) % 6
+        fs.append(bm.faces.new((of[i], of[j], inf[j], inf[i])))     # front rim
+        fs.append(bm.faces.new((ob[i], ob[j], of[j], of[i])))       # outer side
+        fs.append(bm.faces.new((inf[i], inf[j], ib[j], ib[i])))     # inner side
+        fs.append(bm.faces.new((ob[j], ob[i], ib[i], ib[j])))       # back rim (closed, so the normals face out)
+    props.tag('hull_light', fs)
+    bf = [bm.verts.new(pt(r_in * math.cos(q), r_in * math.sin(q), 0.03)) for q in ang]
+    bb = [bm.verts.new(pt(r_in * math.cos(q), r_in * math.sin(q), 0.015)) for q in ang]
+    panel = [bm.faces.new(bf), bm.faces.new(list(reversed(bb)))]
+    for i in range(6):
+        j = (i + 1) % 6
+        panel.append(bm.faces.new((bb[i], bb[j], bf[j], bf[i])))
+    props.tag('hull_dark', panel)
+    # a short light blue line on the upper right edge of the rim
+    q0, q1 = ang[0], ang[1]
+    beam(props, 'blue_glow', pt(r_out * 0.98 * math.cos(q0), r_out * 0.98 * math.sin(q0), depth + 0.005),
+         pt(r_out * 0.98 * math.cos(q1), r_out * 0.98 * math.sin(q1), depth + 0.005), 0.025, 0.012)
+    floor_v = -r_in * math.sin(rad(60))
+    rbox(props, 'soil', R - 0.16, a, z + floor_v + 0.05, 0.28, 0.32, 0.1, t=t)
+    base = pt(0, floor_v + 0.1, 0.16)
+    for k in range(7):
+        q = rad(a + 180) + random.uniform(-1.0, 1.0)
+        d = Vector((math.cos(q) * 0.5, math.sin(q) * 0.5, 1)).normalized()
+        leaf_blade(veg, 'veg_leaf_light' if k % 2 else 'veg_leaf', base + TV(a) * random.uniform(-0.08, 0.08),
+                   d, random.uniform(0.26, 0.36), 0.055, 0.03)
+
+
+for wa in (90, 270):                     # a little honeycomb of four
+    for u, v in ((-0.27, 0.0), (0.27, 0.32), (0.27, -0.32), (0.81, 0.0)):
+        hex_cell(wa, u, ZG + 1.9 + v)
 
 
 # ------------------------------------------------------------------ palms (our own model)

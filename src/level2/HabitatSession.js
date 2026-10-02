@@ -64,6 +64,11 @@ export class HabitatSession {
     const webgl = g.renderer.instance;
     webgl.toneMapping = THREE.ACESFilmicToneMapping;
     webgl.toneMappingExposure = 0.75;
+    // shadows from the lab's ceiling light only, drawn once (nothing in the lab moves), so they cost
+    // almost nothing per frame
+    webgl.shadowMap.enabled = true;
+    webgl.shadowMap.type = THREE.PCFShadowMap;
+    webgl.shadowMap.autoUpdate = false;
     webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     const size = new THREE.Vector2();
     webgl.getSize(size);
@@ -230,16 +235,41 @@ export class HabitatSession {
           m.roughness = 0.08;
           m.envMapIntensity = 0.9;
           m.side = THREE.FrontSide;
+          // real glass is clear face-on but bright and nearly solid at its edges (Fresnel)
+          m.onBeforeCompile = (shader) => {
+            shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
+              float glassRim = pow(1.0 - abs(dot(normalize(vViewPosition), normal)), 3.0);
+              diffuseColor.a = mix(diffuseColor.a, 0.85, glassRim);
+              outgoingLight += vec3(0.75, 0.88, 0.95) * glassRim * 0.5;
+              #include <opaque_fragment>`);
+          };
+          m.needsUpdate = true;
         }
       }
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
         if (m.name === 'goo_glow' && !this.gooMats.includes(m)) this.gooMats.push(m);
       }
     });
-    const marker = lab.getObjectByName('PT_LabLight');
-    this.labLight = new THREE.PointLight(0xc4e4ff, 16, 13, 2);
-    if (marker) marker.getWorldPosition(this.labLight.position);
-    this.game.scene.add(this.labLight);
+    // the lab's ceiling light: a wide spotlight, the lab's main light, casting the shadows that sit
+    // the objects on the desks and floor (strong enough to stand out from the soft fill light;
+    // its reach ends at the lab's walls)
+    this.labLight = new THREE.SpotLight(0xc4e4ff, 140, 11, 1.15, 0.7, 2);
+    this.labLight.position.set(0, 9.5, -22.4);
+    this.labLight.target.position.set(0, 5.5, -22.4);
+    this.labLight.castShadow = true;
+    this.labLight.shadow.mapSize.set(2048, 2048);
+    this.labLight.shadow.bias = -0.0004;
+    this.labLight.shadow.normalBias = 0.02;
+    this.labLight.shadow.camera.near = 0.5;
+    this.labLight.shadow.camera.far = 11;
+    this.game.scene.add(this.labLight, this.labLight.target);
+    lab.traverse((o) => {
+      if (!o.isMesh) return;
+      // (meshes with several materials load as numbered parts, e.g. Lab_Furniture_3)
+      const base = o.name.replace(/_\d+$/, '');
+      if (['Lab_Furniture', 'Lab_Clutter', 'Lab_Tubes'].includes(base)) o.castShadow = true;
+      if (['Lab_Room', 'Lab_Furniture', 'Lab_Clutter', 'Lab_Tubes'].includes(base)) o.receiveShadow = true;
+    });
   }
 
   async _precompile() {
@@ -249,6 +279,7 @@ export class HabitatSession {
     } catch (e) {
       webgl.compile(this.game.scene, this.game.camera.instance);
     }
+    this.game.renderer.instance.shadowMap.needsUpdate = true;   // draw the lab's shadows once
     this.composer.render();
   }
 
@@ -276,7 +307,7 @@ export class HabitatSession {
     this.labScreens.update(dt, surge);
     this.holoScreens.update(dt, surge);
     for (const m of this.gooMats) m.emissiveIntensity = 0.3 + 0.12 * Math.sin(this.organism.time * 2.3) + surge * 0.7;
-    this.labLight.intensity = 16 + surge * 22;
+    this.labLight.intensity = 140 + surge * 100;
     // ARIA idles on every screen (not AriaManager.update, which shows her on the nearest one only)
     this.aria.ariaMaterial.uniforms.uTime.value += dt;
     if (this.aria.useHead) this.aria.head.update(dt);

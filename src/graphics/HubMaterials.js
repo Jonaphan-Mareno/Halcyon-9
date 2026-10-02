@@ -184,6 +184,162 @@ function paintFloor(ctx, mode, seed) {
   }
 }
 
+// ---- Realistic surfaces for furniture and objects (the lab). Albedo maps sit around 0.69 grey,
+// because the shader brightens them by 1.45: plain areas then keep the material's own colour.
+
+function softBlobs(ctx, rand, n, rMin, rMax, colour) {
+  for (let i = 0; i < n; i++) {
+    const x = rand() * SIZE, y = rand() * SIZE, r = rMin + rand() * (rMax - rMin);
+    wrapped(ctx, (ox, oy) => {
+      const g = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+      g.addColorStop(0, colour);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
+    });
+  }
+}
+
+function fineScratches(ctx, rand, n, colour, maxLen = 60) {
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 1;
+  for (let i = 0; i < n; i++) {
+    const x = rand() * SIZE, y = rand() * SIZE, len = 8 + rand() * maxLen, a = rand() * Math.PI;
+    wrapped(ctx, (ox, oy) => { ctx.beginPath(); ctx.moveTo(x + ox, y + oy); ctx.lineTo(x + ox + Math.cos(a) * len, y + oy + Math.sin(a) * len); ctx.stroke(); });
+  }
+}
+
+// powder-coated metal furniture: a fine orange-peel grain, faint wear and hairline scratches
+function paintPaint(ctx, mode, seed) {
+  const rand = rng(seed), albedo = mode === 'albedo';
+  ctx.fillStyle = gray(albedo ? 0.69 : 0.5);
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  paintNoise(ctx, albedo ? 0.05 : 0.22, rand);
+  if (albedo) {
+    softBlobs(ctx, rand, 6, 30, 90, 'rgba(255,255,255,0.05)');
+    softBlobs(ctx, rand, 5, 20, 70, 'rgba(0,0,0,0.05)');
+  }
+  fineScratches(ctx, rand, 24, albedo ? 'rgba(255,255,255,0.12)' : 'rgba(40,40,40,0.5)');
+}
+
+// moulded plastic: almost smooth, a few smudges and fingerprints
+function paintPlastic(ctx, mode, seed) {
+  const rand = rng(seed), albedo = mode === 'albedo';
+  ctx.fillStyle = gray(albedo ? 0.69 : 0.5);
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  paintNoise(ctx, albedo ? 0.02 : 0.08, rand);
+  softBlobs(ctx, rand, 10, 10, 45, albedo ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)');
+  fineScratches(ctx, rand, 10, albedo ? 'rgba(0,0,0,0.06)' : 'rgba(60,60,60,0.35)', 30);
+}
+
+// woven fabric: threads going over and under each other
+function paintFabric(ctx, mode, seed) {
+  const rand = rng(seed), albedo = mode === 'albedo';
+  ctx.fillStyle = gray(albedo ? 0.6 : 0.35);
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  const T = 16;
+  for (let y = 0; y < SIZE; y += T) {
+    for (let x = 0; x < SIZE; x += T) {
+      const over = ((x + y) / T) % 2 === 0;
+      const v = albedo ? 0.66 + rand() * 0.1 : 0.75;
+      ctx.fillStyle = gray(v);
+      if (over) ctx.fillRect(x + 1, y + 3, T - 2, T - 6);
+      else ctx.fillRect(x + 3, y + 1, T - 6, T - 2);
+    }
+  }
+  paintNoise(ctx, albedo ? 0.04 : 0.1, rand);
+}
+
+// printed paper: a header, rows of text, a small table and a chart
+function paintPaper(ctx, mode, seed) {
+  const rand = rng(seed), albedo = mode === 'albedo';
+  ctx.fillStyle = gray(albedo ? 0.69 : 0.5);
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  if (!albedo) return;
+  const ink = (v) => gray(v * 0.69);
+  ctx.fillStyle = ink(0.25);
+  ctx.fillRect(40, 30, 220, 18);                                     // title
+  ctx.fillRect(40, 56, 120, 8);
+  for (let r = 0; r < 14; r++) {                                     // text lines made of words
+    let x = 40;
+    const y = 90 + r * 16;
+    const end = r % 5 === 4 ? 260 : 470;
+    while (x < end) {
+      const w = 10 + rand() * 40;
+      ctx.fillStyle = ink(0.35 + rand() * 0.1);
+      ctx.fillRect(x, y, Math.min(w, end - x), 6);
+      x += w + 6;
+    }
+  }
+  ctx.strokeStyle = ink(0.35);                                       // a table
+  ctx.lineWidth = 1.5;
+  for (let r = 0; r <= 5; r++) { ctx.beginPath(); ctx.moveTo(40, 330 + r * 22); ctx.lineTo(280, 330 + r * 22); ctx.stroke(); }
+  for (const c of [40, 120, 200, 280]) { ctx.beginPath(); ctx.moveTo(c, 330); ctx.lineTo(c, 440); ctx.stroke(); }
+  ctx.beginPath();                                                    // a chart
+  ctx.moveTo(310, 440); ctx.lineTo(310, 330); ctx.moveTo(310, 440); ctx.lineTo(470, 440); ctx.stroke();
+  ctx.strokeStyle = 'rgba(40,70,150,0.8)';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  for (let i = 0; i <= 10; i++) { const x = 315 + i * 15, y = 420 - rand() * 80; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+  ctx.stroke();
+}
+
+// a printed bottle or box label: a dark band, text, hazard diamond and a barcode
+function paintLabel(ctx, mode, seed) {
+  const rand = rng(seed), albedo = mode === 'albedo';
+  ctx.fillStyle = gray(albedo ? 0.69 : 0.5);
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  if (!albedo) return;
+  const ink = (v) => gray(v * 0.69);
+  for (let k = 0; k < 2; k++) {
+    const oy = k * 256;
+    ctx.fillStyle = 'rgba(30,60,120,0.85)';
+    ctx.fillRect(0, oy + 20, SIZE, 50);
+    ctx.fillStyle = ink(0.95);
+    ctx.fillRect(30, oy + 35, 160, 18);
+    for (let r = 0; r < 5; r++) {
+      ctx.fillStyle = ink(0.3);
+      ctx.fillRect(30, oy + 90 + r * 18, 120 + rand() * 200, 7);
+    }
+    ctx.save();                                                        // hazard diamond
+    ctx.translate(430, oy + 140); ctx.rotate(Math.PI / 4);
+    ctx.strokeStyle = 'rgba(200,30,20,0.9)'; ctx.lineWidth = 6;
+    ctx.strokeRect(-26, -26, 52, 52);
+    ctx.restore();
+    let x = 30;                                                        // barcode
+    while (x < 230) {
+      const w = 1 + Math.floor(rand() * 4);
+      ctx.fillStyle = ink(0.1);
+      ctx.fillRect(x, oy + 195, w, 40);
+      x += w + 1 + Math.floor(rand() * 3);
+    }
+  }
+}
+
+// brushed steel: fine streaks all in one direction
+function paintBrushed(ctx, mode, seed) {
+  const rand = rng(seed), albedo = mode === 'albedo';
+  ctx.fillStyle = gray(albedo ? 0.69 : 0.5);
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  for (let i = 0; i < 900; i++) {
+    const y = rand() * SIZE, x = rand() * SIZE, len = 60 + rand() * 260;
+    ctx.strokeStyle = albedo ? gray(0.6 + rand() * 0.18, 0.5) : gray(0.42 + rand() * 0.16, 0.6);
+    ctx.lineWidth = 1;
+    wrapped(ctx, (ox, oy) => { ctx.beginPath(); ctx.moveTo(x + ox, y + oy); ctx.lineTo(x + ox + len, y + oy); ctx.stroke(); });
+  }
+}
+
+// painted interior wall: very soft unevenness and faint scuffs low down
+function paintWall(ctx, mode, seed) {
+  const rand = rng(seed), albedo = mode === 'albedo';
+  ctx.fillStyle = gray(albedo ? 0.69 : 0.5);
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  paintNoise(ctx, albedo ? 0.015 : 0.06, rand);
+  softBlobs(ctx, rand, 8, 60, 160, albedo ? 'rgba(0,0,0,0.035)' : 'rgba(0,0,0,0.04)');
+  softBlobs(ctx, rand, 6, 40, 120, albedo ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.04)');
+  fineScratches(ctx, rand, 8, albedo ? 'rgba(0,0,0,0.05)' : 'rgba(60,60,60,0.2)', 40);
+}
+
 function makeTexture(paint, mode, seed, srgb) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = SIZE;
@@ -213,7 +369,14 @@ export const hubTime = { value: 0 };
 export function createHubTextures() {
   return {
     plate: { albedo: makeTexture(paintPlate, 'albedo', 11, true), height: makeTexture(paintPlate, 'height', 11, false) },
-    floor: { albedo: makeTexture(paintFloor, 'albedo', 23, true), height: makeTexture(paintFloor, 'height', 23, false) }
+    floor: { albedo: makeTexture(paintFloor, 'albedo', 23, true), height: makeTexture(paintFloor, 'height', 23, false) },
+    paint: { albedo: makeTexture(paintPaint, 'albedo', 31, true), height: makeTexture(paintPaint, 'height', 31, false) },
+    plastic: { albedo: makeTexture(paintPlastic, 'albedo', 37, true), height: makeTexture(paintPlastic, 'height', 37, false) },
+    fabric: { albedo: makeTexture(paintFabric, 'albedo', 41, true), height: makeTexture(paintFabric, 'height', 41, false) },
+    paper: { albedo: makeTexture(paintPaper, 'albedo', 43, true), height: makeTexture(paintPaper, 'height', 43, false) },
+    label: { albedo: makeTexture(paintLabel, 'albedo', 47, true), height: makeTexture(paintLabel, 'height', 47, false) },
+    brushed: { albedo: makeTexture(paintBrushed, 'albedo', 53, true), height: makeTexture(paintBrushed, 'height', 53, false) },
+    wall: { albedo: makeTexture(paintWall, 'albedo', 59, true), height: makeTexture(paintWall, 'height', 59, false) }
   };
 }
 
@@ -230,7 +393,24 @@ const SURFACES = {
   cont_red: { kind: 'plate', tile: 3.0, bump: 1.4 },
   cont_blue: { kind: 'plate', tile: 3.0, bump: 1.4 },
   cont_mustard: { kind: 'plate', tile: 3.0, bump: 1.4 },
-  cont_grey: { kind: 'plate', tile: 3.0, bump: 1.4 }
+  cont_grey: { kind: 'plate', tile: 3.0, bump: 1.4 },
+  // the lab's furniture and objects: realistic surfaces
+  navy: { kind: 'paint', tile: 0.7, bump: 0.35 },
+  navy_light: { kind: 'paint', tile: 0.7, bump: 0.35 },
+  soft_black: { kind: 'paint', tile: 0.6, bump: 0.35 },
+  orange: { kind: 'paint', tile: 0.5, bump: 0.3 },
+  lab_wall_low: { kind: 'paint', tile: 1.2, bump: 0.3 },
+  smooth_white: { kind: 'plastic', tile: 0.45, bump: 0.25 },
+  lab_blue: { kind: 'plastic', tile: 0.45, bump: 0.25 },
+  whiteboard: { kind: 'plastic', tile: 1.0, bump: 0.1 },
+  chair_fabric: { kind: 'fabric', tile: 0.06, bump: 1.0 },
+  coat: { kind: 'fabric', tile: 0.05, bump: 0.8 },
+  fabric: { kind: 'fabric', tile: 0.07, bump: 1.0 },
+  fabric_light: { kind: 'fabric', tile: 0.07, bump: 1.0 },
+  paper: { kind: 'paper', tile: 0.3, bump: 0 },
+  label: { kind: 'label', tile: 0.16, bump: 0 },
+  steel: { kind: 'brushed', tile: 0.3, bump: 0.4 },
+  lab_wall: { kind: 'wall', tile: 2.2, bump: 0.25 }
 };
 
 // How the light flows in each glowing material (GLSL expression giving a multiplier)

@@ -51,6 +51,8 @@ kit.mat('soft_black', (0.035, 0.038, 0.045), 0.55, 0.05)
 kit.mat('lab_blue', (0.10, 0.48, 0.66), 0.4, 0.05)       # teal-blue, like the reference's benches and chair
 kit.mat('orange', (0.95, 0.48, 0.08), 0.4, 0.05)
 kit.mat('smooth_white', (0.86, 0.88, 0.91), 0.35, 0.05)
+kit.mat('steel', (0.62, 0.64, 0.67), 0.32, 0.9)            # brushed steel
+kit.mat('chair_fabric', (0.10, 0.48, 0.66), 0.85, 0.0)    # the chairs' woven seat
 kit.mat('whiteboard', (0.95, 0.96, 0.97), 0.2, 0.0)
 kit.mat('marker_blue', (0.08, 0.25, 0.8), 0.6, 0.0)
 kit.mat('marker_red', (0.8, 0.1, 0.08), 0.6, 0.0)
@@ -210,8 +212,8 @@ def paper(c, rz, n=1):
 
 def bottle(c, m='amber_glass', h=0.3, r=0.065):
     """A reagent bottle with a white label and a black cap."""
-    cyl(clut, m, (c[0], c[1], c[2] + h / 2), r, h, 12)
-    cyl(clut, 'label', (c[0], c[1], c[2] + h * 0.45), r + 0.002, h * 0.35, 12)
+    cyl(clut, m, (c[0], c[1], c[2] + h / 2), r, h, 16)
+    cyl(clut, 'label', (c[0], c[1], c[2] + h * 0.45), r + 0.002, h * 0.35, 16)
     cyl(clut, m, (c[0], c[1], c[2] + h + 0.03), r * 0.45, 0.06, 10)
     cyl(clut, 'soft_black', (c[0], c[1], c[2] + h + 0.075), r * 0.5, 0.04, 10)
 
@@ -335,7 +337,7 @@ def goggles(c, rz):
 
 def pipette_stand(c):
     cyl(clut, 'soft_black', (c[0], c[1], c[2] + 0.015), 0.09, 0.03, 14)
-    cyl(clut, 'soft_black', (c[0], c[1], c[2] + 0.2), 0.016, 0.38, 8)
+    cyl(clut, 'steel', (c[0], c[1], c[2] + 0.2), 0.016, 0.38, 10)
     for k in range(3):
         a = k * 2.1
         q = (c[0] + math.cos(a) * 0.055, c[1] + math.sin(a) * 0.055)
@@ -348,12 +350,14 @@ def office_chair(c, rz, coat=False):
     p = Vector(c)
     for k in range(5):                                   # star base
         a = rad(rz + k * 72)
-        beam(furn, 'soft_black', (p.x, p.y, Z + 0.08), (p.x + math.cos(a) * 0.3, p.y + math.sin(a) * 0.3, Z + 0.05), 0.05, 0.04)
-    cyl(furn, 'soft_black', (p.x, p.y, Z + 0.3), 0.035, 0.44, 8)
-    rbox(furn, 'lab_blue', (p.x, p.y, Z + 0.55), (0.5, 0.5, 0.08), rz)
+        beam(furn, 'steel', (p.x, p.y, Z + 0.08), (p.x + math.cos(a) * 0.3, p.y + math.sin(a) * 0.3, Z + 0.05), 0.05, 0.04)
+        sphere(furn, 'soft_black', (p.x + math.cos(a) * 0.3, p.y + math.sin(a) * 0.3, Z + 0.03), 0.03, 8)   # castor
+    cyl(furn, 'steel', (p.x, p.y, Z + 0.3), 0.035, 0.44, 12)
+    rbox(furn, 'soft_black', (p.x, p.y, Z + 0.5), (0.46, 0.46, 0.03), rz)
+    rbox(furn, 'chair_fabric', (p.x, p.y, Z + 0.55), (0.5, 0.5, 0.08), rz)
     back = local(c, rz, -0.25, 0, 0)
     beam(furn, 'soft_black', local(c, rz, -0.2, 0, Z - c[2] + 0.55), (back.x, back.y, Z + 0.7), 0.05, 0.05)
-    rbox(furn, 'lab_blue', (back.x, back.y, Z + 0.92), (0.06, 0.46, 0.48), rz)
+    rbox(furn, 'chair_fabric', (back.x, back.y, Z + 0.92), (0.06, 0.46, 0.48), rz)
     if coat:                                             # a lab coat thrown over the back
         rbox(furn, 'coat', tuple(local(c, rz, -0.295, 0, Z - c[2] + 1.02)), (0.03, 0.42, 0.34), rz)
         rbox(furn, 'coat', tuple(local(c, rz, -0.33, 0, Z - c[2] + 0.72)), (0.03, 0.36, 0.34), rz + 4)
@@ -454,8 +458,8 @@ box(furn, 'blue_glow', (sx0 - 0.02, sy0 + 0.15, Z + 0.73), (sx0 - 0.01, sy1 - 0.
 box(furn, 'orange', (sx0 - 0.02, sy1 - 0.06, Z + 0.15), (sx0 - 0.01, sy1 - 0.03, Z + 0.65))
 box(furn, 'smooth_white', (sx0 - 0.05, sy0 - 0.03, Z + 0.88), (X1, sy1 + 0.03, Z + 0.95))
 box(furn, 'lab_seam', (sx0 + 0.08, sy0 + 0.12, Z + 0.8), (X1 - 0.1, sy1 - 0.12, Z + 0.951))   # basin
-beam(furn, 'soft_black', (X1 - 0.08, 18.85, Z + 0.95), (X1 - 0.08, 18.85, Z + 1.25), 0.04, 0.04)
-beam(furn, 'soft_black', (X1 - 0.08, 18.85, Z + 1.25), (X1 - 0.3, 18.85, Z + 1.18), 0.035, 0.035)
+beam(furn, 'steel', (X1 - 0.08, 18.85, Z + 0.95), (X1 - 0.08, 18.85, Z + 1.25), 0.04, 0.04)
+beam(furn, 'steel', (X1 - 0.08, 18.85, Z + 1.25), (X1 - 0.3, 18.85, Z + 1.18), 0.035, 0.035)
 bottle((X1 - 0.12, 19.2, Z + 0.95), 'lab_blue', h=0.18, r=0.04)                         # soap
 rbox(clut, 'lab_blue', (X1 - 0.15, 18.5, Z + 1.0), (0.14, 0.24, 0.1), 0)                # box of gloves
 for k, y in enumerate((18.35, 18.85)):                                                     # cupboards above the sink
@@ -612,4 +616,12 @@ broken_tube((-0.85, 21.2, Z), 1)       # fallen off the end of island A
 empty('PT_Clue_4', (0.75, 23.55, Z + 0.05))
 empty('PT_LabLight', (0.0, TUBE_Y - 1.5, Z + 3.2))
 
-finish(OUT_BLEND, OUT_GLB)
+
+def polish_all(objs):
+    widths = {'Lab_Furniture': 0.012, 'Lab_Clutter': 0.004, 'Lab_Tubes': 0.01}
+    for ob in objs:
+        if ob.name in widths:
+            kit.polish(ob, widths[ob.name])
+
+
+finish(OUT_BLEND, OUT_GLB, post=polish_all)

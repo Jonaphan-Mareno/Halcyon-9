@@ -12,6 +12,7 @@ import { DeepSeaWindow } from '../graphics/DeepSeaWindow.js';
 import { AriaManager } from '../entities/AriaManager.js';
 import { Organism } from './Organism.js';
 import { LabScreens } from './LabScreens.js';
+import { HoloScreens } from './HoloScreens.js';
 import '../ui/level2.css';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
@@ -102,7 +103,7 @@ export class HabitatSession {
         if (m.name === 'white_glow') m.emissiveIntensity = 0.24;  // the skylight panel: soft, not blinding
         if (m.name === 'blue_glow') m.emissiveIntensity *= 0.55;  // LED lines: a calm accent
         if (m.name === 'aria_screen') m.emissiveIntensity *= 0.7;
-        if (m.name === 'panel_mint' || m.name === 'panel_lilac') m.emissiveIntensity *= 0.3;   // soft tint, not white
+        if (m.name === 'panel_mint' || m.name === 'panel_blue') m.emissiveIntensity *= 0.3;   // soft tint, not white
         if (m.name.startsWith('palm_leaf') || m.name.startsWith('veg_') || o.name.startsWith('PLANT_')) {
           m.envMapIntensity = 0.35;     // leaves catch less of the room's reflections, so they don't look lit up
           m.roughness = Math.max(m.roughness, 0.75);
@@ -216,6 +217,7 @@ export class HabitatSession {
     const frags = find('ORGFRAG_').map((o) => o.getWorldPosition(new THREE.Vector3()));
     this.organism = new Organism(this.game.scene, tubes, frags);
     this.labScreens = new LabScreens(this.game.scene, find('PT_LabScreen_'));
+    this.holoScreens = new HoloScreens(this.game.scene, find('PT_Holo_'));
     this.gooMats = [];
     lab.traverse((o) => {
       if (!o.isMesh) return;
@@ -235,7 +237,7 @@ export class HabitatSession {
       }
     });
     const marker = lab.getObjectByName('PT_LabLight');
-    this.labLight = new THREE.PointLight(0xc8ffe8, 16, 13, 2);
+    this.labLight = new THREE.PointLight(0xc4e4ff, 16, 13, 2);
     if (marker) marker.getWorldPosition(this.labLight.position);
     this.game.scene.add(this.labLight);
   }
@@ -272,6 +274,7 @@ export class HabitatSession {
     this.organism.update(dt);
     const surge = this.organism.surge;
     this.labScreens.update(dt, surge);
+    this.holoScreens.update(dt, surge);
     for (const m of this.gooMats) m.emissiveIntensity = 0.3 + 0.12 * Math.sin(this.organism.time * 2.3) + surge * 0.7;
     this.labLight.intensity = 16 + surge * 22;
     // ARIA idles on every screen (not AriaManager.update, which shows her on the nearest one only)

@@ -99,7 +99,7 @@ def ccyl(acc, m, c, r, h, seg=24, col=False):
 # ------------------------------------------------------------------ openings in the outer wall
 GAPS = [
     dict(name='window', a0=62, a1=118, z0=0.8, z1=5.0),
-    dict(name='lab', a0=124, a1=146, z0=ZG, z1=ZG + 3.4),
+    dict(name='lab', a0=84, a1=96, z0=ZG, z1=ZG + 3.4),        # across the hall from the lift, above the window
     dict(name='pods', a0=172, a1=188, z0=0.0, z1=3.4),
     dict(name='lift', a0=263, a1=277, z0=0.0, z1=3.6),
     dict(name='voss', a0=353, a1=367, z0=ZG, z1=ZG + 3.2),
@@ -124,9 +124,18 @@ def free_spans():
 wall = A('Atrium_Wall')
 for a0, a1 in free_spans():
     arc(wall, 'hull_light', R, R + T, a0, a1, 0, H, col=True)
+LAB = GAPS[1]
 for g in GAPS:
+    if g['name'] == 'lab':
+        continue                        # the lab doorway sits inside the wall above the window (below)
     if g['z0'] > 0:
         arc(wall, 'hull_light', R, R + T, g['a0'], g['a1'], 0, g['z0'], step=2, col=True)
+    if g['name'] == 'window':           # above the window, leaving the lab doorway open
+        arc(wall, 'hull_light', R, R + T, g['a0'], LAB['a0'], g['z1'], H, step=2, col=True)
+        arc(wall, 'hull_light', R, R + T, LAB['a1'], g['a1'], g['z1'], H, step=2, col=True)
+        arc(wall, 'hull_light', R, R + T, LAB['a0'], LAB['a1'], g['z1'], LAB['z0'], step=2, col=True)
+        arc(wall, 'hull_light', R, R + T, LAB['a0'], LAB['a1'], LAB['z1'], H, step=2, col=True)
+        continue
     arc(wall, 'hull_light', R, R + T, g['a0'], g['a1'], g['z1'], H, step=2, col=True)
 # light blue LED lines and a grey skirting along the wall
 dress = A('Atrium_WallDetail')
@@ -422,7 +431,17 @@ def frame(a0, a1, z0, z1):
     arc(door, 'accent', R - 0.25, R, a0 - 1.2, a1 + 1.2, z1, z1 + 0.35, step=1)
 
 
-for name, g in (('KESSLER', GAPS[5]), ('LAB', GAPS[1]), ('VOSS', GAPS[4])):
+# the lab: wide sliding double doors (the game opens them as you walk up; the lab itself is
+# Blender/scripts/build_l2_lab.py)
+frame(LAB['a0'], LAB['a1'], LAB['z0'], LAB['z1'])
+empty('PT_Plate_LAB', P(R - 0.3, 90, LAB['z1'] + 0.7))
+for nm, s in (('LABDOOR_L', -0.9), ('LABDOOR_R', 0.9)):
+    c = P(R + 0.25, 90, LAB['z0'] + 1.7) + TV(90) * s
+    e = A(nm, origin=tuple(c))
+    rbox(e, 'hull_mid', R + 0.25, 90, LAB['z0'] + 1.7, 0.18, 1.8, 3.4, t=s)
+    rbox(e, 'blue_glow', R + 0.14, 90, LAB['z0'] + 1.7, 0.04, 0.06, 2.6, t=s - 0.85 * (1 if s > 0 else -1))
+    rbox(e, 'accent', R + 0.14, 90, LAB['z0'] + 2.6, 0.04, 1.2, 0.08, t=s)
+for name, g in (('KESSLER', GAPS[5]), ('VOSS', GAPS[4])):
     d = A('DOOR_' + name)
     arc(d, 'hull_mid', R + 0.1, R + 0.4, g['a0'], g['a1'], g['z0'], g['z1'], step=1)
     arc(d, 'blue_glow', R + 0.05, R + 0.1, (g['a0'] + g['a1']) / 2 - 0.15, (g['a0'] + g['a1']) / 2 + 0.15, g['z0'] + 0.2, g['z1'] - 0.2, step=0.3)
@@ -441,7 +460,7 @@ for nm, s in (('ELEVATOR_Door_L', -1.05), ('ELEVATOR_Door_R', 1.05)):
     e = A(nm, origin=tuple(c))
     rbox(e, 'hull_mid', R + 0.25, 270, 1.8, 0.2, 2.05, 3.6, t=s)
 # sealed crew doors around the gallery (their nameplates introduce the crew)
-for i, a in enumerate((20, 70, 110, 160, 200, 225, 315, 340)):
+for i, a in enumerate((20, 128, 142, 160, 200, 225, 315, 340)):    # (clear of the lab doors at 84-96)
     rbox(door, 'hull_mid', R - 0.06, a, ZG + 1.6, 0.12, 2.4, 3.2)
     rbox(door, 'accent', R - 0.08, a, ZG + 3.25, 0.1, 2.7, 0.15)
     rbox(door, 'blue_glow', R - 0.13, a, ZG + 1.5, 0.04, 0.3, 0.12)
@@ -490,7 +509,7 @@ wall_screen('ARIA_M2', 281, 2.3)              # beside the lift
 wall_screen('ARIA_M3', 247, 2.3)              # foot of the west stair
 wall_screen('ARIA_M4', 293, 2.3)              # foot of the east stair
 wall_screen('ARIA_M5', 57, ZG + 1.9)          # outside Dr. Kessler's door
-wall_screen('ARIA_M6', 120, ZG + 1.9)         # outside the lab
+wall_screen('ARIA_M6', 77, ZG + 1.9)          # beside the lab doors
 # M10: the info kiosk by the lounge
 kiosk = P(9.4, 240, 0)
 rbox(mon, 'hull_light', 9.4, 240, 0.9, 0.55, 1.0, 1.8, col=True)
@@ -638,7 +657,7 @@ def hex_cell(a, t, z, r_out=0.35, r_in=0.285, depth=0.32):
                    d, random.uniform(0.26, 0.36), 0.055, 0.03)
 
 
-for wa in (90, 270):                     # a little honeycomb of four
+for wa in (102.5, 270):                  # a little honeycomb of four (beside the lab doors, above the lift)
     for u, v in ((-0.27, 0.0), (0.27, 0.32), (0.27, -0.32), (0.81, 0.0)):
         hex_cell(wa, u, ZG + 1.9 + v)
 

@@ -160,6 +160,13 @@ ccyl(island, 'hull_light', (0, 0, -0.15), 2.4, 0.9, 40, col=True)
 ccyl(island, 'accent', (0, 0, 0.12), 2.43, 0.1, 40)
 ccyl(island, 'soil', (0, 0, 0.31), 2.25, 0.04, 40)
 ccyl(island, 'blue_glow', (0, 0, -0.56), 2.45, 0.04, 40)
+kit.mat('pebble', (0.50, 0.47, 0.42), 0.8, 0.0)
+for k in range(170):                    # pebbles scattered over the soil, so the trees look planted
+    q = P(math.sqrt(random.random()) * 2.15, random.uniform(0, 360), 0.335)
+    verts = bmesh.ops.create_icosphere(island.bm, subdivisions=1, radius=random.uniform(0.025, 0.055))['verts']
+    bmesh.ops.scale(island.bm, vec=(1, 1, 0.55), verts=verts)
+    bmesh.ops.translate(island.bm, vec=q, verts=verts)
+    island.tag(random.choice(['pebble', 'pebble', 'hull_mid']), _faces(verts))
 
 # sofas curving round the lounge, gaps at north and south so you can walk down into it
 sofa = A('Atrium_Sofas')
@@ -173,32 +180,136 @@ for a in (140, 320):                                                          # 
     rbox(sofa, 'hull_dark', 3.3, a, -0.4, 1.0, 1.6, 0.4, col=True)
     rbox(sofa, 'aria_screen', 3.3, a, -0.19, 0.8, 1.4, 0.02)
 
-# ------------------------------------------------------------------ planter beds round the hall
-plant_spots = []        # (location, kind) filled in after the plants are loaded
+# ------------------------------------------------------------------ growing food: raised beds and wall beds
+# The crew grew their own food: tomatoes on stakes, rows of carrots, lettuce. Modelled here from
+# simple leaf blades (light on the GPU, and our own work).
+kit.mat('veg_leaf', (0.08, 0.26, 0.06), 0.75, 0.0)
+kit.mat('veg_leaf_light', (0.15, 0.36, 0.09), 0.75, 0.0)
+kit.mat('carrot', (0.90, 0.40, 0.06), 0.6, 0.0)
+kit.mat('tomato', (0.72, 0.06, 0.04), 0.35, 0.0)
+kit.mat('stake', (0.40, 0.30, 0.18), 0.8, 0.0)
+for _nm in ('veg_leaf', 'veg_leaf_light'):
+    kit.MATS[_nm].use_backface_culling = False
+veg = A('PLANT_Vegetables')
+
+
+def leaf_blade(acc, m, base, direction, length, width, droop):
+    side = direction.cross(Vector((0, 0, 1)))
+    if side.length < 1e-4:
+        side = Vector((1, 0, 0))
+    side.normalize()
+    tip = base + direction * length - Vector((0, 0, droop))
+    mid = base + direction * (length * 0.5) + Vector((0, 0, length * 0.12))
+    v = [acc.bm.verts.new(p) for p in (base, mid - side * width, tip, mid + side * width)]
+    acc.tag(m, [acc.bm.faces.new((v[0], v[1], v[2])), acc.bm.faces.new((v[0], v[2], v[3]))])
+
+
+def carrot(acc, p):
+    cyl(acc, 'carrot', (p.x, p.y, p.z + 0.02), 0.028, 0.05, 6)                 # orange top showing above the soil
+    for k in range(6):
+        ang = k / 6 * math.tau + random.uniform(-0.3, 0.3)
+        d = Vector((math.cos(ang) * 0.35, math.sin(ang) * 0.35, 1)).normalized()
+        leaf_blade(acc, 'veg_leaf_light', p + Vector((0, 0, 0.04)), d, random.uniform(0.2, 0.3), 0.03, 0.02)
+
+
+def lettuce(acc, p):
+    for k in range(9):
+        ang = k / 9 * math.tau + random.uniform(-0.2, 0.2)
+        d = Vector((math.cos(ang), math.sin(ang), 0.3 + (k % 3) * 0.25)).normalized()
+        leaf_blade(acc, 'veg_leaf_light' if k % 2 else 'veg_leaf', p + Vector((0, 0, 0.02)), d, 0.2, 0.09, 0.0)
+
+
+def tomato(acc, p):
+    cyl(acc, 'stake', (p.x, p.y, p.z + 0.65), 0.015, 1.3, 6)
+    for k in range(14):
+        ang = random.uniform(0, math.tau)
+        d = Vector((math.cos(ang), math.sin(ang), random.uniform(-0.2, 0.5))).normalized()
+        leaf_blade(acc, 'veg_leaf', p + Vector((0, 0, random.uniform(0.15, 1.15))), d, random.uniform(0.18, 0.28), 0.07, 0.04)
+    for k in range(5):
+        ang = random.uniform(0, math.tau)
+        q = p + Vector((math.cos(ang) * 0.12, math.sin(ang) * 0.12, random.uniform(0.3, 1.0)))
+        verts = bmesh.ops.create_uvsphere(acc.bm, u_segments=8, v_segments=6, radius=0.045)['verts']
+        bmesh.ops.translate(acc.bm, vec=q, verts=verts)
+        acc.tag('tomato', _faces(verts))
+
+
+CROPS = {'carrot': (carrot, 0.24), 'lettuce': (lettuce, 0.42), 'tomato': (tomato, 0.6)}
+
+
+def jitter():
+    return Vector((random.uniform(-0.03, 0.03), random.uniform(-0.03, 0.03), 0))
+
+
+def fill_rect_bed(rc, a, radial, tangential, top, crop):
+    fn, spacing = CROPS[crop]
+    nr, nt = max(1, int(radial / spacing)), max(1, int(tangential / spacing))
+    for i in range(nr):
+        for j in range(nt):
+            rr = rc - radial / 2 + (i + 0.5) * radial / nr
+            fn(veg, P(rr, a, top) + TV(a) * (-tangential / 2 + (j + 0.5) * tangential / nt) + jitter())
+
+
+def fill_arc_bed(r0, r1, a0, a1, top, crop):
+    if a1 < a0:
+        a1 += 360
+    fn, spacing = CROPS[crop]
+    rows = max(1, int((r1 - r0) / spacing))
+    for i in range(rows):
+        rr = r0 + (i + 0.5) * (r1 - r0) / rows
+        n = max(1, int(math.radians(a1 - a0) * rr / spacing))
+        for j in range(n):
+            fn(veg, P(rr, a0 + (j + 0.5) * (a1 - a0) / n, top) + jitter())
+
+
+# raised beds on the floor, one crop each
 beds = A('Atrium_Planters')
-for a in (0, 45, 135, 225, 315):
+for a, crop in ((0, 'tomato'), (45, 'lettuce'), (135, 'carrot'), (225, 'tomato'), (315, 'lettuce')):
     rbox(beds, 'hull_light', 10.2, a, 0.4, 1.8, 4.2, 0.8, col=True)
     rbox(beds, 'accent', 10.2, a, 0.81, 1.86, 4.26, 0.04)
     rbox(beds, 'soil', 10.2, a, 0.82, 1.6, 4.0, 0.04)
     rbox(beds, 'blue_glow', 10.2, a, 0.02, 1.9, 4.3, 0.04)
-    plant_spots.append((P(10.2, a, 0.84), 'palm'))
-    for t in (-1.4, 1.4):
-        plant_spots.append((P(10.2, a, 0.84) + TV(a) * t, random.choice(['fern', 'calathea', 'anthurium'])))
-    for t in (-0.7, 0.7):
-        plant_spots.append((P(10.6, a, 0.84) + TV(a) * t, 'sorrel'))
-plant_spots += [(Vector((0.7, 0.6, 0.33)), 'palm_tall'), (Vector((-0.8, -0.5, 0.33)), 'palm'),
-                (Vector((0.4, -1.3, 0.33)), 'pachira'), (Vector((-1.3, 0.9, 0.33)), 'calathea'),
-                (Vector((1.5, -0.4, 0.33)), 'anthurium'), (Vector((-0.2, 1.6, 0.33)), 'fern')]
-for a in (100, 80):                                                            # potted plants by the window
-    plant_spots.append((P(15.6, a, 0.0), 'potted'))
+    fill_rect_bed(10.2, a, 1.4, 3.7, 0.84, crop)
+
+# long beds along the wall, under the gallery (gaps for the window, doors, lift and stairs)
+for a0, a1, crop in ((336, 28, 'carrot'), (32, 58, 'tomato'), (124, 166, 'lettuce'), (192, 207, 'tomato')):
+    arc(beds, 'hull_light', 15.2, 16.75, a0, a1, 0, 0.7, step=3, col=True)
+    arc(beds, 'accent', 15.15, 15.25, a0, a1, 0.66, 0.74, step=3)
+    arc(beds, 'soil', 15.3, 16.65, a0, a1, 0.7, 0.72, step=3)
+    arc(beds, 'blue_glow', 15.17, 15.22, a0, a1, 0.02, 0.06, step=3)
+    fill_arc_bed(15.45, 16.5, a0, a1, 0.72, crop)
+
+# decorative plants always stand in a pot: white with an orange rim
+pots = A('Atrium_Pots')
+
+
+def pot(loc, r=0.36, h=0.58):
+    cyl(pots, 'hull_light', (loc.x, loc.y, loc.z + h / 2), r, h, 20)
+    cyl(pots, 'accent', (loc.x, loc.y, loc.z + h - 0.03), r + 0.025, 0.06, 20)
+    cyl(pots, 'soil', (loc.x, loc.y, loc.z + h - 0.005), r - 0.03, 0.02, 20)
+    kit.col_box((loc.x - r, loc.y - r, loc.z), (loc.x + r, loc.y + r, loc.z + h))
+    return Vector((loc.x, loc.y, loc.z + h))
+
+
+plant_spots = [(Vector((0.7, 0.6, 0.33)), 'palm_tall'), (Vector((-0.8, -0.5, 0.33)), 'palm'),   # (location, kind)
+               (Vector((0.4, -1.3, 0.33)), 'pachira'), (Vector((-1.3, 0.9, 0.33)), 'fern')]
+for k in range(10):                                                            # flowers round the island's edge
+    plant_spots.append((P(1.85, k * 36 + 10, 0.33), 'sorrel'))
+for a, kind in ((20, 'calathea'), (160, 'anthurium'), (200, 'fern'), (340, 'calathea')):   # round the lounge
+    plant_spots.append((pot(P(8.0, a, 0.0)), kind))
+plant_spots.append((pot(P(9.8, 254, 0.0)), 'fern'))                            # by the info kiosk
+for a in (80, 100):                                                            # short palms by the window
+    plant_spots.append((pot(P(14.8, a, 0.0), r=0.55, h=0.8), 'palm_short'))
+for a, kind in ((31, 'calathea'), (150, 'fern'), (12, 'anthurium')):            # on the gallery, by the doors
+    plant_spots.append((pot(P(16.2, a, ZG), r=0.3, h=0.5), kind))
 
 # ------------------------------------------------------------------ the angled black pillars
 pil = A('Atrium_Pillars')
 for k in range(8):
     a = 22.5 + k * 45
-    beam(pil, 'hull_dark', P(16.6, a, 0), P(12.8, a, H), 1.1, 1.5)
-    beam(pil, 'blue_glow', P(16.0, a, 0.6), P(12.25, a, H - 0.6), 0.1, 0.1)    # LED line up the inner face
-    ring = P(16.6 - 3.8 * (3.2 / H), a, 3.2)
+    # they rise from just inside the gallery's edge and lean inwards, so they never cross the walkway
+    beam(pil, 'hull_dark', P(13.0, a, 0), P(10.8, a, H), 1.0, 1.4)
+    beam(pil, 'blue_glow', P(12.45, a, 0.6), P(10.25, a, H - 0.6), 0.1, 0.1)   # LED line up the inner face
+    ring = P(13.0 - 2.2 * (3.2 / H), a, 3.2)
     cyl(pil, 'hull_dark', (ring.x, ring.y, ring.z), 1.0, 0.35, 24)
     cyl(pil, 'blue_glow', (ring.x, ring.y, ring.z), 1.03, 0.12, 24)
     kit.col_box((ring.x - 0.6, ring.y - 0.6, 0), (ring.x + 0.6, ring.y + 0.6, 2.6))
@@ -355,9 +466,9 @@ empty('PT_PhotoBoard', P(R - 0.12, 233, 1.7))
 
 # ------------------------------------------------------------------ palms (our own model)
 # Palm leaves are real geometry (leaflet blades), so they need no transparency and always draw
-kit.mat('palm_leaf', (0.10, 0.36, 0.09), 0.6, 0.0)
+kit.mat('palm_leaf', (0.07, 0.26, 0.06), 0.7, 0.0)
 kit.MATS['palm_leaf'].use_backface_culling = False
-kit.mat('palm_leaf_light', (0.22, 0.52, 0.14), 0.6, 0.0)
+kit.mat('palm_leaf_light', (0.12, 0.35, 0.08), 0.7, 0.0)
 kit.MATS['palm_leaf_light'].use_backface_culling = False
 
 
@@ -411,6 +522,7 @@ def make_palm(name, height, lean=0.12, fronds=11):
 # tall enough that the crowns rise above the gallery railings, as in the reference
 palm_a = make_palm('PLANT_palm_a', 7.2)
 palm_b = make_palm('PLANT_palm_b', 8.6, lean=0.16, fronds=13)
+palm_c = make_palm('PLANT_palm_c', 3.3, lean=0.08, fronds=9)                   # small, for pots
 
 
 # ------------------------------------------------------------------ downloaded plants (Poly Haven, CC0)
@@ -461,10 +573,9 @@ def load_plant(pid, height, ratio=None):
 
 
 templates = {
-    'palm': palm_a, 'palm_tall': palm_b,
+    'palm': palm_a, 'palm_tall': palm_b, 'palm_short': palm_c,
     'pachira': load_plant('pachira_aquatica_01', 3.4, 0.3),
     # potted_plant_02 is left out: two of its texture maps fail to convert and break the file
-    'potted': load_plant('calathea_orbifolia_01', 1.0, 0.6),
     'calathea': load_plant('calathea_orbifolia_01', 0.85, 0.6),
     'anthurium': load_plant('anthurium_botany_01', 0.75),
     'fern': load_plant('fern_02', 0.9),

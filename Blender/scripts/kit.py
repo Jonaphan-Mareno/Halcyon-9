@@ -78,7 +78,7 @@ def _habitat_palette():
     mat('glass', (0.70, 0.88, 0.96), 0.05, 0.0, alpha=0.25)
     mat('fabric', (0.16, 0.18, 0.21), 0.85, 0.0)          # dark sofa upholstery
     mat('fabric_light', (0.30, 0.62, 0.72), 0.85, 0.0)    # light blue cushions
-    mat('soil', (0.10, 0.07, 0.05), 0.95, 0.0)
+    mat('soil', (0.05, 0.036, 0.026), 0.95, 0.0)          # dark, rich soil
     mat('palm_trunk', (0.30, 0.22, 0.14), 0.9, 0.0)
     mat('col', (1, 0, 1), 1.0, 0)
 

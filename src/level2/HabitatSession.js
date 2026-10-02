@@ -59,7 +59,7 @@ export class HabitatSession {
     const g = this.game;
     const webgl = g.renderer.instance;
     webgl.toneMapping = THREE.ACESFilmicToneMapping;
-    webgl.toneMappingExposure = 0.85;
+    webgl.toneMappingExposure = 0.75;
     webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     const size = new THREE.Vector2();
     webgl.getSize(size);
@@ -67,13 +67,13 @@ export class HabitatSession {
     const target = new THREE.WebGLRenderTarget(size.x * pr, size.y * pr, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(webgl, target);
     this.composer.addPass(new RenderPass(g.scene, g.camera.instance));
-    this.composer.addPass(new UnrealBloomPass(size.clone(), 0.18, 0.4, 1.0));
+    this.composer.addPass(new UnrealBloomPass(size.clone(), 0.12, 0.4, 1.0));
     this.composer.addPass(new OutputPass());
     g.renderer.render = () => this.composer.render();
     window.addEventListener('resize', () => this.composer.setSize(window.innerWidth, window.innerHeight));
     const pmrem = new THREE.PMREMGenerator(webgl);
     g.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    g.scene.environmentIntensity = 0.6;
+    g.scene.environmentIntensity = 0.45;
     pmrem.dispose();
     g.scene.background = new THREE.Color(0xdfe7ee);
     g.scene.fog = null;
@@ -93,8 +93,12 @@ export class HabitatSession {
       if (!o.isMesh) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       for (const m of mats) {
-        if (m.name === 'white_glow') m.emissiveIntensity = 0.65;  // the skylight panel: bright, not blinding
-        if (m.name === 'palm_leaf' || o.name.startsWith('PLANT_')) {
+        if (m.name === 'white_glow') m.emissiveIntensity = 0.24;  // the skylight panel: soft, not blinding
+        if (m.name === 'blue_glow') m.emissiveIntensity *= 0.55;  // LED lines: a calm accent
+        if (m.name === 'aria_screen') m.emissiveIntensity *= 0.7;
+        if (m.name.startsWith('palm_leaf') || m.name.startsWith('veg_') || o.name.startsWith('PLANT_')) {
+          m.envMapIntensity = 0.35;     // leaves catch less of the room's reflections, so they don't look lit up
+          m.roughness = Math.max(m.roughness, 0.75);
           // leaves: cut out by alpha. A low threshold plus alpha-to-coverage (the anti-aliasing blends
           // the cut edges) keeps thin leaflets from vanishing at a distance
           m.alphaTest = 0.25;
@@ -123,13 +127,13 @@ export class HabitatSession {
     this.sea = new DeepSeaWindow({ radius: 17.9, a0: 62, a1: 118, bottom: 0.8, height: 4.2 });
     scene.add(this.sea.mesh);
 
-    // bright, even lab light: a soft sky light, the big skylight panel, two fills, the lift
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x8c949c, 0.6));
+    // soft, calm light (not glaring): a gentle sky light, the skylight panel, two fills, the lift
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8c949c, 0.38));
     // daylight-like light from the skylight: even, no hot spot on the ceiling
-    const sky = new THREE.DirectionalLight(0xfaf6ee, 1.5);
+    const sky = new THREE.DirectionalLight(0xfaf6ee, 0.85);
     sky.position.set(4, 20, 6);
     scene.add(sky);
-    for (const [x, y, z, intensity, dist] of [[10, 7, 6, 120, 30], [-10, 7, -6, 120, 30], [0, 3.2, 19.1, 12, 6]]) {
+    for (const [x, y, z, intensity, dist] of [[10, 7, 6, 55, 30], [-10, 7, -6, 55, 30], [0, 3.2, 19.1, 10, 6]]) {
       const l = new THREE.PointLight(0xf4f9ff, intensity, dist, 2);
       l.position.set(x, y, z);
       scene.add(l);

@@ -81,26 +81,26 @@ def mat(name, color, rough=0.7, metal=0.1, emit=None, strength=0.0, alpha=1.0):
 # Neutral dark gunmetal (reference: dark metallic corridors) with cyan-blue strip lights, a
 # little rust, and warm work lamps. The three bedroom doors are told apart by their glow:
 # cyan, ice white, violet.
-mat('hull_light', (0.36, 0.37, 0.39), 0.45, 0.55)
-mat('hull_mid', (0.23, 0.24, 0.26), 0.5, 0.55)
-mat('hull_dark', (0.08, 0.085, 0.095), 0.55, 0.55)
-mat('floor_dark', (0.14, 0.145, 0.16), 0.45, 0.5)
-mat('trim', (0.30, 0.32, 0.35), 0.45, 0.65)
-mat('rust', (0.30, 0.17, 0.13), 0.75, 0.3)
-mat('pipe_black', (0.04, 0.042, 0.048), 0.5, 0.7)
-mat('lamp_warm', (1.0, 0.85, 0.6), 0.4, 0, (1.0, 0.8, 0.5), 2.2)
-mat('tile_glow', (0.02, 0.08, 0.09), 0.6, 0, (0.2, 0.85, 0.95), 0.5)
-mat('blue_glow', (0.1, 0.5, 0.9), 0.4, 0, (0.15, 0.65, 1.0), 3.2)
-mat('white_glow', (0.8, 0.9, 1.0), 0.4, 0, (0.8, 0.9, 1.0), 5.0)
+mat('hull_light', (0.70, 0.72, 0.74), 0.42, 0.25)
+mat('hull_mid', (0.46, 0.48, 0.51), 0.45, 0.3)
+mat('hull_dark', (0.15, 0.16, 0.18), 0.5, 0.4)
+mat('floor_dark', (0.22, 0.24, 0.27), 0.4, 0.3)
+mat('trim', (0.55, 0.58, 0.62), 0.4, 0.45)
+mat('rust', (0.16, 0.38, 0.41), 0.5, 0.3)
+mat('pipe_black', (0.12, 0.13, 0.14), 0.45, 0.5)
+mat('lamp_warm', (0.85, 0.95, 1.0), 0.4, 0, (0.8, 0.95, 1.0), 1.6)
+mat('tile_glow', (0.05, 0.22, 0.24), 0.4, 0, (0.15, 0.85, 0.85), 0.6)
+mat('blue_glow', (0.1, 0.75, 0.8), 0.4, 0, (0.1, 0.9, 0.95), 2.2)
+mat('white_glow', (0.9, 0.97, 1.0), 0.4, 0, (0.9, 0.97, 1.0), 3.5)
 mat('core_energy', (0.2, 0.8, 1.0), 0.3, 0, (0.25, 0.85, 1.0), 6.0)
-mat('door_a_glow', (0.1, 0.9, 1.0), 0.4, 0, (0.15, 0.95, 1.0), 2.6)
-mat('door_b_glow', (0.55, 0.8, 1.0), 0.4, 0, (0.7, 0.88, 1.0), 2.6)
-mat('door_c_glow', (0.45, 0.3, 1.0), 0.4, 0, (0.5, 0.35, 1.0), 2.6)
+mat('door_a_glow', (0.1, 0.9, 0.9), 0.4, 0, (0.15, 0.95, 0.95), 2.2)
+mat('door_b_glow', (0.6, 0.9, 1.0), 0.4, 0, (0.7, 0.92, 1.0), 2.2)
+mat('door_c_glow', (0.3, 0.95, 0.6), 0.4, 0, (0.35, 1.0, 0.65), 2.2)
 mat('glass', (0.03, 0.07, 0.10), 0.05, 0.0, alpha=0.3)
-mat('cont_red', (0.27, 0.15, 0.12), 0.7, 0.35)      # desaturated rust
-mat('cont_blue', (0.10, 0.19, 0.21), 0.7, 0.35)     # dark teal
-mat('cont_mustard', (0.22, 0.21, 0.16), 0.7, 0.35)  # dull olive
-mat('cont_grey', (0.24, 0.25, 0.27), 0.7, 0.35)
+mat('cont_red', (0.72, 0.74, 0.76), 0.5, 0.25)
+mat('cont_blue', (0.10, 0.40, 0.43), 0.5, 0.3)
+mat('cont_mustard', (0.52, 0.55, 0.57), 0.5, 0.3)
+mat('cont_grey', (0.30, 0.33, 0.36), 0.5, 0.3)
 mat('col', (1, 0, 1), 1.0, 0)
 
 # ------------------------------------------------------------------ geometry helpers

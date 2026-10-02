@@ -24,8 +24,8 @@ const WINGS = ['./assets/models/wing1-cargo.glb'];
 // The same six lights serve every zone: entering a zone moves them there (moving a light is
 // free; adding or removing one would recompile every shader). [x, y, z, intensity, distance]
 const LIGHT_ZONES = {
-  hub: [[0, 11, 0, 760, 0], [0, 27, 0, 420, 0], [17, 9, 17, 110, 45], [-17, 9, -17, 110, 45]],
-  wing1: [[0, 11, -62, 700, 0], [0, 10, -84, 380, 0], [0, 4.2, -38, 45, 18], [0, 7, -48, 160, 30]]
+  hub: [[0, 11, 0, 760, 0], [0, 27, 0, 420, 0], [17, 10, 17, 220, 60], [-17, 10, -17, 220, 60]],
+  wing1: [[0, 11, -62, 520, 0], [0, 10, -84, 420, 0], [0, 4.2, -38, 90, 20], [0, 8, -48, 240, 35]]
 };
 const HIDDEN_PREFIXES = ['COL_', 'REF_'];
 const startsWithAny = (name, list) => list.some((p) => name.startsWith(p));
@@ -109,7 +109,7 @@ export class Level2 {
     this._addLights(hub);
     this._addDeepSea();
     this.scene.background = new THREE.Color(0x02080c);
-    this.scene.fog = new THREE.FogExp2(0x03090e, 0.011);
+    this.scene.fog = new THREE.FogExp2(0x9aa8b6, 0.0035);
 
     this.ready = true;
   }
@@ -120,7 +120,7 @@ export class Level2 {
     if (!renderer) return;
     const pmrem = new THREE.PMREMGenerator(renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.14;
+    this.scene.environmentIntensity = 0.45;
     pmrem.dispose();
   }
 
@@ -163,8 +163,9 @@ export class Level2 {
 
   // Placeholder lighting: cold blue, dim, with pools of light round the core and the tiers
   _addLights(hub) {
-    // The hall is dark; the reactor is what lights it. A low cool fill keeps the shapes readable.
-    this.root.add(new THREE.HemisphereLight(0x7f94b4, 0x0b0e14, 0.3));
+    // A research lab is evenly lit: a bright, soft fill from the white ceiling, with the reactor
+    // as the one strong light that draws the eye
+    this.root.add(new THREE.HemisphereLight(0xe2ebf3, 0x4a525c, 0.85));
 
     // The reactor: a strong light at its heart and one at its crown, so everything near it is
     // bright and everything far from it falls away into the dark (the inverse-square falloff
@@ -183,7 +184,7 @@ export class Level2 {
 
     // Two dim fills on opposite walls so the edges of the hall are not pitch black
     for (const [x, y, z] of [[17, 9, 17], [-17, 9, -17]]) {
-      const light = new THREE.PointLight(0x6f92c8, 110, 45, 2);
+      const light = new THREE.PointLight(0xd8e8ff, 300, 60, 2);
       light.position.set(x, y, z);
       this.root.add(light);
       this.zoneLights.push(light);
@@ -218,9 +219,9 @@ export class Level2 {
     c.width = c.height = 128;
     const ctx = c.getContext('2d');
     const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-    g.addColorStop(0, 'rgba(255,190,120,0.55)');
-    g.addColorStop(0.45, 'rgba(255,160,90,0.2)');
-    g.addColorStop(1, 'rgba(255,140,70,0)');
+    g.addColorStop(0, 'rgba(200,240,255,0.22)');
+    g.addColorStop(0.45, 'rgba(160,225,240,0.08)');
+    g.addColorStop(1, 'rgba(140,210,230,0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 128, 128);
     const tex = new THREE.CanvasTexture(c);

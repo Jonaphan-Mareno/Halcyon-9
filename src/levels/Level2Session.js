@@ -137,7 +137,7 @@ export class Level2Session {
     const r = this.game.renderer;
     const webgl = r.instance;
     webgl.toneMapping = THREE.ACESFilmicToneMapping;
-    webgl.toneMappingExposure = 0.95;
+    webgl.toneMappingExposure = 0.92;
     const size = new THREE.Vector2();
     webgl.getSize(size);
     // The composer draws into its own buffer, which has no anti-aliasing unless asked for:

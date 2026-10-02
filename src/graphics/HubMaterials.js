@@ -126,11 +126,11 @@ function paintPlate(ctx, mode, seed) {
   }
 
   // Grime: dark soft blotches, heavier near the seams
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 7; i++) {
     const x = rand() * SIZE, y = rand() * SIZE, r = 30 + rand() * 80;
     wrapped(ctx, (ox, oy) => {
       const g = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
-      g.addColorStop(0, albedo ? 'rgba(8,10,14,0.30)' : 'rgba(20,20,20,0.25)');
+      g.addColorStop(0, albedo ? 'rgba(20,24,30,0.12)' : 'rgba(30,30,30,0.12)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g;
       ctx.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
@@ -141,51 +141,42 @@ function paintPlate(ctx, mode, seed) {
 function paintFloor(ctx, mode, seed) {
   const rand = rng(seed);
   const albedo = mode === 'albedo';
-  ctx.fillStyle = albedo ? gray(0.55) : gray(0.4);
+  ctx.fillStyle = albedo ? gray(0.5) : gray(0.5);
   ctx.fillRect(0, 0, SIZE, SIZE);
 
-  // Diamond-bar tread: short raised bars in alternating directions, on a 32 px grid
-  for (let gy = 0; gy < SIZE / 32; gy++) {
-    for (let gx = 0; gx < SIZE / 32; gx++) {
-      const flip = (gx + gy) % 2 === 0;
-      const cx = gx * 32 + 16, cy = gy * 32 + 16;
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(flip ? Math.PI / 4 : -Math.PI / 4);
-      ctx.fillStyle = albedo ? gray(0.74) : gray(0.92);
-      ctx.fillRect(-11, -3, 22, 6);
-      ctx.fillStyle = albedo ? gray(0.3) : gray(0.2);
-      ctx.fillRect(-11, 3, 22, 1.5);
-      ctx.restore();
+  // A research-lab floor: large smooth tiles, each a slightly different shade, with fine
+  // dark joints between them and the odd round service port
+  const T = 128;
+  for (let ty = 0; ty < SIZE / T; ty++) {
+    for (let tx = 0; tx < SIZE / T; tx++) {
+      const v = albedo ? 0.46 + rand() * 0.08 : 0.5;
+      ctx.fillStyle = gray(v);
+      ctx.fillRect(tx * T + 2, ty * T + 2, T - 4, T - 4);
+      if (rand() < 0.12) {
+        const cx = tx * T + T / 2, cy = ty * T + T / 2;
+        ctx.strokeStyle = albedo ? gray(0.22) : gray(0.3);
+        ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.arc(cx, cy, T * 0.28, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = albedo ? gray(0.34) : gray(0.42);
+        ctx.beginPath(); ctx.arc(cx, cy, T * 0.2, 0, Math.PI * 2); ctx.fill();
+      }
     }
   }
-
-  // Big panel seams (two by two) and bolts
-  for (const c of [0, 256]) {
-    ctx.strokeStyle = albedo ? gray(0.08) : gray(0.04);
-    ctx.lineWidth = 6;
+  for (let c = 0; c <= SIZE; c += T) {
+    ctx.strokeStyle = albedo ? gray(0.16) : gray(0.2);
+    ctx.lineWidth = 3;
     wrapped(ctx, (ox, oy) => {
       ctx.beginPath(); ctx.moveTo(c + ox, oy); ctx.lineTo(c + ox, SIZE + oy); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(ox, c + oy); ctx.lineTo(SIZE + ox, c + oy); ctx.stroke();
     });
   }
-  for (const cx of [0, 256]) {
-    for (const cy of [0, 256]) {
-      for (const [dx, dy] of [[14, 14], [-14, 14], [14, -14], [-14, -14]]) {
-        wrapped(ctx, (ox, oy) => {
-          ctx.fillStyle = albedo ? gray(0.2) : gray(0.95);
-          ctx.beginPath(); ctx.arc(cx + dx + ox, cy + dy + oy, 6, 0, Math.PI * 2); ctx.fill();
-        });
-      }
-    }
-  }
 
-  // Wear and grime
-  for (let i = 0; i < 34; i++) {
-    const x = rand() * SIZE, y = rand() * SIZE, r = 24 + rand() * 90;
+  // Very light scuffing, so it reads as used but clean
+  for (let i = 0; i < 8; i++) {
+    const x = rand() * SIZE, y = rand() * SIZE, r = 40 + rand() * 90;
     wrapped(ctx, (ox, oy) => {
       const g = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
-      g.addColorStop(0, albedo ? 'rgba(6,8,12,0.34)' : 'rgba(10,10,10,0.2)');
+      g.addColorStop(0, albedo ? 'rgba(20,24,30,0.1)' : 'rgba(40,40,40,0.08)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g;
       ctx.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
@@ -234,7 +225,7 @@ const SURFACES = {
   trim: { kind: 'plate', tile: 1.5, bump: 1.2 },
   rust: { kind: 'plate', tile: 3.0, bump: 1.6 },
   pipe_black: { kind: 'plate', tile: 1.2, bump: 0.8 },
-  floor_dark: { kind: 'floor', tile: 3.5, bump: 2.2 },
+  floor_dark: { kind: 'floor', tile: 4.0, bump: 1.2 },
   cont_red: { kind: 'plate', tile: 3.0, bump: 1.4 },
   cont_blue: { kind: 'plate', tile: 3.0, bump: 1.4 },
   cont_mustard: { kind: 'plate', tile: 3.0, bump: 1.4 },
@@ -243,17 +234,17 @@ const SURFACES = {
 
 // How the light flows in each glowing material (GLSL expression giving a multiplier)
 const GLOWS = {
-  blue_glow: 'vec3 f = vec3(0.4 + 0.6 * pow(0.5 + 0.5 * sin(vTriPos.y * 0.45 - uHubTime * 2.0 + length(vTriPos.xz) * 0.14), 2.0));',
-  white_glow: 'vec3 f = vec3(0.88 + 0.12 * sin(uHubTime * 1.3 + vTriPos.x));',
-  tile_glow: 'vec3 f = vec3(0.5 + 0.5 * pow(0.5 + 0.5 * sin(length(vTriPos.xz) * 0.45 - uHubTime * 1.6), 2.0));',
-  lamp_warm: 'vec3 f = vec3(0.93 + 0.07 * sin(uHubTime * 7.0 + vTriPos.x * 3.0));',
-  // electrified water: ripples of light, and now and then a crackle across it
-  water: 'vec3 f = vec3(0.55 + 0.45 * sin(vTriPos.x * 1.3 + uHubTime * 2.5) * sin(vTriPos.z * 1.1 - uHubTime * 1.7) + 1.2 * step(0.985, fract(sin(floor(uHubTime * 8.0) * 12.9898) * 43758.5)));',
-  hazard: 'vec3 f = vec3(0.75 + 0.25 * step(0.5, fract(uHubTime * 0.8)));',
+  blue_glow: 'vec3 f = vec3(1.0);',
+  white_glow: 'vec3 f = vec3(1.0);',
+  tile_glow: 'vec3 f = vec3(1.0);',
+  lamp_warm: 'vec3 f = vec3(1.0);',
+  // electrified water: a slow ripple of light (no flicker)
+  water: 'vec3 f = vec3(0.8 + 0.2 * sin(vTriPos.x * 1.3 + uHubTime * 1.4) * sin(vTriPos.z * 1.1 - uHubTime));',
+  hazard: 'vec3 f = vec3(1.0);',
   core_energy: 'vec3 f = vec3(0.45 + 0.55 * pow(0.5 + 0.5 * sin(vTriPos.y * 1.1 - uHubTime * 5.0), 2.0));',
-  door_a_glow: 'vec3 f = vec3(0.8 + 0.2 * sin(uHubTime * 3.0));',
-  door_b_glow: 'vec3 f = vec3(0.8 + 0.2 * sin(uHubTime * 3.0 + 1.0));',
-  door_c_glow: 'vec3 f = vec3(0.8 + 0.2 * sin(uHubTime * 3.0 + 2.0));'
+  door_a_glow: 'vec3 f = vec3(1.0);',
+  door_b_glow: 'vec3 f = vec3(1.0);',
+  door_c_glow: 'vec3 f = vec3(1.0);'
 };
 
 const POS_VARYING = '\nvarying vec3 vTriPos;\nvarying vec3 vTriNrm;\n';

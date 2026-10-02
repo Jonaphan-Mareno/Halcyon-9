@@ -16,7 +16,7 @@ Names the game reads: COL_ collision, DOOR_ doors, ELEVATOR_Door_ lift doors, SP
 ARIA_<n> monitor screens (where ARIA appears), PT_ markers, PLANT_ plants (no collision),
 palm_leaf (leaf material, cut out by its alpha).
 """
-import sys, os, math, random
+import sys, os, math, random, re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy, bmesh
 from mathutils import Vector, Matrix
@@ -278,29 +278,43 @@ for a0, a1, crop in ((336, 28, 'carrot'), (32, 58, 'tomato'), (124, 166, 'lettuc
     arc(beds, 'blue_glow', 15.17, 15.22, a0, a1, 0.02, 0.06, step=3)
     fill_arc_bed(15.45, 16.5, a0, a1, 0.72, crop)
 
-# decorative plants always stand in a pot: white with an orange rim
+# decorative plants always stand in a pot: an eight-sided sci-fi planter (white body tapering to a
+# black plinth, a black band with a light blue LED line, an orange rim)
 pots = A('Atrium_Pots')
 
 
-def pot(loc, r=0.36, h=0.58):
-    cyl(pots, 'hull_light', (loc.x, loc.y, loc.z + h / 2), r, h, 20)
-    cyl(pots, 'accent', (loc.x, loc.y, loc.z + h - 0.03), r + 0.025, 0.06, 20)
-    cyl(pots, 'soil', (loc.x, loc.y, loc.z + h - 0.005), r - 0.03, 0.02, 20)
-    kit.col_box((loc.x - r, loc.y - r, loc.z), (loc.x + r, loc.y + r, loc.z + h))
-    return Vector((loc.x, loc.y, loc.z + h))
+def _cone(acc, m, c, r_bottom, r_top, h, seg=8):
+    verts = bmesh.ops.create_cone(acc.bm, cap_ends=True, cap_tris=False, segments=seg,
+                                  radius1=r_bottom, radius2=r_top, depth=h)['verts']
+    bmesh.ops.rotate(acc.bm, verts=verts, cent=(0, 0, 0), matrix=Matrix.Rotation(rad(22.5), 3, 'Z'))
+    bmesh.ops.translate(acc.bm, vec=Vector(c), verts=verts)
+    acc.tag(m, _faces(verts))
 
 
-plant_spots = [(Vector((0.7, 0.6, 0.33)), 'palm_tall'), (Vector((-0.8, -0.5, 0.33)), 'palm'),   # (location, kind)
-               (Vector((0.4, -1.3, 0.33)), 'pachira'), (Vector((-1.3, 0.9, 0.33)), 'fern')]
-for k in range(10):                                                            # flowers round the island's edge
-    plant_spots.append((P(1.85, k * 36 + 10, 0.33), 'sorrel'))
-for a, kind in ((20, 'calathea'), (160, 'anthurium'), (200, 'fern'), (340, 'calathea')):   # round the lounge
-    plant_spots.append((pot(P(8.0, a, 0.0)), kind))
-plant_spots.append((pot(P(9.8, 254, 0.0)), 'fern'))                            # by the info kiosk
+def pot(loc, r=0.5, h=0.75):
+    x, y, z = loc
+    _cone(pots, 'hull_dark', (x, y, z + 0.04), r * 0.72, r * 0.72, 0.08)              # plinth
+    _cone(pots, 'hull_light', (x, y, z + 0.08 + (h - 0.08) / 2), r * 0.78, r, h - 0.08)   # body, wider at the top
+    _cone(pots, 'hull_dark', (x, y, z + h * 0.42), r * 0.91, r * 0.93, h * 0.16)       # band
+    _cone(pots, 'blue_glow', (x, y, z + h * 0.42), r * 0.935, r * 0.945, 0.03)        # LED line in the band
+    _cone(pots, 'accent', (x, y, z + h - 0.03), r + 0.03, r + 0.03, 0.06)             # rim
+    _cone(pots, 'soil', (x, y, z + h - 0.005), r - 0.04, r - 0.04, 0.02)
+    kit.col_box((x - r, y - r, z), (x + r, y + r, z + h))
+    return Vector((x, y, z + h))
+
+
+# (location, kind, widest the plant may be). Potted plants are scaled to stay close to their pot,
+# so no leaves hang out in the air away from it.
+plant_spots = [(Vector((0.7, 0.6, 0.33)), 'palm_tall', None), (Vector((-0.8, -0.5, 0.33)), 'palm', None),
+               (Vector((0.4, -1.3, 0.33)), 'pachira', None), (Vector((-1.3, 0.9, 0.33)), 'fern', 1.4)]
+for k in range(22):                                                            # flowers round the island's edge
+    plant_spots.append((P(random.uniform(1.6, 2.0), k * 360 / 22 + random.uniform(-4, 4), 0.33), 'sorrel', 0.5))
+for a in (20, 200):                                                            # two small trees by the lounge
+    plant_spots.append((pot(P(8.0, a, 0.0)), 'pachira_pot', 1.5))
 for a in (80, 100):                                                            # short palms by the window
-    plant_spots.append((pot(P(14.8, a, 0.0), r=0.55, h=0.8), 'palm_short'))
-for a, kind in ((31, 'calathea'), (150, 'fern'), (12, 'anthurium')):            # on the gallery, by the doors
-    plant_spots.append((pot(P(16.2, a, ZG), r=0.3, h=0.5), kind))
+    plant_spots.append((pot(P(14.8, a, 0.0), r=0.6, h=0.85), 'palm_short', None))
+for a, kind in ((31, 'anthurium'), (150, 'fern')):                             # on the gallery, by the doors
+    plant_spots.append((pot(P(16.15, a, ZG), r=0.45, h=0.6), kind, 1.35))
 
 # ------------------------------------------------------------------ the angled black pillars
 pil = A('Atrium_Pillars')
@@ -526,7 +540,9 @@ palm_c = make_palm('PLANT_palm_c', 3.3, lean=0.08, fronds=9)                   #
 
 
 # ------------------------------------------------------------------ downloaded plants (Poly Haven, CC0)
-def load_plant(pid, height, ratio=None):
+def load_plant(pid, height, ratio=None, variant='b'):
+    """Each Poly Haven file holds several plants laid out side by side (named _a, _b, ...).
+    Only the one called `variant` is kept, so a placement is one plant, not a scattered group."""
     path = os.path.join(PLANT_DIR, pid, '%s_1k.gltf' % pid)
     if not os.path.exists(path):
         print('MISSING plant (run node Blender/scripts/fetch_plants.cjs):', pid)
@@ -536,6 +552,12 @@ def load_plant(pid, height, ratio=None):
     new = [o for o in bpy.data.objects if o not in before]
     new_names = [o.name for o in new]
     meshes = [o for o in new if o.type == 'MESH']
+    keep = [o for o in meshes if re.sub(r'\.\d+$', '', o.name).endswith('_' + variant)]
+    if keep:
+        for o in meshes:
+            if o not in keep:
+                bpy.data.objects.remove(o, do_unlink=True)
+        meshes = keep
     for o in bpy.context.selected_objects:
         o.select_set(False)
     for o in meshes:
@@ -575,14 +597,22 @@ def load_plant(pid, height, ratio=None):
 templates = {
     'palm': palm_a, 'palm_tall': palm_b, 'palm_short': palm_c,
     'pachira': load_plant('pachira_aquatica_01', 3.4, 0.3),
+    'pachira_pot': load_plant('pachira_aquatica_01', 1.9, 0.3),
     # potted_plant_02 is left out: two of its texture maps fail to convert and break the file
-    'calathea': load_plant('calathea_orbifolia_01', 0.85, 0.6),
     'anthurium': load_plant('anthurium_botany_01', 0.75),
     'fern': load_plant('fern_02', 0.9),
-    'sorrel': load_plant('shrub_sorrel_01', 0.4),
+    'sorrel': load_plant('shrub_sorrel_01', 0.4, variant='k'),
 }
+def width(o):
+    xs = [v.co.x for v in o.data.vertices]
+    ys = [v.co.y for v in o.data.vertices]
+    return max(max(xs) - min(xs), max(ys) - min(ys))
+
+
+widths = {k: width(t) for k, t in templates.items() if t is not None and t.type == 'MESH'}
+print('plant widths:', {k: round(w, 2) for k, w in widths.items()})
 used = set()
-for loc, kind in plant_spots:
+for loc, kind, max_w in plant_spots:
     tpl = templates.get(kind)
     if tpl is None:
         continue
@@ -595,7 +625,12 @@ for loc, kind in plant_spots:
     o.location = loc
     o.rotation_euler = (0, 0, random.uniform(0, math.tau))
     sc = random.uniform(0.85, 1.15)
+    if max_w and kind in widths:
+        sc = min(sc, max_w / widths[kind])
     o.scale = (sc, sc, sc)
+for kind, tpl in templates.items():     # a template nobody used would stand at the centre of the hall
+    if tpl is not None and kind not in used and tpl.name in bpy.data.objects:
+        bpy.data.objects.remove(tpl, do_unlink=True)
 
 # keep the download small: plant textures at most 512 px (the game does not need more)
 for img in bpy.data.images:

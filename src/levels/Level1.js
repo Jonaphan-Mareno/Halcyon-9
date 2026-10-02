@@ -44,6 +44,9 @@ export class Level1{
     this.LightsPuzzle = [];
     //this.keypadInteractables = [];
     this.keypad = null;
+    this.doorMixer = null;
+    this.doorActions = [];
+    this.doorOpened = false;
 
     this.ringPuzzle = null;          // the wall panel puzzle (RingPuzzle)
     this.ringPuzzleSolved = false;   // ARIA stays off until this is true
@@ -238,6 +241,7 @@ export class Level1{
 
       this.room = ctrlRoom;
       this.room.position.set(0, 0, 0);
+      this.setupDoorAnimation(roomGlb.animations);
 
       ctrlRoom.traverse((child) => {
         // GLTFLoader strips dots from node names ("Plane.066" -> "Plane066")
@@ -513,6 +517,52 @@ onRingPuzzleComplete() {
     material.uniforms.glowAmount.value = glowAmount;
 
     return material;
+  }
+
+  setupDoorAnimation(clips = []) {
+    this.doorMixer = new THREE.AnimationMixer(this.room);
+
+    this.doorActions = clips
+      .filter((clip) =>
+        clip.tracks.some((track) =>
+          track.name.includes('Door_Left') ||
+          track.name.includes('Door_Right')
+        )
+      )
+      .map((clip) => {
+        const action = this.doorMixer.clipAction(clip);
+
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+
+        return action;
+      });
+
+    console.log(
+      'Door animations:',
+      this.doorActions.length,
+      clips.map((clip) => clip.name)
+    );
+  }
+
+  openElevatorDoor() {
+    if (this.doorOpened) return;
+
+    if (!this.doorActions.length) {
+      console.warn('No elevator door animation found.');
+      return;
+    }
+
+    this.doorOpened = true;
+
+    for (const action of this.doorActions) {
+      action.reset();
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+      action.play();
+    }
+
+    console.log('Elevator door opening');
   }
 
   buildKeypad() {
@@ -1440,6 +1490,8 @@ onRingPuzzleComplete() {
   }
 
   update(delta, playerPosition, camera) {
+    
+    this.doorMixer?.update(delta);
     this.time += delta;
     this.power += (this.powerTarget - this.power) * Math.min(1, delta * 1.5);
     if (this.ariaManager) {

@@ -23,6 +23,9 @@ const OBJECTIVES = [
   'Power restored'
 ];
 
+//TEMP access code
+const ELEVATOR_ACCESS_CODE = '123456';
+
 // Circuit puzzle timing: each failed attempt adds a little time, up to a cap,
 // so it never becomes frustrating
 const PUZZLE_BASE_SECONDS = 60;
@@ -391,7 +394,18 @@ export class Game {
   onKeypadSubmit(code) {
     console.log(`Six-digit keypad input received: ${code}`);
 
-    // Door validation will go here later.
+    if (code === ELEVATOR_ACCESS_CODE) {
+      console.log('ACCESS GRANTED');
+
+      this.currentLevel.openElevatorDoor?.();
+
+      this.ui.showToast('ACCESS GRANTED');
+    } else {
+      console.log('ACCESS DENIED');
+
+      this.ui.showToast('ACCESS DENIED');
+    }
+
     this.exitKeypadMode();
   }
 

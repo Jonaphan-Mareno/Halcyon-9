@@ -3,6 +3,9 @@ import { Renderer } from './core/Renderer.js';
 import { Camera } from './core/Camera.js';
 import { Controls } from './core/Controls.js';
 import { Level1 } from './levels/Level1.js';
+import { Level2 } from './levels/Level2.js';
+import { Physics } from './core/Physics.js';
+import { PlayerController } from './player/PlayerController.js';
 import { UIManager } from './ui/UIManager.js';
 import { HUD } from './ui/HUD.js';
 import { Inventory } from './ui/Inventory.js';
@@ -92,6 +95,8 @@ export class Game {
     // INIT, WAKING, PLAYING, DIALOGUE, TUTORIAL, PUZZLE, INVENTORY, DEAD, GAME_OVER
     this.state = 'INIT';
     this.lastTime = performance.now();
+    // ?level=2 in the address starts straight in level 2, at the elevator (for testing)
+    this.startLevel = new URLSearchParams(window.location.search).get('level');
 
     this.width = window.innerWidth;
     this.height = window.innerHeight;
@@ -127,6 +132,11 @@ export class Game {
     this.camera = new Camera(this.width / this.height);
     this.camera.instance.position.set(0, 3, 0); // adjust ctor args to match your Camera class
     this.renderer = new Renderer();
+
+    if (this.startLevel === '2') {
+      this._initLevel2();
+      return;
+    }
 
     // Load first level
     this.currentLevel = new Level1(this.scene);
@@ -176,6 +186,42 @@ export class Game {
     this.startLoop();
   }
 
+  // Level 2 runs on the physics player (see player/PlayerController.js) and has none of
+  // level 1's puzzles or story yet, so it has its own small set-up and update
+  _initLevel2() {
+    this.level2Mode = true;
+    this.camera.flashlight.visible = false;
+    this.camera.instance.far = 1500;
+    this.camera.instance.updateProjectionMatrix();
+
+    this.ui = new UIManager();
+    this.reticle = document.getElementById('reticle');
+    this.currentLevel = new Level2(this.scene);
+    this.controls = new PlayerController(this.camera.instance, document.body, this.scene);
+    this.controls.onViewChange = (view) => this.reticle.classList.toggle('visible', view === 'first');
+
+    Physics.create().then(async (physics) => {
+      this.physics = physics;
+      await this.currentLevel.load(physics);
+      this.controls.attach(physics, this.currentLevel.spawn, this.currentLevel.spawnYaw);
+      this.ui.showToast('Level 2. WASD move, Shift run, Space jump, V switches first/third person.', 7000);
+    }).catch((e) => console.error('Level 2 failed to load.', e));
+
+    window.addEventListener('resize', () => this.onResize());
+    document.addEventListener('click', () => {
+      if (this.state === 'PLAYING' && !this.controls.instance.isLocked) this.controls.lock();
+    });
+    this.startLoop();
+  }
+
+  updateLevel2(delta) {
+    if (!this.currentLevel.ready || !this.controls.ready) return;
+    const playing = this.state === 'PLAYING';
+    this.controls.update(delta, playing);
+    if (playing) this.currentLevel.openElevator();
+    this.currentLevel.update(delta);
+  }
+
   // Connect a freshly built level to the UI, sound and story
   _wireLevel() {
     const level = this.currentLevel;
@@ -220,8 +266,12 @@ export class Game {
       requestAnimationFrame(loop);
       const delta = (time - this.lastTime) / 1000;
       this.lastTime = time;
-      this.update(delta);
-      this.currentLevel?.ariaManager?.renderHead(this.renderer.instance);
+      if (this.level2Mode) {
+        this.updateLevel2(Math.min(delta, 0.05));
+      } else {
+        this.update(delta);
+        this.currentLevel?.ariaManager?.renderHead(this.renderer.instance);
+      }
       this.renderer.render(this.scene, this.camera.instance);
     };
     requestAnimationFrame(loop);

@@ -359,6 +359,8 @@ walk = A('Hub_Walkways')
 
 def rails(acc, r, a0, a1, z, skips=(), post_m=3.0):
     for lo, hi in minus(a0, a1, list(skips)):
+        if acc.coll is VIS and acc.origin is None:
+            _arc(CS, 'col', r - 0.03, r + 0.1, lo, hi, z, z + 1.05, 4)  # an invisible wall so you can't walk through the rail
         arc(acc, 'hull_dark', r, r + 0.07, lo, hi, z + 1.0, z + 1.08, step=4)
         arc(acc, 'hull_dark', r, r + 0.07, lo, hi, z + 0.5, z + 0.56, step=4)
         n = max(1, int(math.radians(hi - lo) * r / post_m))
@@ -405,6 +407,7 @@ for name, a, r0, r1, z in (('MOVE_T1_GapA', 247.0, 21.0, 26.0, Z1),
 # landings out to the doors
 rbox(walk, 'hull_light', 29.0, 200, Z1 - 0.25, 6.0, 6.0, 0.5, col=True)
 for s in (-3.0, 3.0):
+    rbox(CS, 'col', 29.0, 200, Z1 + 0.525, 6.0, 0.1, 1.05, t=s)
     beam(walk, 'hull_dark', P(26, 200, Z1 + 1.0) + TV(200) * s, P(32, 200, Z1 + 1.0) + TV(200) * s, 0.07, 0.07)
 rbox(walk, 'hull_light', 31.25, 320, Z2 - 0.25, 1.5, 6.0, 0.5, col=True)
 
@@ -413,6 +416,7 @@ for a in (90, 210, 330):
     rbox(walk, 'hull_light', 15.5, a, Z2 - 0.25, 21.0, 3.0, 0.5, col=True)
     rbox(walk, 'hull_dark', 15.5, a, Z2 - 0.85, 21.0, 0.5, 0.7)
     for s in (-1.5, 1.5):
+        rbox(CS, 'col', 15.5, a, Z2 + 0.525, 21.0, 0.1, 1.05, t=s)
         beam(walk, 'hull_dark', P(5, a, Z2 + 1.0) + TV(a) * s, P(26, a, Z2 + 1.0) + TV(a) * s, 0.07, 0.07)
         beam(walk, 'hull_dark', P(5, a, Z2 + 0.5) + TV(a) * s, P(26, a, Z2 + 0.5) + TV(a) * s, 0.06, 0.06)
         for r in range(6, 26, 4):
@@ -433,6 +437,7 @@ for i in range(n):
 for s in (-1.6, 1.6):
     beam(stairs, 'hull_dark', P(r_a, ST_A, 0.1) + TV(ST_A) * s, P(r_b, ST_A, Z1 - 0.35) + TV(ST_A) * s, 0.15, 0.5)
 for s in (-1.75, 1.75):
+    beam(CS, 'col', P(r_a, ST_A, 0.5) + TV(ST_A) * s, P(r_b, ST_A, Z1 + 0.5) + TV(ST_A) * s, 0.1, 1.05)
     beam(stairs, 'hull_dark', P(r_a, ST_A, 1.0) + TV(ST_A) * s, P(r_b, ST_A, Z1 + 1.0) + TV(ST_A) * s, 0.07, 0.07)
     beam(stairs, 'hull_dark', P(r_a, ST_A, 0.5) + TV(ST_A) * s, P(r_b, ST_A, Z1 + 0.5) + TV(ST_A) * s, 0.06, 0.06)
 

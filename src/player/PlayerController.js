@@ -33,6 +33,7 @@ export class PlayerController {
     this.ready = false;
 
     this.view = 'third';
+    this.viewLocked = false;     // true inside the crew quarters, where the camera network does not reach
     this.onViewChange = null;
     this.onRespawn = null;
 
@@ -131,7 +132,7 @@ export class PlayerController {
         this.keys.jumpHeld = true;
         break;
       case 'KeyV':
-        if (!e.repeat) this.setView(this.view === 'third' ? 'first' : 'third');
+        if (!e.repeat && !this.viewLocked) this.setView(this.view === 'third' ? 'first' : 'third');
         break;
     }
   }

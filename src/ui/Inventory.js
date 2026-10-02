@@ -10,6 +10,18 @@ export const ITEMS = {
   torch: {
     name: 'Torch',
     description: 'A heavy-duty torch. It lights the dark rooms and lets you read the generator wiring. Press F to switch it on and off.'
+  },
+  coolant: {
+    name: 'Coolant',
+    description: 'A pressurised coolant canister. Water on live electronics shorts them out. Hold it up to a welding drone (E) and it will not move again.'
+  },
+  prybar: {
+    name: 'Pry bar',
+    description: 'A heavy steel bar. Jammed into a cargo loader\'s hydraulic arm, it locks solid. Use it on a loader (E).'
+  },
+  flare: {
+    name: 'Flare',
+    description: 'An emergency flare. Security drones go blind when their sensors are overloaded with light. Use it on a drone (E).'
   }
 };
 
@@ -70,7 +82,9 @@ export class Inventory {
         const status = this.statusFor[id]?.();
         slots.push(`
           <div class="inv-slot owned">
-            <canvas id="inv-${id}-canvas" class="inv-3d" width="240" height="150"></canvas>
+            ${id === 'torch'
+              ? `<canvas id="inv-${id}-canvas" class="inv-3d" width="240" height="150"></canvas>`
+              : `<div class="inv-icon ${id}"></div>`}
             <div class="inv-name">${item.name}</div>
             ${status ? `<div class="inv-status">${status}</div>` : ''}
           </div>`);

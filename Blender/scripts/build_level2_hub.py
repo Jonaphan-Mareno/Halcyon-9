@@ -78,22 +78,23 @@ def mat(name, color, rough=0.7, metal=0.1, emit=None, strength=0.0, alpha=1.0):
     return m
 
 
-# light-but-dark palette: pale steel surfaces, deep gunmetal gaps, small hot accents
-mat('hull_light', (0.62, 0.68, 0.76), 0.55, 0.25)
-mat('hull_mid', (0.30, 0.35, 0.42), 0.6, 0.35)
-mat('hull_dark', (0.07, 0.08, 0.10), 0.7, 0.4)
-mat('floor_dark', (0.14, 0.16, 0.19), 0.45, 0.3)
-mat('trim', (0.75, 0.48, 0.12), 0.5, 0.5)
-mat('blue_glow', (0.1, 0.4, 0.9), 0.4, 0, (0.15, 0.55, 1.0), 4.0)
-mat('white_glow', (1, 1, 1), 0.4, 0, (0.85, 0.92, 1.0), 6.0)
-mat('green_glow', (0.1, 0.9, 0.4), 0.4, 0, (0.2, 1.0, 0.5), 5.0)
-mat('amber_glow', (0.9, 0.5, 0.1), 0.4, 0, (1.0, 0.6, 0.15), 5.0)
-mat('magenta_glow', (0.9, 0.2, 0.6), 0.4, 0, (1.0, 0.25, 0.7), 5.0)
-mat('glass', (0.05, 0.1, 0.15), 0.05, 0.0, alpha=0.35)
-mat('cont_red', (0.50, 0.16, 0.12), 0.7, 0.3)
-mat('cont_blue', (0.14, 0.26, 0.42), 0.7, 0.3)
-mat('cont_mustard', (0.66, 0.50, 0.14), 0.7, 0.3)
-mat('cont_grey', (0.42, 0.45, 0.48), 0.7, 0.3)
+# Dark gunmetal with cool blue lights (reference: dark metallic corridors with blue strip
+# lights). The three bedroom doors are told apart by their glow: cyan, ice white, violet.
+mat('hull_light', (0.25, 0.28, 0.32), 0.42, 0.6)
+mat('hull_mid', (0.15, 0.17, 0.20), 0.5, 0.6)
+mat('hull_dark', (0.045, 0.052, 0.065), 0.55, 0.6)
+mat('floor_dark', (0.085, 0.095, 0.115), 0.45, 0.55)
+mat('trim', (0.22, 0.26, 0.31), 0.45, 0.7)
+mat('blue_glow', (0.1, 0.4, 0.9), 0.4, 0, (0.15, 0.55, 1.0), 3.2)
+mat('white_glow', (0.8, 0.9, 1.0), 0.4, 0, (0.8, 0.9, 1.0), 5.0)
+mat('door_a_glow', (0.1, 0.9, 1.0), 0.4, 0, (0.15, 0.95, 1.0), 4.0)
+mat('door_b_glow', (0.55, 0.8, 1.0), 0.4, 0, (0.7, 0.88, 1.0), 4.0)
+mat('door_c_glow', (0.45, 0.3, 1.0), 0.4, 0, (0.5, 0.35, 1.0), 4.0)
+mat('glass', (0.03, 0.07, 0.10), 0.05, 0.0, alpha=0.3)
+mat('cont_red', (0.17, 0.12, 0.12), 0.6, 0.5)
+mat('cont_blue', (0.09, 0.14, 0.21), 0.6, 0.5)
+mat('cont_mustard', (0.17, 0.165, 0.13), 0.6, 0.5)
+mat('cont_grey', (0.18, 0.19, 0.215), 0.6, 0.5)
 mat('col', (1, 0, 1), 1.0, 0)
 
 # ------------------------------------------------------------------ geometry helpers
@@ -267,10 +268,10 @@ def empty(name, loc, rot_deg=0.0, kind='ARROWS'):
 # ------------------------------------------------------------------ openings in the wall
 GAPS = [
     dict(name='window', a0=15, a1=75, z0=16.0, z1=29.0),
-    dict(name='A', a0=86.5, a1=93.5, z0=0.0, z1=DOOR_H, accent='green_glow'),
-    dict(name='B', a0=196.5, a1=203.5, z0=Z1, z1=Z1 + DOOR_H, accent='amber_glow'),
+    dict(name='A', a0=86.5, a1=93.5, z0=0.0, z1=DOOR_H, accent='door_a_glow'),
+    dict(name='B', a0=196.5, a1=203.5, z0=Z1, z1=Z1 + DOOR_H, accent='door_b_glow'),
     dict(name='elev', a0=265.5, a1=274.5, z0=0.0, z1=5.0, accent='blue_glow'),
-    dict(name='C', a0=316.5, a1=323.5, z0=Z2, z1=Z2 + DOOR_H, accent='magenta_glow'),
+    dict(name='C', a0=316.5, a1=323.5, z0=Z2, z1=Z2 + DOOR_H, accent='door_c_glow'),
 ]
 
 
@@ -401,7 +402,7 @@ for name, a, r0, r1, z in (('MOVE_T1_GapA', 247.0, 21.0, 26.0, Z1),
     centre = P((r0 + r1) / 2, a, z - 0.25)
     m = A(name, origin=tuple(centre))
     rbox(m, 'hull_light', (r0 + r1) / 2, a, z - 0.25, r1 - r0, 3.2, 0.5)
-    rbox(m, 'amber_glow', (r0 + r1) / 2, a, z + 0.01, r1 - r0 - 0.4, 0.15, 0.03)
+    rbox(m, 'blue_glow', (r0 + r1) / 2, a, z + 0.01, r1 - r0 - 0.4, 0.15, 0.03)
     rbox(m, 'hull_dark', (r0 + r1) / 2, a, z - 0.7, 1.2, 1.2, 0.5)
 
 # landings out to the doors
@@ -480,6 +481,28 @@ for g in GAPS:
         arc(frames, acc_m, R - 0.96, R - 0.88, a0 - 1.0, a1 + 1.0, z1 + 0.2, z1 + 0.4, step=1.0)
         empty('ROOM_%s_Entry' % g['name'], P(R + 3.0, c, z0 + 0.05), c + 180)
 
+        # the bedroom itself: a pod bolted to the outside of the atrium wall
+        POD_D, POD_W = 9.0, 7.0
+        r0, r1 = R + T, R + T + POD_D
+        rc = (r0 + r1) / 2
+        pod = A('Hub_Pod_' + g['name'])
+        rbox(pod, 'floor_dark', rc, c, z0 - 0.25, POD_D, POD_W, 0.5, col=True)
+        for s in (-POD_W / 2 + 0.15, POD_W / 2 - 0.15):
+            rbox(pod, 'hull_mid', rc, c, z0 + 2.4, POD_D, 0.3, 4.8, t=s, col=True)
+        rbox(pod, 'hull_mid', r1 - 0.15, c, z0 + 2.4, 0.3, POD_W, 4.8, col=True)
+        rbox(pod, 'hull_mid', rc, c, z0 + 4.65, POD_D, POD_W, 0.3, col=True)
+        rbox(pod, 'white_glow', rc, c, z0 + 4.48, 4.0, 0.5, 0.04)       # ceiling light
+        rbox(pod, 'hull_dark', r1 - 1.2, c, z0 + 0.3, 1.2, 2.4, 0.6, t=-2.1, col=True)   # bed frame
+        rbox(pod, 'hull_mid', r1 - 1.2, c, z0 + 0.65, 1.1, 2.3, 0.15, t=-2.1)            # mattress
+        rbox(pod, 'hull_light', r1 - 0.8, c, z0 + 0.45, 0.8, 2.0, 0.9, t=1.7, col=True)  # desk
+        rbox(pod, 'hull_dark', r0 + 1.3, c, z0 + 1.0, 0.6, 0.9, 2.0, t=2.8, col=True)    # locker
+        rbox(pod, acc_m, r1 - 0.4, c, z0 + 1.45, 0.1, 0.9, 0.5, t=1.7)                   # tape player screen
+        if z0 > 0:  # the upper pods stand on struts
+            for dr, s in ((1.2, -3.0), (1.2, 3.0), (POD_D - 1.2, -3.0), (POD_D - 1.2, 3.0)):
+                strut = P(r0 + dr, c, 0) + TV(c) * s
+                cyl(pod, 'hull_dark', (strut.x, strut.y, (z0 - 0.5) / 2), 0.2, z0 - 0.5, 8)
+        empty('TAPE_%s' % g['name'], P(r1 - 1.3, c, z0 + 1.0) + TV(c) * 1.7)
+
 # window: glass, mullions, sill
 gl = A('GLASS_Window')
 arc(gl, 'glass', R + 0.5, R + 0.6, 15, 75, 16.0, 29.0, step=3)
@@ -506,7 +529,7 @@ for nm, s in (('ELEVATOR_Door_L', -1.2), ('ELEVATOR_Door_R', 1.2)):
     ctr = P(R + 0.4, EA, 2.5) + TV(EA) * s
     ed = A(nm, origin=tuple(ctr))
     rbox(ed, 'hull_dark', R + 0.4, EA, 2.5, 0.3, 2.4, 5.0, t=s)
-    rbox(ed, 'amber_glow', R + 0.22, EA, 2.5, 0.06, 0.1, 4.6, t=s + (0.9 if s < 0 else -0.9))
+    rbox(ed, 'blue_glow', R + 0.22, EA, 2.5, 0.06, 0.1, 4.6, t=s + (0.9 if s < 0 else -0.9))
 arc(frames, 'hull_mid', R - 0.9, R, 265.5 - 1.2, 265.5, 0, 5.6, step=1.0)
 arc(frames, 'hull_mid', R - 0.9, R, 274.5, 274.5 + 1.2, 0, 5.6, step=1.0)
 arc(frames, 'hull_mid', R - 0.9, R, 265.5 - 1.2, 274.5 + 1.2, 5.0, 5.6, step=1.0)
@@ -583,12 +606,21 @@ for r in (12.0, 22.0):
 # ------------------------------------------------------------------ pipe canyon: the dense, cluttered part (ground, under the window)
 random.seed(21)
 canyon = A('Hub_PipeCanyon')
-LANE = (47.0, 53.0)  # keep one clear lane through the middle
+LANE = (44.0, 56.0)  # keep one clear lane through the middle
+NOGO = [(23.0, 50.0), (21.5, 50.5)]  # the flare pickup and its log terminal (polar r, angle)
+
+
+def near_nogo(r, a, pad=3.5):
+    return any((P(r, a, 0) - P(nr, na, 0)).length < pad for nr, na in NOGO)
+
+
 for i in range(58):
     a = random.uniform(20, 80)
     if LANE[0] < a < LANE[1]:
         continue
     r = random.uniform(15.5, 30.0)
+    if near_nogo(r, a):
+        continue
     if 21.0 <= r <= 26.4:
         h = random.uniform(2.0, 5.5)        # tier 1 ring is overhead here
     elif r > 26.4:
@@ -646,7 +678,7 @@ for a in range(0, 360):
         m = random.choice(['hull_mid', 'hull_dark', 'hull_mid', 'hull_light'])
         rbox(panels, m, R - 0.18, a, z, 0.3, math.radians(3.2) * R * 0.8, h)
         if random.random() < 0.35:
-            rbox(panels, random.choice(['blue_glow', 'amber_glow']), R - 0.35, a, z + h * 0.2, 0.06, 0.9, 0.12)
+            rbox(panels, random.choice(['blue_glow', 'blue_glow', 'door_b_glow']), R - 0.35, a, z + h * 0.2, 0.06, 0.9, 0.12)
 
 # ------------------------------------------------------------------ reference figure (not exported)
 ref = A('REF_Voss_1p8m')

@@ -78,24 +78,29 @@ def mat(name, color, rough=0.7, metal=0.1, emit=None, strength=0.0, alpha=1.0):
     return m
 
 
-# Dark gunmetal with cool blue lights (reference: dark metallic corridors with blue strip
-# lights). The three bedroom doors are told apart by their glow: cyan, ice white, violet.
-mat('hull_light', (0.25, 0.28, 0.32), 0.42, 0.6)
-mat('hull_mid', (0.15, 0.17, 0.20), 0.5, 0.6)
-mat('hull_dark', (0.045, 0.052, 0.065), 0.55, 0.6)
-mat('floor_dark', (0.085, 0.095, 0.115), 0.45, 0.55)
-mat('trim', (0.22, 0.26, 0.31), 0.45, 0.7)
-mat('blue_glow', (0.1, 0.4, 0.9), 0.4, 0, (0.15, 0.55, 1.0), 3.2)
+# Neutral dark gunmetal (reference: dark metallic corridors) with cyan-blue strip lights, a
+# little rust, and warm work lamps. The three bedroom doors are told apart by their glow:
+# cyan, ice white, violet.
+mat('hull_light', (0.36, 0.37, 0.39), 0.45, 0.55)
+mat('hull_mid', (0.23, 0.24, 0.26), 0.5, 0.55)
+mat('hull_dark', (0.08, 0.085, 0.095), 0.55, 0.55)
+mat('floor_dark', (0.14, 0.145, 0.16), 0.45, 0.5)
+mat('trim', (0.30, 0.32, 0.35), 0.45, 0.65)
+mat('rust', (0.30, 0.17, 0.13), 0.75, 0.3)
+mat('pipe_black', (0.04, 0.042, 0.048), 0.5, 0.7)
+mat('lamp_warm', (1.0, 0.85, 0.6), 0.4, 0, (1.0, 0.8, 0.5), 5.0)
+mat('tile_glow', (0.03, 0.14, 0.16), 0.35, 0, (0.2, 0.85, 0.95), 0.7)
+mat('blue_glow', (0.1, 0.5, 0.9), 0.4, 0, (0.15, 0.65, 1.0), 3.2)
 mat('white_glow', (0.8, 0.9, 1.0), 0.4, 0, (0.8, 0.9, 1.0), 5.0)
 mat('core_energy', (0.2, 0.8, 1.0), 0.3, 0, (0.25, 0.85, 1.0), 6.0)
-mat('door_a_glow', (0.1, 0.9, 1.0), 0.4, 0, (0.15, 0.95, 1.0), 4.0)
-mat('door_b_glow', (0.55, 0.8, 1.0), 0.4, 0, (0.7, 0.88, 1.0), 4.0)
-mat('door_c_glow', (0.45, 0.3, 1.0), 0.4, 0, (0.5, 0.35, 1.0), 4.0)
+mat('door_a_glow', (0.1, 0.9, 1.0), 0.4, 0, (0.15, 0.95, 1.0), 2.6)
+mat('door_b_glow', (0.55, 0.8, 1.0), 0.4, 0, (0.7, 0.88, 1.0), 2.6)
+mat('door_c_glow', (0.45, 0.3, 1.0), 0.4, 0, (0.5, 0.35, 1.0), 2.6)
 mat('glass', (0.03, 0.07, 0.10), 0.05, 0.0, alpha=0.3)
-mat('cont_red', (0.17, 0.12, 0.12), 0.6, 0.5)
-mat('cont_blue', (0.09, 0.14, 0.21), 0.6, 0.5)
-mat('cont_mustard', (0.17, 0.165, 0.13), 0.6, 0.5)
-mat('cont_grey', (0.18, 0.19, 0.215), 0.6, 0.5)
+mat('cont_red', (0.27, 0.15, 0.12), 0.7, 0.35)      # desaturated rust
+mat('cont_blue', (0.10, 0.19, 0.21), 0.7, 0.35)     # dark teal
+mat('cont_mustard', (0.22, 0.21, 0.16), 0.7, 0.35)  # dull olive
+mat('cont_grey', (0.24, 0.25, 0.27), 0.7, 0.35)
 mat('col', (1, 0, 1), 1.0, 0)
 
 # ------------------------------------------------------------------ geometry helpers
@@ -703,6 +708,100 @@ for a in range(0, 360):
         rbox(panels, m, R - 0.18, a, z, 0.3, math.radians(3.2) * R * 0.8, h)
         if random.random() < 0.35:
             rbox(panels, random.choice(['blue_glow', 'blue_glow', 'door_b_glow']), R - 0.35, a, z + h * 0.2, 0.06, 0.9, 0.12)
+
+# ------------------------------------------------------------------ dressing: lit lanes, tubes, props, lamps
+# Lit floor lanes: glowing tiles that also lead the eye (elevator -> core -> door A)
+tiles = A('Hub_FloorTiles')
+
+
+def lane(a, r0, r1, width=4):
+    sgn = 1 if r1 > r0 else -1
+    for i in range(int(abs(r1 - r0))):
+        r = r0 + sgn * (i + 0.5)
+        for j in range(width):
+            rbox(tiles, 'tile_glow', r, a, 0.015, 0.88, 0.88, 0.03, t=j - (width - 1) / 2.0)
+
+
+lane(270.0, 33.0, 12.4)   # from the elevator to the core
+lane(90.0, 12.4, 31.0)    # from the core to door A
+
+# Black tube bundles running across the wall between the ribs, like cable runs
+random.seed(33)
+tubes = A('Hub_WallTubes')
+for a in range(0, 360, 15):
+    if any(abs(((a + 7.5 - c + 180) % 360) - 180) < w + 2 for c, w in GAP_SKIPS):
+        continue
+    for _ in range(2):
+        z = random.uniform(2.2, 27.0)
+        for i in range(4):
+            arc(tubes, 'pipe_black', R - 1.02, R - 0.88, a + 2.6, a + 12.4, z + i * 0.22, z + i * 0.22 + 0.14, step=3)
+        for end in (a + 2.6, a + 12.4):
+            rbox(tubes, 'trim', R - 0.95, end, z + 0.33, 0.3, 0.12, 0.9)
+
+# Props: barrels, crates and spools in the quieter parts of the hall
+KEEP = [(30.2, 97.5, 4.0), (14, 355, 3.0), (15.2, 350, 3.0), (25.5, 160, 3.0), (23.2, 162.5, 3.0),
+        (23, 50, 3.5), (21.5, 50.5, 3.5)]
+RESERVED = [(97, 20, 10, 34), (270, 14, 10, 34), (300, 14, 10, 24), (160, 34, 15, 31),
+            (50, 34, 14, 31), (357, 26, 16, 31)]   # (centre angle, half width, min r, max r)
+
+
+def prop_ok(r, a, pad=1.4):
+    if any((P(r, a, 0) - P(kr, ka, 0)).length < kp + pad for kr, ka, kp in KEEP):
+        return False
+    for c, hw, rlo, rhi in RESERVED:
+        if abs(((a - c + 180) % 360) - 180) < hw and rlo <= r <= rhi:
+            return False
+    return True
+
+
+random.seed(44)
+props = A('Hub_Props')
+PM = ['cont_red', 'cont_blue', 'cont_mustard', 'cont_grey', 'rust', 'hull_mid']
+placed = 0
+tries = 0
+while placed < 46 and tries < 900:
+    tries += 1
+    r = random.uniform(14.5, 30.5)
+    a = random.uniform(0, 360)
+    if not prop_ok(r, a):
+        continue
+    kind = random.random()
+    m = random.choice(PM)
+    if kind < 0.4:      # barrel with two dark bands
+        cyl(props, m, P(r, a, 0.52), 0.42, 1.04, 14, col=True)
+        for bz in (0.28, 0.78):
+            cyl(props, 'hull_dark', P(r, a, bz), 0.435, 0.07, 14)
+    elif kind < 0.78:   # crate, sometimes with another on top
+        s = random.uniform(0.9, 1.4)
+        box(props, m, P(r, a, s / 2), (s, s, s), rz=random.uniform(0, 90), col=True)
+        box(props, 'hull_dark', P(r, a, s / 2), (s + 0.03, s + 0.03, 0.1), rz=0)
+        if random.random() < 0.35:
+            box(props, random.choice(PM), P(r, a, s + s * 0.35), (s * 0.7, s * 0.7, s * 0.7), rz=random.uniform(0, 90), col=True)
+    else:               # cable spool on its side
+        cyl(props, 'rust', P(r, a, 0.75), 0.75, 0.5, 18, axis='X', col=True)
+        cyl(props, 'hull_dark', P(r, a, 0.75), 0.3, 0.62, 12, axis='X')
+    placed += 1
+
+# Warm work lamps: they light their corner and are the "cosy in the dark" in the room. The
+# game puts a warm light at each LAMP_ empty.
+lamps = A('Hub_Lamps')
+lamp_i = 0
+for r, a in ((17, 200), (24, 213), (28, 232), (16, 244), (22, 320), (27, 328)):   # tripod lamps on the floor
+    for k in range(3):
+        leg = P(r, a, 0) + Vector((math.cos(rad(k * 120)), math.sin(rad(k * 120)), 0)) * 0.5
+        beam(lamps, 'hull_dark', Vector((leg.x, leg.y, 0.0)), Vector((P(r, a, 0).x, P(r, a, 0).y, 2.2)), 0.05, 0.05)
+    rbox(lamps, 'hull_dark', r, a, 2.4, 0.32, 0.55, 0.34)
+    rbox(lamps, 'lamp_warm', r - 0.18, a, 2.4, 0.04, 0.46, 0.26)
+    empty('LAMP_%d' % lamp_i, P(r - 0.7, a, 2.4))
+    lamp_i += 1
+for k, a in enumerate((123.5, 153.5, 183.5, 228.5, 243.5, 333.5, 348.5, 3.5)):   # wall lamps
+    if any(abs(((a - c + 180) % 360) - 180) < w for c, w in GAP_SKIPS):
+        continue
+    rbox(lamps, 'hull_dark', R - 0.45, a, 3.3, 0.4, 0.55, 0.38)
+    rbox(lamps, 'lamp_warm', R - 0.66, a, 3.3, 0.04, 0.45, 0.28)
+    if lamp_i < 10:
+        empty('LAMP_%d' % lamp_i, P(R - 1.2, a, 3.3))
+        lamp_i += 1
 
 # ------------------------------------------------------------------ reference figure (not exported)
 ref = A('REF_Voss_1p8m')

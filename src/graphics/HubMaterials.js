@@ -66,19 +66,10 @@ function paintPlate(ctx, mode, seed) {
     }
   }
 
-  // Brushed streaks
-  for (let i = 0; i < 520; i++) {
-    const x = rand() * SIZE, y = rand() * SIZE, len = 30 + rand() * 170;
-    const light = rand() > 0.5;
-    ctx.strokeStyle = gray(light ? 1 : 0, albedo ? 0.035 : 0.05);
-    ctx.lineWidth = 1;
-    wrapped(ctx, (ox, oy) => { ctx.beginPath(); ctx.moveTo(x + ox, y + oy); ctx.lineTo(x + ox + len, y + oy); ctx.stroke(); });
-  }
-
   // Seams between panels (a dark groove with a thin highlight beside it)
   for (const c of [0, 256]) {
-    ctx.strokeStyle = albedo ? gray(0.1) : gray(0.05);
-    ctx.lineWidth = 5;
+    ctx.strokeStyle = albedo ? gray(0.2) : gray(0.12);
+    ctx.lineWidth = 4;
     wrapped(ctx, (ox, oy) => {
       ctx.beginPath(); ctx.moveTo(c + ox, oy); ctx.lineTo(c + ox, SIZE + oy); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(ox, c + oy); ctx.lineTo(SIZE + ox, c + oy); ctx.stroke();
@@ -127,10 +118,10 @@ function paintPlate(ctx, mode, seed) {
   }
 
   // Scratches
-  for (let i = 0; i < 70; i++) {
-    const x = rand() * SIZE, y = rand() * SIZE, len = 20 + rand() * 90, ang = rand() * Math.PI;
-    ctx.strokeStyle = albedo ? gray(0.9, 0.22) : gray(0.15, 0.55);
-    ctx.lineWidth = 0.9;
+  for (let i = 0; i < 16; i++) {
+    const x = rand() * SIZE, y = rand() * SIZE, len = 30 + rand() * 90, ang = rand() * Math.PI;
+    ctx.strokeStyle = albedo ? gray(0.85, 0.12) : gray(0.3, 0.3);
+    ctx.lineWidth = 2;
     wrapped(ctx, (ox, oy) => { ctx.beginPath(); ctx.moveTo(x + ox, y + oy); ctx.lineTo(x + ox + Math.cos(ang) * len, y + oy + Math.sin(ang) * len); ctx.stroke(); });
   }
 
@@ -145,7 +136,6 @@ function paintPlate(ctx, mode, seed) {
       ctx.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
     });
   }
-  paintNoise(ctx, albedo ? 0.07 : 0.05, rand);
 }
 
 function paintFloor(ctx, mode, seed) {
@@ -201,13 +191,23 @@ function paintFloor(ctx, mode, seed) {
       ctx.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
     });
   }
-  paintNoise(ctx, albedo ? 0.08 : 0.05, rand);
 }
 
 function makeTexture(paint, mode, seed, srgb) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = SIZE;
   paint(canvas.getContext('2d'), mode, seed);
+  // A slight blur on the height map keeps the bump smooth instead of sparkly: hard one-pixel
+  // edges in a height map turn into shimmering noise once they are lit. Drawn tiled so the
+  // blur wraps around the edges.
+  if (mode === 'height') {
+    const soft = document.createElement('canvas');
+    soft.width = soft.height = SIZE;
+    const sctx = soft.getContext('2d');
+    sctx.filter = 'blur(1.6px)';
+    for (const ox of [-SIZE, 0, SIZE]) for (const oy of [-SIZE, 0, SIZE]) sctx.drawImage(canvas, ox, oy);
+    canvas.getContext('2d').drawImage(soft, 0, 0);
+  }
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = 8;
@@ -228,21 +228,25 @@ export function createHubTextures() {
 
 // Which texture each model material uses, and how big one tile is in metres
 const SURFACES = {
-  hull_light: { kind: 'plate', tile: 4.0, bump: 5.0 },
-  hull_mid: { kind: 'plate', tile: 3.0, bump: 5.0 },
-  hull_dark: { kind: 'plate', tile: 2.5, bump: 4.0 },
-  trim: { kind: 'plate', tile: 1.5, bump: 4.0 },
-  floor_dark: { kind: 'floor', tile: 3.5, bump: 6.0 },
-  cont_red: { kind: 'plate', tile: 3.0, bump: 4.0 },
-  cont_blue: { kind: 'plate', tile: 3.0, bump: 4.0 },
-  cont_mustard: { kind: 'plate', tile: 3.0, bump: 4.0 },
-  cont_grey: { kind: 'plate', tile: 3.0, bump: 4.0 }
+  hull_light: { kind: 'plate', tile: 4.0, bump: 1.6 },
+  hull_mid: { kind: 'plate', tile: 3.0, bump: 1.6 },
+  hull_dark: { kind: 'plate', tile: 2.5, bump: 1.2 },
+  trim: { kind: 'plate', tile: 1.5, bump: 1.2 },
+  rust: { kind: 'plate', tile: 3.0, bump: 1.6 },
+  pipe_black: { kind: 'plate', tile: 1.2, bump: 0.8 },
+  floor_dark: { kind: 'floor', tile: 3.5, bump: 2.2 },
+  cont_red: { kind: 'plate', tile: 3.0, bump: 1.4 },
+  cont_blue: { kind: 'plate', tile: 3.0, bump: 1.4 },
+  cont_mustard: { kind: 'plate', tile: 3.0, bump: 1.4 },
+  cont_grey: { kind: 'plate', tile: 3.0, bump: 1.4 }
 };
 
 // How the light flows in each glowing material (GLSL expression giving a multiplier)
 const GLOWS = {
   blue_glow: 'vec3 f = vec3(0.4 + 0.6 * pow(0.5 + 0.5 * sin(vTriPos.y * 0.45 - uHubTime * 2.0 + length(vTriPos.xz) * 0.14), 2.0));',
   white_glow: 'vec3 f = vec3(0.88 + 0.12 * sin(uHubTime * 1.3 + vTriPos.x));',
+  tile_glow: 'vec3 f = vec3(0.5 + 0.5 * pow(0.5 + 0.5 * sin(length(vTriPos.xz) * 0.45 - uHubTime * 1.6), 2.0));',
+  lamp_warm: 'vec3 f = vec3(0.93 + 0.07 * sin(uHubTime * 7.0 + vTriPos.x * 3.0));',
   core_energy: 'vec3 f = vec3(0.45 + 0.55 * pow(0.5 + 0.5 * sin(vTriPos.y * 1.1 - uHubTime * 5.0), 2.0));',
   door_a_glow: 'vec3 f = vec3(0.8 + 0.2 * sin(uHubTime * 3.0));',
   door_b_glow: 'vec3 f = vec3(0.8 + 0.2 * sin(uHubTime * 3.0 + 1.0));',

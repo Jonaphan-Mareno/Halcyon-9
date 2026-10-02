@@ -165,10 +165,14 @@ export class Level2Session {
     const r = this.game.renderer;
     const webgl = r.instance;
     webgl.toneMapping = THREE.ACESFilmicToneMapping;
-    webgl.toneMappingExposure = 0.85;
+    webgl.toneMappingExposure = 1.0;
     const size = new THREE.Vector2();
     webgl.getSize(size);
-    this.composer = new EffectComposer(webgl);
+    // The composer draws into its own buffer, which has no anti-aliasing unless asked for:
+    // 4x multisampling here is what keeps edges smooth instead of stair-stepped and shimmery
+    const pr = webgl.getPixelRatio();
+    const target = new THREE.WebGLRenderTarget(size.x * pr, size.y * pr, { type: THREE.HalfFloatType, samples: 4 });
+    this.composer = new EffectComposer(webgl, target);
     this.composer.addPass(new RenderPass(this.game.scene, this.game.camera.instance));
     this.bloom = new UnrealBloomPass(size.clone(), 0.22, 0.4, 1.1); // strength, radius, threshold
     this.composer.addPass(this.bloom);

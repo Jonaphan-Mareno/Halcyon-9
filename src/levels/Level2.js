@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { createHubTextures, applyHubMaterials, hubTime } from '../graphics/HubMaterials.js';
+import { createHubDecals, disposeHubDecals } from '../graphics/HubDecals.js';
+import { polar } from './hubGeometry.js';
 
 // Level 2 ("Logs"): the cargo atrium of the deep-sea station. A huge circular hall
 // with a glowing core, three tiers of catwalks, three sealed crew quarters and the
@@ -17,15 +19,7 @@ const SOLID_PREFIXES = ['COL_', 'MOVE_', 'ROT_', 'DOOR_', 'LIFT_'];
 const HIDDEN_PREFIXES = ['COL_', 'REF_'];
 const startsWithAny = (name, list) => list.some((p) => name.startsWith(p));
 
-// The model's plan view: radius and angle in degrees (0 = east, counter-clockwise, as in
-// Blender), height up. Handy for placing things in a round room.
-export const polar = (r, aDeg, y = 0) => {
-  const a = (aDeg * Math.PI) / 180;
-  return new THREE.Vector3(r * Math.cos(a), y, -r * Math.sin(a));
-};
-
-// The reverse: the angle (degrees, 0..360) of a point as seen from the hub's centre
-export const angleOf = (p) => ((Math.atan2(-p.z, p.x) * 180) / Math.PI + 360) % 360;
+export { polar, angleOf } from './hubGeometry.js';
 
 export class Level2 {
   constructor(scene) {
@@ -75,8 +69,10 @@ export class Level2 {
     this.root.add(hub);
     this.hub = hub;
 
+    this.decals = createHubDecals();
+    this.root.add(this.decals);
     this._addEnvironment(renderer);
-    this._addLights();
+    this._addLights(hub);
     this._addDeepSea();
     this.scene.background = new THREE.Color(0x02080c);
     this.scene.fog = new THREE.FogExp2(0x03090e, 0.011);
@@ -132,28 +128,36 @@ export class Level2 {
   }
 
   // Placeholder lighting: cold blue, dim, with pools of light round the core and the tiers
-  _addLights() {
-    this.root.add(new THREE.HemisphereLight(0x4d6688, 0x05070a, 0.16));
+  _addLights(hub) {
+    // A cool fill from above and below, strong enough to read the room by
+    this.root.add(new THREE.HemisphereLight(0x8fa6c4, 0x141820, 0.55));
     const lamps = [
-      [0, 27, 0, 0x7fb4ff, 800],
-      [0, 10, 0, 0x6fa4ff, 420],
-      [22, 9, 0, 0x8fbcff, 240], [-22, 9, 0, 0x8fbcff, 240],
-      [0, 9, 22, 0x8fbcff, 240], [0, 9, -22, 0x8fbcff, 240],
-      [18, 4, 18, 0x5f95e8, 180], [-18, 4, -18, 0x5f95e8, 180],
-      [18, 4, -18, 0x5f95e8, 180], [-18, 4, 18, 0x5f95e8, 180],
-      [0, 16, 24, 0x8fbcff, 240], [0, 16, -24, 0x8fbcff, 240]
+      [0, 27, 0, 0xb4d4ff, 1700],
+      [0, 10, 0, 0x9cc4ff, 900],
+      [22, 9, 0, 0xc0d8ff, 520], [-22, 9, 0, 0xc0d8ff, 520],
+      [0, 9, 22, 0xc0d8ff, 520], [0, 9, -22, 0xc0d8ff, 520],
+      [18, 4, 18, 0x7fb4f0, 380], [-18, 4, -18, 0x7fb4f0, 380],
+      [18, 4, -18, 0x7fb4f0, 380], [-18, 4, 18, 0x7fb4f0, 380]
     ];
     for (const [x, y, z, color, intensity] of lamps) {
       const light = new THREE.PointLight(color, intensity, 0, 2);
       light.position.set(x, y, z);
       this.root.add(light);
     }
+    // Warm work lamps, one at each LAMP_ marker in the model: pools of orange against the
+    // cool blue, which is what makes a dark room feel lived in
+    hub.traverse((o) => {
+      if (!o.name.startsWith('LAMP_')) return;
+      const light = new THREE.PointLight(0xffc48a, 150, 18, 2);
+      light.position.copy(o.getWorldPosition(new THREE.Vector3()));
+      this.root.add(light);
+    });
     // Light for each crew quarters, so stepping inside is a change
     for (const [letter, a, y] of [['A', 90, 0], ['B', 200, 7], ['C', 320, 14]]) {
-      const light = new THREE.PointLight(0x7fa8e8, 28, 12, 2);
+      const light = new THREE.PointLight(0xa8c4f0, 45, 12, 2);
       light.position.copy(polar(38.5, a, y + 3.6));
       this.root.add(light);
-      this[`podLight${letter}`] = light;
+      this['podLight' + letter] = light;
     }
   }
 
@@ -266,6 +270,7 @@ export class Level2 {
         m.dispose();
       }
     });
+    if (this.decals) disposeHubDecals(this.decals);
     for (const set of Object.values(this.textures || {})) {
       set.albedo.dispose();
       set.height.dispose();

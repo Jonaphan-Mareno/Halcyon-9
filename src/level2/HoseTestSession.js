@@ -139,7 +139,7 @@ export class HoseTestSession {
     this.loadingEl = document.createElement('div');
     this.loadingEl.id = 'level-loading';
     this.loadingEl.className = 'visible';
-    this.loadingEl.innerHTML = '<div class="loading-title">COOLANT HOSE</div><div class="loading-sub">Test room</div><div class="loading-bar"><div></div></div>';
+    this.loadingEl.innerHTML = '<div class="loading-title">LEVEL 2</div><div class="loading-sub">New build: coolant hose test room</div><div class="loading-bar"><div></div></div>';
     root.appendChild(this.loadingEl);
     this.gaugeEl = document.createElement('div');
     this.gaugeEl.id = 'coolant-gauge';

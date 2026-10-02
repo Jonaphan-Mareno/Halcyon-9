@@ -132,7 +132,7 @@ export class Game {
     this.camera.instance.position.set(0, 3, 0); // adjust ctor args to match your Camera class
     this.renderer = new Renderer();
 
-    if (this.startLevel === '2' || this.startLevel === 'hose') {
+    if (this.startLevel === '2' || this.startLevel === 'reactor') {
       this._initLevel2();
       return;
     }
@@ -191,8 +191,9 @@ export class Game {
     this.level2Mode = true;
     this.ui = new UIManager();
     this.reticle = document.getElementById('reticle');
-    // ?level=hose opens the coolant hose test room; ?level=2 the old level 2 build
-    this.level2 = this.startLevel === 'hose' ? new HoseTestSession(this) : new Level2Session(this);
+    // ?level=2 opens the NEW level 2 (for now: the coolant hose room, its first piece).
+    // ?level=reactor opens the old atrium build, kept to become Level 3's reactor room.
+    this.level2 = this.startLevel === 'reactor' ? new Level2Session(this) : new HoseTestSession(this);
     window.addEventListener('resize', () => this.onResize());
     this.startLoop();
   }

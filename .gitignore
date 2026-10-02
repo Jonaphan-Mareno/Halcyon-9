@@ -25,3 +25,8 @@ dist-ssr
 
 # Private ARIA components (do not upload raw videos)
 public/assets/textures/aria_components/*.mp4
+
+# Python bytecode from the Blender build scripts, and Blender backup files
+__pycache__/
+*.pyc
+*.blend1

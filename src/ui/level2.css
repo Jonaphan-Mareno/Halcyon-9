@@ -119,3 +119,6 @@
 .loading-bar { width: 240px; height: 3px; background: rgba(0, 229, 255, 0.15); overflow: hidden; }
 .loading-bar div { width: 40%; height: 100%; background: var(--primary-color); animation: loading-sweep 1.3s ease-in-out infinite; }
 @keyframes loading-sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+/* Level 2 works like It Takes Two: dying restarts the course, so there are no lives to show */
+#hud .hud-row:nth-child(2) { display: none; }

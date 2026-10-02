@@ -3,7 +3,9 @@ import * as THREE from 'three';
 // The rogue maintenance machines (story bible, "Rogue Machines"): a nervous system
 // with no mind behind it. No pathfinding. Each one walks a fixed path, notices the
 // player inside a radius, telegraphs (its light turns red and it winds up), then makes
-// one scripted lunge. The player's answer is timing, or the one item that disables it.
+// one scripted lunge that hits hard. Every machine is DEFEATED by the player, never just
+// avoided: crawlers are stomped (jump on them) or crushed under a dropped container, and
+// each wing's big machine only goes down to its item (coolant, pry bar, flare).
 //
 //   PATROL -> ALERT (wind-up, light red) -> LUNGE (one dash) -> RESET (pause) -> PATROL
 //   any state -> DISABLED (lights fade, goes still)
@@ -11,9 +13,10 @@ import * as THREE from 'three';
 // The bodies are simple placeholders until the real models are made.
 
 export const MACHINE_TYPES = {
-  welder: { name: 'welding drone', counter: 'coolant', detect: 8, speed: 2.0, lunge: 11, lungeTime: 0.45, damage: 15, hover: 0, windup: 0.9 },
-  loader: { name: 'cargo loader', counter: 'prybar', detect: 10, speed: 1.6, lunge: 9, lungeTime: 0.6, damage: 25, hover: 0, windup: 1.1 },
-  drone: { name: 'security drone', counter: 'flare', detect: 13, speed: 3.4, lunge: 15, lungeTime: 0.4, damage: 12, hover: 1.6, windup: 0.7 }
+  welder: { name: 'welding drone', counter: 'coolant', detect: 10, speed: 2.4, lunge: 13, lungeTime: 0.45, damage: 34, hover: 0, windup: 0.8 },
+  loader: { name: 'cargo loader', counter: 'prybar', detect: 10, speed: 1.6, lunge: 9, lungeTime: 0.6, damage: 34, hover: 0, windup: 1.1 },
+  drone: { name: 'security drone', counter: 'flare', detect: 13, speed: 3.4, lunge: 15, lungeTime: 0.4, damage: 25, hover: 1.6, windup: 0.7 },
+  crawler: { name: 'scrap crawler', counter: null, detect: 6, speed: 2.6, lunge: 10, lungeTime: 0.35, damage: 15, hover: 0, windup: 0.55 }
 };
 
 const CALM = 0x2f9bff;
@@ -48,6 +51,7 @@ export class Machine {
     this.state = 'PATROL';
     this.idx = 1;
     this.group.position.copy(this.path[0]);
+    this.group.scale.set(1, 1, 1);
     this.timer = 0;
     this.hitDone = false;
     this.bob = Math.random() * 6;
@@ -61,6 +65,7 @@ export class Machine {
   disable() {
     this.state = 'DISABLED';
     this.timer = 0;
+    if (this.type === 'crawler') this.group.scale.set(1.15, 0.3, 1.15);   // squashed flat
   }
 
   // Back to walking after the player was revived: forget the chase
@@ -111,6 +116,24 @@ export class Machine {
         g.add(w);
       }
       eye(0.18, 0, 1.7, 1.65);
+    } else if (this.type === 'crawler') {
+      // a low scuttling thing: a plated body on six legs
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.32, 0.95), dark());
+      body.position.y = 0.42;
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), trimMat());
+      shell.position.y = 0.56;
+      shell.scale.set(1, 0.6, 1.2);
+      g.add(body, shell);
+      for (const side of [-1, 1]) {
+        for (const z of [-0.32, 0, 0.32]) {
+          const leg = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.06, 0.06), dark());
+          leg.position.set(side * 0.58, 0.26, z);
+          leg.rotation.z = side * 0.6;
+          g.add(leg);
+        }
+      }
+      eye(0.09, -0.16, 0.5, 0.5);
+      eye(0.09, 0.16, 0.5, 0.5);
     } else {
       const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.7, 0.28, 16), dark());
       const dome = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), trimMat());
@@ -132,7 +155,7 @@ export class Machine {
 
   // Where the machine "looks from", for the line-of-sight check
   eyePosition(out) {
-    return out.set(this.group.position.x, this.group.position.y + (this.type === 'loader' ? 1.7 : this.type === 'drone' ? 0.1 : 1.3), this.group.position.z);
+    return out.set(this.group.position.x, this.group.position.y + (this.type === 'loader' ? 1.7 : this.type === 'drone' ? 0.1 : this.type === 'crawler' ? 0.5 : 1.3), this.group.position.z);
   }
 
   _clamp() {

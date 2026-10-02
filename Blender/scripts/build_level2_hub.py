@@ -510,6 +510,9 @@ for g in GAPS:
         arc(frames, acc_m, R - 0.96, R - 0.88, a0 - 1.0, a1 + 1.0, z1 + 0.2, z1 + 0.4, step=1.0)
         empty('ROOM_%s_Entry' % g['name'], P(R + 3.0, c, z0 + 0.05), c + 180)
 
+        # door A opens onto Wing 1 (the Cargo Bay, its own model), so it has no pod here
+        if g['name'] == 'A':
+            continue
         # the bedroom itself: a pod bolted to the outside of the atrium wall
         POD_D, POD_W = 9.0, 7.0
         r0, r1 = R + T, R + T + POD_D

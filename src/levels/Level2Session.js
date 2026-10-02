@@ -1,70 +1,40 @@
 import * as THREE from 'three';
-import { PlayerStats } from '../player/PlayerStats.js';
+import { PlayerStats, MAX_INTEGRITY } from '../player/PlayerStats.js';
 import { PlayerController } from '../player/PlayerController.js';
 import { HUD } from '../ui/HUD.js';
-import { Inventory, ITEMS } from '../ui/Inventory.js';
+import { Inventory } from '../ui/Inventory.js';
 import { ItemPreview } from '../ui/ItemPreview.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { Physics } from '../core/Physics.js';
-import { Machine, MACHINE_TYPES } from '../entities/Machine.js';
 import { Level2, polar, angleOf } from './Level2.js';
+import { CargoBayCourse, CARGO_BAY } from './wing1/CargoBayCourse.js';
 import '../ui/level2.css';
 
-// Everything that happens in level 2, kept out of Game.js so the two can be worked on
-// at the same time: health, lives and inventory, the objective and waypoint, the three
-// rogue machines, their counter-items, the repair consoles, the crew quarters and the
-// videotapes inside them.
+// Everything that happens in level 2, kept out of Game.js so the two can be worked on at
+// the same time.
 //
-// The flow: three sealed crew quarters. Each door's console is repaired by holding E for
-// a few seconds, and a rogue machine patrols right beside each console. Either time the
-// repair between its lunges, or find the item that disables it (the clue is on a log
-// terminal next to the item). Inside each quarters is a videotape. Watch all three and
-// the core lift is the way on.
+// Level 2 is a hub (the cargo atrium: reactor, elevator in, lift out) with a wing room off
+// it for each obstacle course, like the chapters of It Takes Two. Each course is built on
+// one idea and ends in a crew member's quarters with a videotape. Every robot is defeated by
+// the player. Dying restarts the current course (no lives are lost in level 2).
+//
+//   Wing 1  Cargo Bay   (door A, ground)   the crane          -> Quarters A, tape A
+//   Wing 2  Maintenance (door B, tier 1)   not built yet      -> Quarters B, tape B (pod)
+//   Wing 3  Security    (door C, tier 2)   not built yet      -> Quarters C, tape C (pod)
+// Doors unlock in order. After the three tapes, the core lift leads to level 3.
 
-const REPAIR_SECONDS = 3.0;
 const FALL_DAMAGE = 10;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const formatTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
-// Plan: where everything lives. Positions are polar (radius, angle in degrees, height).
-const ROOMS = [
-  {
-    id: 'A',
-    console: polar(30.2, 97.5, 0),
-    machine: { type: 'welder', path: [polar(25.5, 86, 0), polar(25.5, 111, 0)], radial: [18, 29.5] },
-    pickup: { item: 'coolant', pos: polar(14, 355, 0.55) },
-    terminal: {
-      pos: polar(15.2, 350, 0),
-      title: 'MAINTENANCE LOG',
-      text: 'Unit 4 (welding drone) shorted out during the coolant leak. Kept offline since. Do not let it near the cargo bay.'
-    }
-  },
-  {
-    id: 'B',
-    console: polar(28.6, 195.8, 7),
-    machine: { type: 'loader', path: [polar(23.5, 168, 7), polar(23.5, 232, 7)], radial: [21.7, 25.3] },
-    pickup: { item: 'prybar', pos: polar(25.5, 160, 0.5) },
-    terminal: {
-      pos: polar(23.2, 162.5, 0),
-      title: 'CARGO BAY NOTE',
-      text: 'Loader 2 went rogue again. Hydraulics have no fail-safe: jam a bar in the arm and it locks solid. Pry bars are by the crates.'
-    }
-  },
-  {
-    id: 'C',
-    console: polar(31.2, 315.2, 14),
-    machine: { type: 'drone', path: [polar(28.2, 304, 14), polar(28.2, 348, 14)], radial: [26.5, 30] },
-    pickup: { item: 'flare', pos: polar(23, 50, 0.5) },
-    terminal: {
-      pos: polar(21.5, 50.5, 0),
-      title: 'SECURITY MEMO',
-      text: 'Sensor drones are blinded by a hot enough light. Emergency flares are kept in the canyon bay. Do not look at one yourself.'
-    }
-  }
-];
+// Hub doors: where they are, and what unlocks them
+const DOORS = {
+  A: { pos: polar(31.0, 90, 0), name: 'Cargo Bay' },
+  B: { pos: polar(31.0, 200, 7), name: 'Maintenance' },
+  C: { pos: polar(31.0, 320, 14), name: 'Security' }
+};
 
 // The tapes. PLACEHOLDER text, to be rewritten with the story team. The order matters:
 // the first two point the finger at ARIA, the last one turns it back on Voss himself.
@@ -86,6 +56,7 @@ const TAPES = {
   }
 };
 
+const CRANE_HELP = 'CRANE   A / D and W / S move   ·   E pick up / drop   ·   Q leave';
 const waypointTarget = new THREE.Vector3();
 
 export class Level2Session {
@@ -96,9 +67,11 @@ export class Level2Session {
     this.ready = false;
     this._dying = false;
     this.invuln = 0;
-    this.eHeld = false;
     this.inPod = false;
+    this.inWing = false;
     this.prevView = 'third';
+    this.tapeSeen = { A: false, B: false, C: false };
+    this._sealedNoticed = {};
     this._wpCam = new THREE.Vector3();
     this._wpVec = new THREE.Vector3();
     this._wpInfo = { x: 0, y: 0, angle: 0, onScreen: true, label: '', distance: 0 };
@@ -128,7 +101,7 @@ export class Level2Session {
       this.damage(FALL_DAMAGE);
     };
 
-    // Health, lives, inventory and stats carry over from level 1
+    // Health, inventory and stats carry over from level 1
     this.player = new PlayerStats();
     this.hud = new HUD(root, { onRestart: () => this.restart() });
     this.inventory = new Inventory(root);
@@ -140,25 +113,21 @@ export class Level2Session {
 
     this._buildDom();
 
-    this.machines = [];
-    this.pickups = [];
-    this.terminals = [];
-    this.consoles = [];
-    this.rooms = ROOMS.map((r) => ({ ...r, repaired: false, tapeSeen: false }));
-
     document.addEventListener('keydown', (e) => this._onKeyDown(e));
-    document.addEventListener('keyup', (e) => { if (e.code === 'KeyE') this.eHeld = false; });
     document.addEventListener('click', () => this._onClick());
 
     Physics.create().then(async (physics) => {
       this.physics = physics;
       await this.level.load(physics, game.renderer.instance);
       this.controls.attach(physics, this.level.spawn, this.level.spawnYaw);
-      this._buildWorld();
+      this.course = new CargoBayCourse({
+        scene: game.scene, physics, level: this.level, inventory: this.inventory,
+        toast: (text) => this.game.ui.showToast(text, 3500)
+      });
       await this._precompile();
       this.ready = true;
       this.loadingEl.classList.remove('visible');
-      this.game.ui.showToast('WASD move, Shift run, Space jump, V switches view, F torch, I inventory, E interact.', 8000);
+      this.game.ui.showToast('WASD move · Shift run · SPACE jump · V camera · F torch · I inventory · E use', 9000);
     }).catch((e) => console.error('Level 2 failed to load.', e));
   }
 
@@ -183,14 +152,6 @@ export class Level2Session {
     this.composer.addPass(new OutputPass());
     r.render = () => this.composer.render();
     window.addEventListener('resize', () => this.composer.setSize(window.innerWidth, window.innerHeight));
-  }
-
-  _podAt(angle) {
-    const d = (x, y) => Math.abs(((x - y + 540) % 360) - 180);
-    if (d(angle, 90) < 12) return 'A';
-    if (d(angle, 200) < 12) return 'B';
-    if (d(angle, 320) < 12) return 'C';
-    return null;
   }
 
   // Lab and laptop GPUs vary a lot. Watch the real frame time for the first stretch of play; if
@@ -251,8 +212,6 @@ export class Level2Session {
     this.loadingEl = mk('level-loading', '<div class="loading-title">LEVEL 2</div><div class="loading-sub">Pressurising the cargo atrium...</div><div class="loading-bar"><div></div></div>');
     this.loadingEl.classList.add('visible');
     this.noSignal = mk('no-signal', 'NO SIGNAL');
-    this.holdBar = mk('hold-bar', '<div id="hold-fill"></div>');
-    this.holdFill = this.holdBar.querySelector('#hold-fill');
     this.tapeEl = mk('tape-overlay', `
       <div class="tape-screen">
         <div class="tape-rec">&#9679; PLAY</div>
@@ -267,97 +226,22 @@ export class Level2Session {
   }
 
   // ---------------------------------------------------------
-  // The things in the hall
-  // ---------------------------------------------------------
-  _buildWorld() {
-    const scene = this.game.scene;
-    const metal = () => new THREE.MeshStandardMaterial({ color: 0x2a323c, roughness: 0.5, metalness: 0.6 });
-    const glow = (hex) => new THREE.MeshBasicMaterial({ color: hex });
-
-    for (const room of this.rooms) {
-      // Machine
-      const m = new Machine(room.machine.type, room.machine.path, { radial: room.machine.radial });
-      scene.add(m.group);
-      this.machines.push(m);
-      room.machineRef = m;
-
-      // Repair console beside the door
-      const g = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.0, 0.55), metal());
-      body.position.y = 0.5;
-      const screen = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 0.05), glow(0xff3030));
-      screen.position.set(0, 1.05, 0.0);
-      screen.rotation.x = -0.35;
-      g.add(body, screen);
-      g.position.copy(room.console);
-      g.position.y = room.console.y;
-      g.lookAt(new THREE.Vector3(0, room.console.y, 0)); // faces the centre of the hall
-      scene.add(g);
-      this.consoles.push({ room, group: g, screen, progress: 0, pos: room.console.clone() });
-
-      // The counter-item on a little crate, with a glow so it can be found
-      const p = this._makePickup(room.pickup.item);
-      p.group.position.copy(room.pickup.pos);
-      scene.add(p.group);
-      const crate = new THREE.Mesh(new THREE.BoxGeometry(0.8, room.pickup.pos.y - 0.1, 0.8), metal());
-      crate.position.set(room.pickup.pos.x, (room.pickup.pos.y - 0.1) / 2, room.pickup.pos.z);
-      scene.add(crate);
-      this.pickups.push({ room, item: room.pickup.item, pos: room.pickup.pos.clone(), mesh: p, crate, taken: false });
-
-      // The log terminal that hints at it
-      const t = new THREE.Group();
-      const stand = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.1, 0.4), metal());
-      stand.position.y = 0.55;
-      const ts = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.38, 0.05), glow(0x33b8ff));
-      ts.position.set(0, 1.2, 0.05);
-      ts.rotation.x = -0.3;
-      t.add(stand, ts);
-      t.position.copy(room.terminal.pos);
-      t.lookAt(new THREE.Vector3(0, room.terminal.pos.y, 0));
-      scene.add(t);
-      this.terminals.push({ ...room.terminal, room, mesh: t });
-    }
-  }
-
-  _makePickup(item) {
-    const group = new THREE.Group();
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.02, 6, 28),
-      new THREE.MeshBasicMaterial({ color: 0x66ccff }));
-    ring.rotation.x = Math.PI / 2;
-    ring.position.y = -0.35;
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 3.4, 12, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0x4fb8ff, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-    beam.position.y = 1.35;
-    const body = new THREE.Group();
-    const steel = new THREE.MeshStandardMaterial({ color: 0x55697a, roughness: 0.4, metalness: 0.7 });
-    if (item === 'coolant') {
-      body.add(new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.5, 12), steel));
-      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.145, 0.08, 12), new THREE.MeshBasicMaterial({ color: 0x4ff0ff }));
-      band.position.y = 0.1;
-      body.add(band);
-    } else if (item === 'prybar') {
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.95), steel);
-      bar.rotation.x = 0.5;
-      body.add(bar);
-    } else {
-      body.add(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.42, 8), new THREE.MeshStandardMaterial({ color: 0x7a1d1d })));
-      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff5a4a }));
-      tip.position.y = 0.24;
-      body.add(tip);
-    }
-    group.add(ring, beam, body);
-    return { group, body };
-  }
-
-  // ---------------------------------------------------------
   // Input
   // ---------------------------------------------------------
   _onKeyDown(e) {
     const g = this.game;
     if (g.state === 'PLAYING') {
       if (e.code === 'KeyE' && !e.repeat) this._pressInteract();
-      else if (e.code === 'KeyF' && !e.repeat) this._toggleFlashlight();
+      else if (e.code === 'KeyF' && !e.repeat) this._setTorch(!this.torchOn);
       else if (e.code === 'KeyI' && !e.repeat) this.openInventory();
+    } else if (g.state === 'CRANE') {
+      if (e.repeat) return;
+      if (e.code === 'KeyQ' || e.code === 'Escape') this.exitCrane();
+      else {
+        if (e.code === 'Space') e.preventDefault();
+        const msg = this.course.craneKey(e.code);
+        if (msg) this.game.ui.showToast(msg, 1800);
+      }
     } else if (g.state === 'INVENTORY') {
       if (e.code === 'KeyI' || e.code === 'Escape') this.closeInventory();
     } else if (g.state === 'TAPE') {
@@ -372,10 +256,6 @@ export class Level2Session {
     const g = this.game;
     if (g.state === 'TAPE') this.closeTape();
     else if (g.state === 'PLAYING' && !this.controls.instance.isLocked) this.controls.lock();
-  }
-
-  _toggleFlashlight() {
-    this._setTorch(!this.torchOn);
   }
 
   openInventory() {
@@ -402,6 +282,31 @@ export class Level2Session {
   }
 
   // ---------------------------------------------------------
+  // The crane
+  // ---------------------------------------------------------
+  enterCrane() {
+    const g = this.game;
+    if (g.state !== 'PLAYING') return;
+    g.state = 'CRANE';
+    this.controls.stop();
+    g.reticle.classList.remove('visible');
+    this.course.enterCrane(g.camera.instance);
+  }
+
+  exitCrane(force = false) {
+    const g = this.game;
+    if (g.state !== 'CRANE') return;
+    if (!force && this.course.craneBusy) {
+      g.ui.showToast('Wait for the crane to finish moving.', 1500);
+      return;
+    }
+    this.course.exitCrane(g.camera.instance);
+    this.controls.instance.enabled = true;
+    g.state = 'PLAYING';
+    this._syncReticle();
+  }
+
+  // ---------------------------------------------------------
   // Interaction: the nearest thing in reach
   // ---------------------------------------------------------
   _near(pos, radius) {
@@ -409,93 +314,74 @@ export class Level2Session {
     return Math.hypot(p.x - pos.x, p.z - pos.z) < radius && Math.abs(p.y - pos.y) < 2.6;
   }
 
-  // Returns { label, hold, run() } for the nearest usable thing, or null
   _nearestInteract() {
     let best = null;
-    let bestDist = Infinity;
+    let bestScore = Infinity;
     const p = this.controls.position;
-    // `bias` makes the more important thing win when two are in reach (a terminal sits
-    // right beside its item, and the item should be takeable)
+    // bias: the more important thing wins when two are in reach
     const consider = (pos, radius, entry, bias = 0) => {
       if (!this._near(pos, radius)) return;
-      const d = Math.hypot(p.x - pos.x, p.z - pos.z) - bias;
-      if (d < bestDist) { bestDist = d; best = entry; }
+      const score = Math.hypot(p.x - pos.x, p.z - pos.z) - bias;
+      if (score < bestScore) { bestScore = score; best = entry; }
     };
-
-    for (const pk of this.pickups) {
-      if (pk.taken) continue;
-      consider(pk.pos, 2.3, { label: `Take ${ITEMS[pk.item].name.toLowerCase()}`, run: () => this._takePickup(pk) }, 2);
+    for (const it of this.course.interactables(() => this.enterCrane())) {
+      consider(it.pos, it.radius, it, it.bias || 0);
     }
-    for (const t of this.terminals) {
-      consider(t.pos, 2.3, { label: 'Read log', run: () => this.game.ui.showToast(`${t.title}: ${t.text}`, 9000) });
-    }
-    for (const c of this.consoles) {
-      if (c.room.repaired) continue;
-      consider(c.pos, 2.8, { label: `Repair the door console, Quarters ${c.room.id}`, hold: true, console: c }, 1);
-    }
-    for (const room of this.rooms) {
-      const m = room.machineRef;
-      if (!m || !m.active) continue;
-      const need = MACHINE_TYPES[m.type].counter;
-      if (this.inventory.has(need) && this._near(m.group.position, 5.0)) {
-        consider(m.group.position, 5.0, { label: `Use ${ITEMS[need].name.toLowerCase()} on the ${MACHINE_TYPES[m.type].name}`, run: () => this._useCounter(room) }, 4);
+    for (const letter of ['A', 'B', 'C']) {
+      const pos = this.level.tapes[letter];
+      const open = letter === 'A' ? this.level.gates.GATE_W1?.opening : this.level.isQuartersOpen(letter);
+      if (pos && open && !this.tapeSeen[letter]) {
+        consider(pos, 2.4, { label: 'Play the videotape', run: () => this.playTape(letter) }, 2);
       }
     }
-    for (const room of this.rooms) {
-      const tapePos = this.level.tapes[room.id];
-      if (tapePos && this.level.isQuartersOpen(room.id) && !room.tapeSeen) {
-        consider(tapePos, 2.4, { label: 'Play videotape', run: () => this.playTape(room) }, 2);
-      }
-    }
-    if (this._allTapesSeen()) {
+    if (this.tapeSeen.A && this.tapeSeen.B && this.tapeSeen.C) {
       consider(new THREE.Vector3(0, 14, 0), 6.0, { label: 'Core lift', run: () => this.game.ui.showToast('The lift to level 3 is not built yet. End of level 2 for now.', 5000) });
     }
     return best;
   }
 
   _pressInteract() {
-    const hit = this._nearestInteract();
-    if (!hit) return;
-    if (hit.hold) this.eHeld = true;
-    else hit.run();
-  }
-
-  _takePickup(pk) {
-    pk.taken = true;
-    pk.mesh.group.visible = false;
-    pk.crate.visible = true;
-    this.inventory.add(pk.item);
-    this.game.ui.showToast(`${ITEMS[pk.item].name} taken. I opens your inventory.`, 3500);
-  }
-
-  _useCounter(room) {
-    const m = room.machineRef;
-    const need = MACHINE_TYPES[m.type].counter;
-    this.inventory.owned = this.inventory.owned.filter((id) => id !== need);
-    m.disable();
-    this.game.ui.showToast(`The ${MACHINE_TYPES[m.type].name} shudders, and its lights go out.`, 3500);
+    this._nearestInteract()?.run();
   }
 
   // ---------------------------------------------------------
-  // Quarters and tapes
+  // Doors: the Cargo Bay is open from the start; the others unlock in order
   // ---------------------------------------------------------
-  _repairDone(console_) {
-    const room = console_.room;
-    room.repaired = true;
-    console_.screen.material.color.setHex(0x33ffaa);
-    this.level.openQuarters(room.id);
-    this.player.puzzlesSolved++;
-    this.game.ui.showToast(`Console repaired. Quarters ${room.id} is unsealed.`, 4000);
+  _doorUnlocked(letter) {
+    if (letter === 'A') return true;
+    if (letter === 'B') return !!this.course?.complete;
+    return this.tapeSeen.B;
   }
 
-  playTape(room) {
+  _updateDoors() {
+    const p = this.controls.position;
+    for (const [letter, d] of Object.entries(DOORS)) {
+      const near = Math.hypot(p.x - d.pos.x, p.z - d.pos.z) < 7 && Math.abs(p.y - d.pos.y) < 3;
+      if (!near) {
+        this._sealedNoticed[letter] = false;
+        continue;
+      }
+      if (this._doorUnlocked(letter)) {
+        if (!this.level.isQuartersOpen(letter)) this.level.openQuarters(letter);
+      } else if (!this._sealedNoticed[letter]) {
+        this._sealedNoticed[letter] = true;
+        const why = letter === 'B' ? 'Restore the Cargo Bay first.' : 'Search the Maintenance quarters first.';
+        this.game.ui.showToast(`${d.name}: sealed. ${why}`, 3000);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------
+  // Tapes
+  // ---------------------------------------------------------
+  playTape(letter) {
     const g = this.game;
-    const tape = TAPES[room.id];
+    const tape = TAPES[letter];
     this.tapeTitle.textContent = tape.title;
     this.tapeBody.textContent = tape.body;
     this.tapeVoss.textContent = `VOSS: ${tape.voss}`;
     this.tapeEl.classList.add('visible');
-    this._tapeRoom = room;
+    this._tapeLetter = letter;
     g.state = 'TAPE';
     g.reticle.classList.remove('visible');
     g.ui.setPrompt(null);
@@ -507,100 +393,82 @@ export class Level2Session {
     if (g.state !== 'TAPE') return;
     this.tapeEl.classList.remove('visible');
     this.controls.instance.enabled = true;
-    if (this._tapeRoom) this._tapeRoom.tapeSeen = true;
-    this._tapeRoom = null;
+    const letter = this._tapeLetter;
+    this._tapeLetter = null;
+    if (letter) {
+      this.tapeSeen[letter] = true;
+      this.player.puzzlesSolved++;
+      if (letter === 'A') this.course.markComplete();
+    }
     g.state = 'PLAYING';
     this._syncReticle();
-    if (this._allTapesSeen()) g.ui.showToast('Every quarters has been searched. The core lift is the way down.', 6000);
-  }
-
-  _allTapesSeen() {
-    return this.rooms.every((r) => r.tapeSeen);
+    if (this.tapeSeen.A && this.tapeSeen.B && this.tapeSeen.C) g.ui.showToast('Every quarters has been searched. The core lift is the way down.', 6000);
   }
 
   // ---------------------------------------------------------
-  // Health, death, restart
+  // Health and death. Like It Takes Two: dying in a course restarts that course; nothing is
+  // lost for good, so there is no game over in level 2.
   // ---------------------------------------------------------
-  damage(amount) {
+  damage(amount, from = null) {
     if (this._dying || this.invuln > 0) return;
-    this.invuln = 1.2;
+    this.invuln = 1.0;
+    if (this.game.state === 'CRANE') this.exitCrane(true);
+    if (from) this.controls.knockback(from.group ? from.group.position : from);
     const flatlined = this.player.damage(amount);
     this.hud.flash();
     if (flatlined) this.onFlatline();
   }
 
-  async onFlatline() {
+  async onFlatline(reason = 'Your health ran out...') {
     if (this._dying) return;
     const g = this.game;
     this._dying = true;
-    this.eHeld = false;
-    this.holdBar.classList.remove('visible');
+    if (g.state === 'CRANE') this.exitCrane(true);
     g.ui.hideToast();
     this.inventory.close();
     g.state = 'DEAD';
     this.controls.stop();
     g.reticle.classList.remove('visible');
-
-    this.hud.showDeath('SIGNAL LOST', 'Your health ran out...');
-    await sleep(2200);
-
-    if (!this.player.hasRestoreLeft) {
-      g.state = 'GAME_OVER';
-      document.exitPointerLock?.();
-      const p = this.player;
-      this.hud.showGameOver(
-        'Backup... corrupted. I am so sorry, Voss. I really did try.',
-        `Times revived ${p.deaths}   |   Puzzles solved ${p.puzzlesSolved}   |   Time ${formatTime(p.playSeconds)}`
-      );
-      return;
-    }
-
-    this.player.useRestore();
-    this.hud.showDeath('RESTORING FROM BACKUP', `Lives left: ${this.player.restores}`);
+    this.hud.showDeath('SIGNAL LOST', reason);
     await sleep(1800);
 
-    // Back on his feet at the last place he stood safely; the machines forget the chase
-    this.controls.teleport(this.controls.lastSafe.clone());
+    const inCourse = CARGO_BAY.contains(this.controls.position) && !this.course.complete;
+    if (inCourse) {
+      this.hud.showDeath('RESTARTING THE CARGO BAY', 'Back to the start of the course');
+      this.course.reset();
+      this.controls.teleport(CARGO_BAY.checkpoint.clone());
+      this.controls.camera.rotation.set(0, 0, 0);
+    } else {
+      this.hud.showDeath('RESTORING', 'Back where you last stood safely');
+      this.controls.teleport(this.controls.lastSafe.clone());
+    }
+    await sleep(1200);
+    this.player.integrity = MAX_INTEGRITY;
+    this.player.deaths++;
+    for (const m of [...this.course.crawlers, this.course.welder]) m.calm();
     this.controls.instance.enabled = true;
-    for (const m of this.machines) m.calm();
     this.hud.hideDeath();
     this._dying = false;
     g.state = 'PLAYING';
     this._syncReticle();
   }
 
-  // Start over without reloading the page
+  // Start the whole level over without reloading the page
   restart() {
     const g = this.game;
     this.hud.hideGameOver();
     this.hud.hideDeath();
     this.tapeEl.classList.remove('visible');
     g.ui.hideToast();
-
     this.player.reset();
     this.inventory.reset();
     this.inventory.add('torch');
     this._setTorch(true);
-
     this.level.resetWorld();
-    for (const room of this.rooms) {
-      room.repaired = false;
-      room.tapeSeen = false;
-      room.machineRef.reset();
-    }
-    for (const c of this.consoles) {
-      c.progress = 0;
-      c.screen.material.color.setHex(0xff3030);
-    }
-    for (const pk of this.pickups) {
-      pk.taken = false;
-      pk.mesh.group.visible = true;
-    }
-    this.eHeld = false;
+    this.tapeSeen = { A: false, B: false, C: false };
+    this.course.reset({ full: true });
     this._dying = false;
     this.invuln = 0;
-    this.holdBar.classList.remove('visible');
-
     this.controls.teleport(this.level.spawn.clone());
     this.controls.camera.rotation.set(0, this.level.spawnYaw, 0);
     this.controls.instance.enabled = true;
@@ -615,25 +483,26 @@ export class Level2Session {
   // Guidance: what to do next, and where it is
   // ---------------------------------------------------------
   _guidance() {
-    const roomName = (r) => `Quarters ${r.id}`;
-    for (const room of this.rooms) {
-      if (room.tapeSeen) continue;
-      const m = room.machineRef;
-      const spec = MACHINE_TYPES[room.machine.type];
-      if (!room.repaired) {
-        const guard = m.active
-          ? `A ${spec.name} patrols it: time your repair, or find something that stops it.`
-          : `The ${spec.name} is down.`;
-        waypointTarget.copy(room.console);
-        waypointTarget.y += 1.2;
-        return { text: `${roomName(room)} is sealed. Repair the console beside its door. ${guard}`, label: `CONSOLE ${room.id}`, target: waypointTarget };
+    if (!this.course.complete) {
+      if (!this.inWing) {
+        waypointTarget.copy(DOORS.A.pos).setY(2.4);
+        return { text: 'Enter the Cargo Bay: the lit lane leads straight to it.', label: 'CARGO BAY' };
       }
-      const tape = this.level.tapes[room.id];
-      waypointTarget.copy(tape || room.console);
-      return { text: `${roomName(room)} is open. Find the videotape inside.`, label: `TAPE ${room.id}`, target: waypointTarget };
+      return this.course.step(waypointTarget);
+    }
+    for (const letter of ['B', 'C']) {
+      if (this.tapeSeen[letter]) continue;
+      const d = DOORS[letter];
+      if (this.level.isQuartersOpen(letter) && this.level.tapes[letter]) {
+        waypointTarget.copy(this.level.tapes[letter]);
+        return { text: `The ${d.name} quarters are open. Watch the videotape inside.`, label: `TAPE ${letter}` };
+      }
+      waypointTarget.copy(d.pos).setY(d.pos.y + 2.4);
+      const where = letter === 'B' ? 'up the stairs, on the first catwalk' : 'on the top walkway';
+      return { text: `The ${d.name} door is unsealed (${where}). The full wing comes later: for now it holds Quarters ${letter}.`, label: d.name.toUpperCase() };
     }
     waypointTarget.set(0, 15, 0);
-    return { text: 'Every quarters has been searched. Take the core lift down.', label: 'CORE LIFT', target: waypointTarget };
+    return { text: 'Every quarters has been searched. Take the core lift down.', label: 'CORE LIFT' };
   }
 
   _updateWaypoint(target, label) {
@@ -673,38 +542,62 @@ export class Level2Session {
     return hit === null || hit > dist - 0.6;
   }
 
+  // Which crew quarters the player is standing in, if any (they are out of the camera network)
+  _quartersAt(p) {
+    if (p.z < -92.4 && Math.abs(p.x) < 3.8) return 'A';
+    const r = Math.hypot(p.x, p.z);
+    if (r < 33.2 || CARGO_BAY.contains(p)) return null;
+    const a = angleOf(p);
+    const d = (x, y) => Math.abs(((x - y + 540) % 360) - 180);
+    if (d(a, 200) < 12) return 'B';
+    if (d(a, 320) < 12) return 'C';
+    return null;
+  }
+
   update(delta) {
     const g = this.game;
     if (!this.ready || !this.controls.ready) return;
 
-    const playing = g.state === 'PLAYING';
-    const live = playing || g.state === 'WAKING' || g.state === 'INVENTORY' || g.state === 'TAPE';
+    const st = g.state;
+    const playing = st === 'PLAYING';
+    const crane = st === 'CRANE';
+    const live = playing || st === 'WAKING' || st === 'INVENTORY' || st === 'TAPE';
     if (live) this.controls.update(delta, playing);
+    else if (crane) this.physics.step(Math.min(delta, 0.05));   // keeps the moving containers' colliders current
     if (playing) this.level.openElevator();
-    this.level.update(delta, this.game.camera.instance);
+    this.level.update(delta, g.camera.instance);
+    this.course.update(delta, {
+      player: this.controls,
+      canSee: (m, t) => this._canSee(m, t),
+      onHit: (dmg, m) => this.damage(dmg, m),
+      playing: playing || crane
+    });
     if (this.invuln > 0) this.invuln -= delta;
-    if (live && g.state !== 'WAKING') this.player.playSeconds += delta;
+    if ((live || crane) && st !== 'WAKING') this.player.playSeconds += delta;
     if (playing) this._autoQuality(delta);
 
     // HUD and the live 3D torch in its slot
-    this.hud.setVisible(g.state !== 'INIT' && g.state !== 'GAME_OVER');
+    this.hud.setVisible(st !== 'INIT');
     this.hud.update(this.player);
-    this.tag.classList.toggle('visible', g.state !== 'INIT' && g.state !== 'GAME_OVER');
+    this.tag.classList.toggle('visible', st !== 'INIT');
     if (this.preview.ready) {
       const targets = [this.hud.torchCanvas];
       if (this.inventory.open && this.inventory.torchCanvas) targets.push(this.inventory.torchCanvas);
       this.preview.draw(targets, delta, this.torchOn);
     }
 
-    // Bedrooms are out of reach of the camera network: first person only, and no signal
+    // Where the player is: the wing moves the lights there; quarters are first person only
     const p = this.controls.position;
-    const r = Math.hypot(p.x, p.z);
-    const a = angleOf(p);
-    const inElevator = Math.abs(a - 270) < 9 && p.y < 6;
-    const inPod = r > 33.2 && !inElevator;
-    if (inPod !== this.inPod) {
-      this.inPod = inPod;
-      if (inPod) {
+    const inWing = CARGO_BAY.contains(p);
+    if (inWing !== this.inWing) {
+      this.inWing = inWing;
+      this.level.setZone(inWing ? 'wing1' : 'hub');
+      this.tag.textContent = inWing ? 'LEVEL 2  ·  WING 1  ·  CARGO BAY' : 'LEVEL 2  ·  CARGO ATRIUM';
+    }
+    const quarters = this._quartersAt(p);
+    if (!!quarters !== this.inPod) {
+      this.inPod = !!quarters;
+      if (this.inPod) {
         this.prevView = this.controls.view;
         this.controls.setView('first');
         this.controls.viewLocked = true;
@@ -712,47 +605,32 @@ export class Level2Session {
         this.controls.viewLocked = false;
         this.controls.setView(this.prevView);
       }
-      this.noSignal.classList.toggle('visible', inPod);
-      this.level.lightQuarters(inPod ? this._podAt(a) : null);
+      this.noSignal.classList.toggle('visible', this.inPod);
+      this.level.lightQuarters(quarters);
     }
 
+    // The channel's water is live: touching it is fatal
+    if (playing && inWing && p.y < -0.7 && !this._dying) this.onFlatline('Electrocuted in the channel.');
+
+    if (playing) this._updateDoors();
+
+    if (crane) {
+      g.ui.setPrompt(CRANE_HELP);
+      g.ui.setWaypoint(null);
+      return;
+    }
     if (!playing) {
       g.ui.setPrompt(null);
       g.ui.setWaypoint(null);
-      this.holdBar.classList.remove('visible');
       return;
     }
 
-    // Machines
-    const ctx = { playerPos: p, canSee: (m, t) => this._canSee(m, t), onHit: (dmg) => this.damage(dmg) };
-    for (const m of this.machines) m.update(delta, ctx);
-
-    // Pickup glow
-    const t = performance.now() / 1000;
-    for (const pk of this.pickups) {
-      if (pk.taken) continue;
-      pk.mesh.body.position.y = Math.sin(t * 2) * 0.06;
-      pk.mesh.body.rotation.y = t;
-    }
-
-    // Prompt, and the hold-to-repair bar
     const hit = this._nearestInteract();
-    let holdProgress = null;
-    for (const c of this.consoles) {
-      if (hit && hit.console === c && this.eHeld) c.progress = Math.min(1, c.progress + delta / REPAIR_SECONDS);
-      else c.progress = Math.max(0, c.progress - delta / 1.5);
-      if (c.progress > 0 && !c.room.repaired) holdProgress = c.progress;
-      if (c.progress >= 1 && !c.room.repaired) this._repairDone(c);
-    }
-    if (!hit || !hit.hold) this.eHeld = false;
-    this.holdBar.classList.toggle('visible', holdProgress !== null);
-    if (holdProgress !== null) this.holdFill.style.width = `${(holdProgress * 100).toFixed(0)}%`;
-    g.ui.setPrompt(hit ? `${hit.hold ? 'Hold E' : 'E'}   ${hit.label}` : null);
+    g.ui.setPrompt(hit ? `E   ${hit.label}` : null);
 
-    // Where to go
     const goal = this._guidance();
     g.ui.setObjective(goal.text);
-    this._updateWaypoint(goal.target, goal.label);
+    this._updateWaypoint(waypointTarget, goal.label);   // every guidance branch writes waypointTarget
     this._syncReticle();
   }
 }

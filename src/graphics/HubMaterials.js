@@ -247,6 +247,9 @@ const GLOWS = {
   white_glow: 'vec3 f = vec3(0.88 + 0.12 * sin(uHubTime * 1.3 + vTriPos.x));',
   tile_glow: 'vec3 f = vec3(0.5 + 0.5 * pow(0.5 + 0.5 * sin(length(vTriPos.xz) * 0.45 - uHubTime * 1.6), 2.0));',
   lamp_warm: 'vec3 f = vec3(0.93 + 0.07 * sin(uHubTime * 7.0 + vTriPos.x * 3.0));',
+  // electrified water: ripples of light, and now and then a crackle across it
+  water: 'vec3 f = vec3(0.55 + 0.45 * sin(vTriPos.x * 1.3 + uHubTime * 2.5) * sin(vTriPos.z * 1.1 - uHubTime * 1.7) + 1.2 * step(0.985, fract(sin(floor(uHubTime * 8.0) * 12.9898) * 43758.5)));',
+  hazard: 'vec3 f = vec3(0.75 + 0.25 * step(0.5, fract(uHubTime * 0.8)));',
   core_energy: 'vec3 f = vec3(0.45 + 0.55 * pow(0.5 + 0.5 * sin(vTriPos.y * 1.1 - uHubTime * 5.0), 2.0));',
   door_a_glow: 'vec3 f = vec3(0.8 + 0.2 * sin(uHubTime * 3.0));',
   door_b_glow: 'vec3 f = vec3(0.8 + 0.2 * sin(uHubTime * 3.0 + 1.0));',

@@ -96,10 +96,10 @@ function floorDecal() {
     ctx.restore();
   };
   const paint = 'rgba(200,215,225,0.55)';
-  word('CARGO BAY', 18.5, 160, 1.6, paint);
+  word('FREIGHT YARD', 18.5, 160, 1.6, paint);
   word('MACHINERY BAY', 17.0, 350, 1.4, paint);
   word('PIPE CANYON', 19.0, 66, 1.4, paint);
-  word('QUARTERS A', 27.8, 90, 1.5, 'rgba(120,235,255,0.7)');
+  word('CARGO BAY', 27.8, 90, 1.5, 'rgba(120,235,255,0.7)');
   word('CORE ACCESS', 15.4, 270, 1.3, 'rgba(255,190,70,0.75)', true);   // read walking in from the elevator
   word('ELEVATOR', 31.0, 270, 1.3, paint, true);
   word('BAY 07', 26.5, 160, 0.9, paint);
@@ -222,12 +222,12 @@ function wallSigns(group) {
     group.add(mesh);
   };
   // Door plaques, in the colour of each door's glow
-  sign('QUARTERS A', '#26f2ff', 4.8, 0.9, 90, 5.75, 0.25, 768);
-  sign('QUARTERS B', '#b6e0ff', 4.8, 0.9, 200, 12.75, 0.25, 768);
-  sign('QUARTERS C', '#8a6bff', 4.8, 0.9, 320, 19.75, 0.25, 768);
+  sign('CARGO BAY', '#26f2ff', 4.8, 0.9, 90, 5.75, 0.25, 768);
+  sign('MAINTENANCE', '#b6e0ff', 4.8, 0.9, 200, 12.75, 0.25, 768);
+  sign('SECURITY', '#8a6bff', 4.8, 0.9, 320, 19.75, 0.25, 768);
   sign('ELEVATOR', '#26f2ff', 4.2, 0.9, 270, 6.3, 0.25, 768);
   // Zone signs, in front of the wall pipes so nothing hides them
-  sign('CARGO BAY', '#cfe6f2', 6.4, 1.2, 150, 10.0, 1.2, 768);
+  sign('FREIGHT YARD', '#cfe6f2', 6.4, 1.2, 150, 10.0, 1.2, 768);
   sign('MACHINERY BAY', '#cfe6f2', 7.6, 1.2, 352, 9.5, 1.2, 768);
   sign('PIPE CANYON', '#cfe6f2', 6.8, 1.2, 48, 11.0, 1.2, 768);
 

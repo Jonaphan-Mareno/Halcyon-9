@@ -6,8 +6,8 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 // stands on moving platforms. Mouse looks, WASD moves, Shift runs, Space jumps,
 // V switches between first and third person.
 //
-// Sizes are metres: Voss is 1.8 m tall. A standing jump rises about 1.4 m and a
-// running jump clears about 4 m.
+// Sizes are metres: Voss is 1.8 m tall. A standing jump rises about 1.6 m (so a 1.2 m cargo
+// container is an easy climb) and a running jump clears about 4.5 m.
 
 const RADIUS = 0.35;
 const HEIGHT = 1.8;
@@ -17,7 +17,7 @@ const WALK_SPEED = 6.0;
 const SPRINT_SPEED = 9.0;
 const GRAVITY = 25.0;
 const FALL_GRAVITY = 1.4;     // falling is a little heavier than rising, so jumps feel snappy
-const JUMP_SPEED = 8.4;       // sqrt(2 * 25 * 1.4) = a 1.4 m jump
+const JUMP_SPEED = 8.94;      // sqrt(2 * 25 * 1.6) = a 1.6 m jump
 const TERMINAL_SPEED = 40.0;
 const COYOTE = 0.12;          // still allowed to jump this long after walking off a ledge
 const JUMP_BUFFER = 0.12;     // a jump pressed this early before landing still counts
@@ -42,6 +42,7 @@ export class PlayerController {
 
     this.position = new THREE.Vector3(); // feet
     this.velocity = new THREE.Vector3(); // horizontal x/z and vertical y
+    this.impulse = new THREE.Vector3();  // knockback, fades out on its own
     this.coyote = 0;
     this.grounded = false;
     this.facing = 0;                     // body yaw
@@ -96,6 +97,7 @@ export class PlayerController {
   teleport(p) {
     this.position.copy(p);
     this.renderY = null;
+    this.impulse.set(0, 0, 0);
     this.lastSafe.copy(p);
     this.velocity.set(0, 0, 0);
     this.body_rb.setTranslation({ x: p.x, y: p.y + HEIGHT / 2, z: p.z }, true);
@@ -104,6 +106,21 @@ export class PlayerController {
 
   lock() {
     this.instance.lock();
+  }
+
+  // Thrown back by a hit: away from `from`, and a little up
+  knockback(from, strength = 9) {
+    const dx = this.position.x - from.x;
+    const dz = this.position.z - from.z;
+    const len = Math.hypot(dx, dz) || 1;
+    this.impulse.set((dx / len) * strength, 0, (dz / len) * strength);
+    this.velocity.y = Math.max(this.velocity.y, 5);
+  }
+
+  // Bounce off something stomped on
+  bounce(speed = 7.5) {
+    this.velocity.y = speed;
+    this.coyote = 0;
   }
 
   // Freeze movement and mouse-look (used for menus and dialogue)
@@ -191,8 +208,9 @@ export class PlayerController {
 
     // Ask the character controller where we can actually go
     this.kcc.computeColliderMovement(this.collider, {
-      x: this.velocity.x * dt, y: this.velocity.y * dt, z: this.velocity.z * dt
+      x: (this.velocity.x + this.impulse.x) * dt, y: this.velocity.y * dt, z: (this.velocity.z + this.impulse.z) * dt
     });
+    this.impulse.multiplyScalar(Math.exp(-5 * dt));
     const mv = this.kcc.computedMovement();
     this.grounded = this.kcc.computedGrounded();
     if (this.grounded && this.velocity.y < 0) this.velocity.y = -1;       // stay glued to the floor

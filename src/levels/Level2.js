@@ -16,7 +16,17 @@ import { polar } from './hubGeometry.js';
 //   SPAWN_* / TAPE_* empties: where things go
 // Lighting and materials are placeholders until the custom shaders land.
 
-const SOLID_PREFIXES = ['COL_', 'MOVE_', 'ROT_', 'DOOR_', 'LIFT_'];
+const SOLID_PREFIXES = ['COL_', 'MOVE_', 'ROT_', 'DOOR_', 'LIFT_', 'GATE_'];
+
+// The wings: each is its own model, built in the hub's coordinates so it lines up
+const WINGS = ['./assets/models/wing1-cargo.glb'];
+
+// The same six lights serve every zone: entering a zone moves them there (moving a light is
+// free; adding or removing one would recompile every shader). [x, y, z, intensity, distance]
+const LIGHT_ZONES = {
+  hub: [[0, 11, 0, 760, 0], [0, 27, 0, 420, 0], [17, 9, 17, 110, 45], [-17, 9, -17, 110, 45]],
+  wing1: [[0, 11, -62, 700, 0], [0, 10, -84, 380, 0], [0, 4.2, -38, 45, 18], [0, 7, -48, 160, 30]]
+};
 const HIDDEN_PREFIXES = ['COL_', 'REF_'];
 const startsWithAny = (name, list) => list.some((p) => name.startsWith(p));
 
@@ -69,6 +79,29 @@ export class Level2 {
     }
     this.root.add(hub);
     this.hub = hub;
+
+    // The wings (their own models), handled exactly like the hub
+    this.gates = {};
+    for (const url of WINGS) {
+      const wing = (await new GLTFLoader().loadAsync(url)).scene;
+      wing.updateMatrixWorld(true);
+      for (const node of [...wing.children]) {
+        if (startsWithAny(node.name, SOLID_PREFIXES)) {
+          const collider = physics.addStaticObject(node);
+          if (node.name.startsWith('GATE_')) this.gates[node.name] = { node, collider, closedY: node.position.y, open: 0, opening: false };
+        }
+        if (startsWithAny(node.name, HIDDEN_PREFIXES)) wing.remove(node);
+      }
+      this._tameMaterials(wing);
+      applyHubMaterials(wing, this.textures);
+      for (const letter of ['A', 'B', 'C']) {
+        const node = wing.getObjectByName(`TAPE_${letter}`);
+        if (node) this.tapes[letter] = node.getWorldPosition(new THREE.Vector3());
+      }
+      const cp = wing.getObjectByName('PT_Checkpoint');
+      if (cp) this.wingCheckpoint = cp.getWorldPosition(new THREE.Vector3());
+      this.root.add(wing);
+    }
 
     this.decals = createHubDecals();
     this.root.add(this.decals);
@@ -140,10 +173,12 @@ export class Level2 {
       [0, 11, 0, 0x9fdcff, 760],
       [0, 27, 0, 0x8fc8ff, 420]
     ];
+    this.zoneLights = [];
     for (const [x, y, z, color, intensity] of reactor) {
       const light = new THREE.PointLight(color, intensity, 0, 2);
       light.position.set(x, y, z);
       this.root.add(light);
+      this.zoneLights.push(light);
     }
 
     // Two dim fills on opposite walls so the edges of the hall are not pitch black
@@ -151,7 +186,9 @@ export class Level2 {
       const light = new THREE.PointLight(0x6f92c8, 110, 45, 2);
       light.position.set(x, y, z);
       this.root.add(light);
+      this.zoneLights.push(light);
     }
+    this.zone = 'hub';
 
     // Warm work lamps, one at each LAMP_ marker in the model. These are NOT real lights: every
     // real light makes every surface's shader slower to compile and to draw. Instead each lamp
@@ -216,15 +253,51 @@ export class Level2 {
     }
   }
 
-  // Light the quarters the player is standing in (null: none)
+  // Move the zone lights to where the player is ('hub' or 'wing1')
+  setZone(name) {
+    const preset = LIGHT_ZONES[name];
+    if (!preset || name === this.zone) return;
+    this.zone = name;
+    preset.forEach(([x, y, z, intensity, distance], i) => {
+      const l = this.zoneLights[i];
+      l.position.set(x, y, z);
+      l.intensity = intensity;
+      l.distance = distance;
+    });
+  }
+
+  // Light the quarters the player is standing in (null: none). A is at the end of Wing 1.
   lightQuarters(letter) {
-    const at = { A: [90, 0], B: [200, 7], C: [320, 14] }[letter];
-    if (!at) {
+    if (!letter) {
       this.podLight.intensity = 0;
       return;
     }
-    this.podLight.position.copy(polar(38.5, at[0], at[1] + 3.6));
+    if (letter === 'A') this.podLight.position.set(0, 3.6, -96.6);
+    else {
+      const at = { B: [200, 7], C: [320, 14] }[letter];
+      this.podLight.position.copy(polar(38.5, at[0], at[1] + 3.6));
+    }
     this.podLight.intensity = 25;
+  }
+
+  // Gates inside the wings: slide up into the wall; the collider goes so you can walk through
+  openGate(name) {
+    const g = this.gates[name];
+    if (!g || g.opening) return;
+    g.opening = true;
+    if (g.collider) {
+      this.physics.world.removeCollider(g.collider, true);
+      g.collider = null;
+    }
+  }
+
+  closeGate(name) {
+    const g = this.gates[name];
+    if (!g || !g.opening) return;
+    g.node.position.y = g.closedY;
+    g.open = 0;
+    g.opening = false;
+    g.collider = this.physics.addStaticObject(g.node);
   }
 
   isQuartersOpen(letter) {
@@ -252,7 +325,7 @@ export class Level2 {
       const t = this.elevatorOpen * this.elevatorOpen * (3 - 2 * this.elevatorOpen);
       for (const d of this.elevatorDoors) d.node.position.lerpVectors(d.closed, d.open, t);
     }
-    for (const q of Object.values(this.quarters)) {
+    for (const q of [...Object.values(this.quarters), ...Object.values(this.gates || {})]) {
       if (q.opening && q.open < 1) {
         q.open = Math.min(1, q.open + delta / 1.4);
         const t = q.open * q.open * (3 - 2 * q.open);

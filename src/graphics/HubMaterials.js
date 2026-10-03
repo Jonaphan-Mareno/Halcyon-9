@@ -407,6 +407,8 @@ const SURFACES = {
   coat: { kind: 'fabric', tile: 0.05, bump: 0.8 },
   fabric: { kind: 'fabric', tile: 0.07, bump: 1.0 },
   fabric_light: { kind: 'fabric', tile: 0.07, bump: 1.0 },
+  cushion_orange: { kind: 'fabric', tile: 0.06, bump: 1.0 },
+  cushion_blue: { kind: 'fabric', tile: 0.06, bump: 1.0 },
   paper: { kind: 'paper', tile: 0.3, bump: 0 },
   label: { kind: 'label', tile: 0.16, bump: 0 },
   steel: { kind: 'brushed', tile: 0.3, bump: 0.4 },

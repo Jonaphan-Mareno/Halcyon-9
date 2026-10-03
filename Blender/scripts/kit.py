@@ -193,6 +193,14 @@ def flush(acc):
     return ob
 
 
+def smooth(ob):
+    """Smooth shading everywhere (soft things: pillows, cushions)."""
+    for p in ob.data.polygons:
+        p.use_smooth = True
+    for e in ob.data.edges:
+        e.use_edge_sharp = False
+
+
 def polish(ob, width=0.01, angle=35.0):
     """Smooth shading with sharp edges kept sharp, and a small bevel on every hard edge, so the
     edges catch the light like real objects instead of looking cut from card. The bevel is a

@@ -177,6 +177,33 @@ for k in range(170):                    # pebbles scattered over the soil, so th
     bmesh.ops.translate(island.bm, vec=q, verts=verts)
     island.tag(random.choice(['pebble', 'pebble', 'hull_mid']), _faces(verts))
 
+# ------------------------------------------------------------------ soft furnishings
+# Pillows and cushions are soft shapes, not boxes: a sphere pushed out into a rounded box, its
+# thinnest side puffed up in the middle and pinched toward the edges, like a stuffed pillow.
+# Smooth shaded (no hard edges), in woven fabric.
+kit.mat('cushion_orange', (0.90, 0.44, 0.12), 0.9, 0.0)
+kit.mat('cushion_blue', (0.30, 0.60, 0.70), 0.9, 0.0)
+kit.mat('cap_orange', (0.92, 0.47, 0.10), 0.5, 0.0)        # smooth orange trim on the sofas (no metal texture)
+cush = A('Atrium_Cushions')
+
+
+def pillow(m, c, size, yaw=0.0, pitch=0.0, roll=0.0, pinch=0.5, round_=0.35):
+    acc = cush
+    island = bmesh.ops.create_icosphere(acc.bm, subdivisions=3, radius=1.0)['verts']
+    thin = min(range(3), key=lambda i: size[i])     # the axis that gets puffed and pinched
+    others = [i for i in range(3) if i != thin]
+    e = 0.25 + round_                              # below 1 pushes the sphere out toward a rounded box
+    for v in island:
+        n = v.co.normalized()
+        q = [math.copysign(abs(n[i]) ** e, n[i]) for i in range(3)]
+        q[thin] *= (1 - pinch * min(1.0, q[others[0]] ** 2)) * (1 - pinch * min(1.0, q[others[1]] ** 2))
+        v.co = Vector((q[0] * size[0] / 2, q[1] * size[1] / 2, q[2] * size[2] / 2))
+    mat = (Matrix.Translation(Vector(c)) @ Matrix.Rotation(rad(yaw), 4, 'Z') @
+           Matrix.Rotation(rad(pitch), 4, 'Y') @ Matrix.Rotation(rad(roll), 4, 'X'))
+    bmesh.ops.transform(acc.bm, matrix=mat, verts=list(island))
+    acc.tag(m, _faces(island))
+
+
 # sofas curving round the lounge, gaps at north and south so you can walk down into it. Styled after
 # the team's sci-fi operator chair: a black plinth with a light blue LED line, black cushions in a
 # white shell, white armrests with orange pads, an orange cap on top of the back.
@@ -188,21 +215,22 @@ for a0, a1 in ((110, 170), (190, 250), (290, 350), (10, 70)):
     arc(kit.CS, 'col', 4.2, 5.4, a0, a1, -0.6, -0.16, step=5)
     arc(sofa, 'hull_light', 5.05, 5.42, a0, a1, -0.42, 0.62, step=5, col=True)           # white back shell
     arc(sofa, 'hull_dark', 5.05, 5.42, mid - 7, mid + 7, 0.62, 0.66, step=2)
-    arc(sofa, 'accent', 5.08, 5.39, mid - 6, mid + 6, 0.66, 0.74, step=2)                # orange cap
-    arc(sofa, 'fabric', 4.98, 5.05, a0 + 3.2, a1 - 3.2, -0.16, 0.5, step=5)             # black back cushion
-    arc(sofa, 'blue_glow', 5.0, 5.06, a0 + 3.2, a1 - 3.2, 0.535, 0.555, step=5)
-    gap = 0.5
+    arc(sofa, 'cap_orange', 5.08, 5.39, mid - 6, mid + 6, 0.66, 0.74, step=2)            # orange cap (smooth, padded)
     span = (a1 - a0 - 6.4) / 3
-    for k in range(3):                                                                    # three seat cushions
-        c0 = a0 + 3.2 + k * span
-        arc(sofa, 'fabric', 4.22, 5.02, c0 + gap / 2, c0 + span - gap / 2, -0.42, -0.16, step=4)
+    chord = 2 * 4.62 * math.sin(rad(span / 2)) - 0.03
+    for k in range(3):                                          # three plump seat cushions, three back cushions
+        ac = a0 + 3.2 + (k + 0.5) * span
+        pillow('fabric', P(4.62, ac, -0.28), (0.82, chord, 0.3), yaw=ac, pinch=0.12, round_=0.3)
+        pillow('fabric', P(4.93, ac, 0.17), (0.2, chord, 0.6), yaw=ac, pitch=12, pinch=0.15, round_=0.3)
     for e0, e1 in ((a0, a0 + 3.0), (a1 - 3.0, a1)):                                       # armrests
         arc(sofa, 'hull_light', 4.2, 5.05, e0, e1, -0.42, 0.04, step=1, col=True)
-        arc(sofa, 'accent', 4.25, 5.0, e0 + 0.3, e1 - 0.3, 0.04, 0.1, step=1)
+        am = (e0 + e1) / 2
+        pillow('cushion_orange', P(4.62, am, 0.09), (0.78, 2 * 4.62 * math.sin(rad(1.25)), 0.12), yaw=am, pinch=0.15, round_=0.3)
         arc(sofa, 'blue_glow', 4.18, 4.2, e0 + 0.5, e1 - 0.5, -0.24, -0.2, step=1)
-    for k, m in enumerate(('fabric_light', 'accent')):                                   # throw cushions
+    for k, m in enumerate(('cushion_blue', 'cushion_orange')):                           # throw pillows
         a = a0 + (a1 - a0) * (0.22 if k == 0 else 0.8)
-        rbox(sofa, m, 4.88, a, 0.0, 0.14, 0.42, 0.36)
+        pillow(m, P(4.74, a, 0.12), (0.17, 0.46, 0.46), yaw=a + random.uniform(-15, 15), pitch=14,
+               roll=random.uniform(-12, 12), pinch=0.6, round_=0.35)
 for a, twist, rr in ((140, 31, 2.95), (320, 0, 3.3)):                         # low tables with holo tops
     c = P(rr, a + twist * 0.15, -0.4)                                          # (the first one shoved askew)
     _rbox(sofa, 'hull_dark', c, (1.0, 1.6, 0.4), a + twist)
@@ -222,7 +250,10 @@ kit.mat('veg_leaf_light', (0.15, 0.36, 0.09), 0.75, 0.0)
 kit.mat('carrot', (0.90, 0.40, 0.06), 0.6, 0.0)
 kit.mat('tomato', (0.72, 0.06, 0.04), 0.35, 0.0)
 kit.mat('stake', (0.40, 0.30, 0.18), 0.8, 0.0)
-for _nm in ('veg_leaf', 'veg_leaf_light'):
+kit.mat('veg_dead', (0.26, 0.19, 0.07), 0.9, 0.0)           # wilted, brown
+kit.mat('veg_yellow', (0.42, 0.37, 0.10), 0.85, 0.0)        # yellowing
+kit.mat('tomato_rotten', (0.20, 0.09, 0.035), 0.95, 0.0)    # shrivelled, blackened
+for _nm in ('veg_leaf', 'veg_leaf_light', 'veg_dead', 'veg_yellow'):
     kit.MATS[_nm].use_backface_culling = False
 veg = A('PLANT_Vegetables')
 
@@ -238,33 +269,48 @@ def leaf_blade(acc, m, base, direction, length, width, droop):
     acc.tag(m, [acc.bm.faces.new((v[0], v[1], v[2])), acc.bm.faces.new((v[0], v[2], v[3]))])
 
 
-def carrot(acc, p):
+def carrot(acc, p, rot=False):
     cyl(acc, 'carrot', (p.x, p.y, p.z + 0.02), 0.028, 0.05, 6)                 # orange top showing above the soil
     for k in range(6):
         ang = k / 6 * math.tau + random.uniform(-0.3, 0.3)
-        d = Vector((math.cos(ang) * 0.35, math.sin(ang) * 0.35, 1)).normalized()
-        leaf_blade(acc, 'veg_leaf_light', p + Vector((0, 0, 0.04)), d, random.uniform(0.2, 0.3), 0.03, 0.02)
+        lift = 0.35 if rot else 1.0                                             # a rotten one's leaves flop over
+        d = Vector((math.cos(ang) * 0.35, math.sin(ang) * 0.35, lift)).normalized()
+        leaf_blade(acc, 'veg_dead' if rot else 'veg_leaf_light', p + Vector((0, 0, 0.04)), d,
+                   random.uniform(0.2, 0.3), 0.03, 0.1 if rot else 0.02)
 
 
-def lettuce(acc, p):
+def lettuce(acc, p, rot=False):
     for k in range(9):
         ang = k / 9 * math.tau + random.uniform(-0.2, 0.2)
-        d = Vector((math.cos(ang), math.sin(ang), 0.3 + (k % 3) * 0.25)).normalized()
-        leaf_blade(acc, 'veg_leaf_light' if k % 2 else 'veg_leaf', p + Vector((0, 0, 0.02)), d, 0.2, 0.09, 0.0)
+        d = Vector((math.cos(ang), math.sin(ang), (0.05 if rot else 0.3) + (k % 3) * (0.08 if rot else 0.25))).normalized()
+        m = random.choice(['veg_dead', 'veg_yellow']) if rot else ('veg_leaf_light' if k % 2 else 'veg_leaf')
+        leaf_blade(acc, m, p + Vector((0, 0, 0.02)), d, 0.2, 0.09, 0.04 if rot else 0.0)
 
 
-def tomato(acc, p):
+def tomato(acc, p, rot=False):
     cyl(acc, 'stake', (p.x, p.y, p.z + 0.65), 0.015, 1.3, 6)
     for k in range(14):
         ang = random.uniform(0, math.tau)
-        d = Vector((math.cos(ang), math.sin(ang), random.uniform(-0.2, 0.5))).normalized()
-        leaf_blade(acc, 'veg_leaf', p + Vector((0, 0, random.uniform(0.15, 1.15))), d, random.uniform(0.18, 0.28), 0.07, 0.04)
+        d = Vector((math.cos(ang), math.sin(ang), random.uniform(-0.6, 0.0) if rot else random.uniform(-0.2, 0.5))).normalized()
+        m = random.choice(['veg_dead', 'veg_yellow', 'veg_leaf']) if rot else 'veg_leaf'
+        leaf_blade(acc, m, p + Vector((0, 0, random.uniform(0.15, 1.15))), d, random.uniform(0.18, 0.28), 0.07, 0.04)
     for k in range(5):
         ang = random.uniform(0, math.tau)
         q = p + Vector((math.cos(ang) * 0.12, math.sin(ang) * 0.12, random.uniform(0.3, 1.0)))
-        verts = bmesh.ops.create_uvsphere(acc.bm, u_segments=8, v_segments=6, radius=0.045)['verts']
+        bad = rot and random.random() < 0.7
+        verts = bmesh.ops.create_uvsphere(acc.bm, u_segments=8, v_segments=6, radius=0.034 if bad else 0.045)['verts']
+        if bad:
+            bmesh.ops.scale(acc.bm, vec=(1.0, 0.85, 0.7), verts=verts)          # shrivelled
         bmesh.ops.translate(acc.bm, vec=q, verts=verts)
-        acc.tag('tomato', _faces(verts))
+        acc.tag('tomato_rotten' if bad else 'tomato', _faces(verts))
+
+
+def plant_or_not(fn, p):
+    """The garden was left to itself: some plants are gone, some have rotted, the rest still grow."""
+    roll = random.random()
+    if roll < 0.22:
+        return
+    fn(veg, p, roll < 0.42)
 
 
 CROPS = {'carrot': (carrot, 0.24), 'lettuce': (lettuce, 0.42), 'tomato': (tomato, 0.6)}
@@ -280,7 +326,7 @@ def fill_rect_bed(rc, a, radial, tangential, top, crop):
     for i in range(nr):
         for j in range(nt):
             rr = rc - radial / 2 + (i + 0.5) * radial / nr
-            fn(veg, P(rr, a, top) + TV(a) * (-tangential / 2 + (j + 0.5) * tangential / nt) + jitter())
+            plant_or_not(fn, P(rr, a, top) + TV(a) * (-tangential / 2 + (j + 0.5) * tangential / nt) + jitter())
 
 
 def fill_arc_bed(r0, r1, a0, a1, top, crop):
@@ -292,7 +338,7 @@ def fill_arc_bed(r0, r1, a0, a1, top, crop):
         rr = r0 + (i + 0.5) * (r1 - r0) / rows
         n = max(1, int(math.radians(a1 - a0) * rr / spacing))
         for j in range(n):
-            fn(veg, P(rr, a0 + (j + 0.5) * (a1 - a0) / n, top) + jitter())
+            plant_or_not(fn, P(rr, a0 + (j + 0.5) * (a1 - a0) / n, top) + jitter())
 
 
 # raised beds on the floor, one crop each
@@ -753,9 +799,10 @@ fallen_tree_at = tipped_pot(P(8.2, 203, 0.0), 120)
 # cushions pulled off the sofas and thrown about the lounge
 for k in range(7):
     a = random.uniform(0, 360)
-    c = P(random.uniform(3.0, 4.1), a, RUG + 0.065)
-    _rbox(chaos, random.choice(['fabric_light', 'accent', 'fabric']), c, (0.42, 0.36, 0.13), random.uniform(0, 360))
-_rbox(chaos, 'fabric', P(6.9, 300, 0.07) + Vector((0, 0, -0.25)), (0.75, 0.5, 0.14), 210)    # a seat cushion on the step
+    c = P(random.uniform(3.0, 4.1), a, RUG + 0.08)
+    pillow(random.choice(['cushion_blue', 'cushion_orange']), c, (0.46, 0.46, 0.17), yaw=random.uniform(0, 360),
+           pitch=random.uniform(-12, 12), pinch=0.6)
+pillow('fabric', P(6.9, 300, -0.15), (0.8, 0.55, 0.28), yaw=210, pitch=18, pinch=0.12, round_=0.3)   # a seat cushion on the step
 
 # the shoved table's mugs and tablet on the floor: a tipped mug and its coffee, a cracked tablet
 tc = P(3.4, 150, RUG)
@@ -850,10 +897,40 @@ for k in range(6):
     bmesh.ops.translate(chaos.bm, vec=q, verts=verts)
     chaos.tag('tomato', _faces(verts))
 
+# carrots pulled up and dropped, roots and all; tomatoes splattered; rotten lettuces kicked out
+def pulled_carrot(p, yaw):
+    d = Vector((math.cos(rad(yaw)), math.sin(rad(yaw)), 0))
+    verts = bmesh.ops.create_cone(chaos.bm, cap_ends=True, cap_tris=False, segments=8, radius1=0.028, radius2=0.004, depth=0.17)['verts']
+    xform(chaos, 'carrot', verts, Matrix.Translation(Vector(p) + d * 0.085 + Vector((0, 0, 0.028))) @
+          Matrix.Rotation(rad(yaw), 4, 'Z') @ Matrix.Rotation(rad(90), 4, 'Y'))
+    for k in range(5):
+        ang = rad(yaw + 180 + random.uniform(-35, 35))
+        leaf_blade(veg, random.choice(['veg_leaf_light', 'veg_yellow']), Vector(p) + Vector((0, 0, 0.03)),
+                   Vector((math.cos(ang), math.sin(ang), 0.15)).normalized(), random.uniform(0.18, 0.26), 0.03, 0.04)
+
+
+for k in range(6):
+    pulled_carrot(P(random.uniform(8.6, 9.2), 135 + random.uniform(-9, 9), 0.0), random.uniform(0, 360))
+for k in range(4):
+    pulled_carrot(P(random.uniform(14.2, 14.8), random.uniform(-15, 15), 0.0), random.uniform(0, 360))
+for a0 in (0, 225, 40):
+    for k in range(5):
+        q = P(random.uniform(8.5, 9.4), a0 + random.uniform(-8, 8), 0.012)
+        spill(chaos, 'tomato' if k % 2 else 'tomato_rotten', q, random.uniform(0.04, 0.08), 0.0, seg=10)
+        if k % 2:
+            verts = bmesh.ops.create_uvsphere(chaos.bm, u_segments=8, v_segments=6, radius=0.045)['verts']
+            bmesh.ops.scale(chaos.bm, vec=(1.0, 1.0, 0.55), verts=verts)        # a squashed tomato on its splat
+            bmesh.ops.translate(chaos.bm, vec=q + Vector((0, 0, 0.02)), verts=verts)
+            chaos.tag('tomato_rotten' if k == 3 else 'tomato', _faces(verts))
+for k in range(3):
+    lettuce(veg, P(random.uniform(8.4, 9.2), 315 + random.uniform(-8, 8), 0.02), True)
+
 # a harvest tray dropped by the kitchenette, food rolled across the floor (real food models below)
 tray_c = P(14.4, 250, 0.12)
 _rbox(chaos, 'hull_light', tray_c, (0.06, 0.5, 0.25), 250 + 65)
-food_spots = [(P(random.uniform(12.8, 14.6), 250 + random.uniform(-6, 6), 0.0), random.choice(['lime', 'apple', 'apple', 'sweet_potato'])) for _ in range(9)]
+food_spots = [(P(random.uniform(12.8, 14.6), 250 + random.uniform(-6, 6), 0.0), random.choice(['lime', 'apple', 'onion', 'sweet_potato', 'lemon'])) for _ in range(11)]
+food_spots += [(P(random.uniform(8.3, 9.3), a + random.uniform(-10, 10), 0.0), random.choice(['onion', 'sweet_potato']))
+               for a in (45, 135, 315) for _ in range(2)]
 
 # crates and cushions dragged in front of the sleeping pods door, as if to block it
 for k, (t, z, rz) in enumerate(((-0.7, 0.3, 4), (0.55, 0.3, -7), (-0.1, 0.9, 12))):
@@ -861,8 +938,8 @@ for k, (t, z, rz) in enumerate(((-0.7, 0.3, 4), (0.55, 0.3, -7), (-0.1, 0.9, 12)
     _rbox(chaos, 'crate', c, (0.6, 0.9, 0.6), 180 + rz)
     _rbox(kit.CS, 'col', c, (0.6, 0.9, 0.6), 180 + rz)
     _rbox(chaos, 'accent', c + Vector((0, 0, 0.301)), (0.62, 0.2, 0.004), 180 + rz)
-_rbox(chaos, 'fabric', P(R - 1.6, 177, 0.4), (0.15, 0.9, 0.75), 180 + 70)
-_rbox(chaos, 'fabric_light', P(R - 1.4, 184, 0.08), (0.45, 0.4, 0.13), 33)
+pillow('fabric', P(R - 1.6, 177, 0.42), (0.26, 0.9, 0.78), yaw=180 + 70, pitch=-14, pinch=0.12, round_=0.3)
+pillow('cushion_blue', P(R - 1.4, 184, 0.09), (0.46, 0.46, 0.17), yaw=33, pinch=0.6)
 
 
 # ------------------------------------------------------------------ downloaded plants (Poly Haven, CC0)
@@ -955,6 +1032,8 @@ templates = {
     'lime': load_plant('food_lime_01', 0.055, 0.06),
     'apple': load_plant('food_apple_01', 0.075, 0.06),
     'sweet_potato': load_plant('sweet_potato', 0.07, 0.1),
+    'onion': load_plant('yellow_onion', 0.075, 0.08),
+    'lemon': load_plant('lemon', 0.06, 0.08),
     'pachira': load_plant('pachira_aquatica_01', 3.4, 0.3),
     'pachira_pot': load_plant('pachira_aquatica_01', 1.9, 0.3),
     # potted_plant_02 is left out: two of its texture maps fail to convert and break the file
@@ -992,7 +1071,7 @@ for spot in plant_spots:
     o.location = loc
     o.rotation_mode = 'XYZ'             # (imported models use quaternions, which would ignore the angles below)
     o.rotation_euler = spot[3] if len(spot) > 3 else (0, 0, random.uniform(0, math.tau))
-    sc = random.uniform(0.85, 1.15) if kind not in ('lime', 'apple', 'sweet_potato') else 1.0
+    sc = random.uniform(0.85, 1.15) if kind not in ('lime', 'apple', 'sweet_potato', 'onion', 'lemon') else 1.0
     if max_w and kind in widths:
         sc = min(sc, max_w / widths[kind])
     o.scale = (sc, sc, sc)
@@ -1006,6 +1085,9 @@ for img in bpy.data.images:
         img.scale(512, 512)
 
 def polish_all(objs):
+    for ob in objs:
+        if ob.name == 'Atrium_Cushions':
+            kit.smooth(ob)
     widths = {'Atrium_Sofas': 0.015, 'Atrium_Props': 0.006, 'Atrium_Pots': 0.01, 'Atrium_Chaos': 0.005,
               'Atrium_Monitors': 0.01, 'Atrium_Planters': 0.012}
     for ob in objs:

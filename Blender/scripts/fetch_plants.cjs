@@ -16,7 +16,9 @@ const PLANTS = [
   'potted_plant_04',         // succulent in a pot
   'food_lime_01',            // spilled food (the crew grew and stored their own)
   'food_apple_01',
-  'sweet_potato'
+  'sweet_potato',
+  'yellow_onion',
+  'lemon'
 ];
 const OUT = path.join(__dirname, '..', 'assets', 'plants');
 

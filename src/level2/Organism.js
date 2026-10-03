@@ -237,7 +237,15 @@ export class Organism {
       const rng = seededRandom(101 + i * 977);
       const b = new TendrilBuilder(5);
       const limit = { x: t.base.x, z: t.base.z, r: t.radius - 0.08, y0: t.base.y + 0.12, y1: t.base.y + t.height - 0.12 };
-      if (t.radius > 0.7) {
+      if (t.broken) {
+        // the smashed tube: drained, its piece of the organism slumped in a heap at the bottom
+        limit.y1 = t.base.y + 0.35;
+        for (let k = 0; k < 4; k++) {
+          const a = rng() * Math.PI * 2;
+          const start = new THREE.Vector3(t.base.x + Math.cos(a) * 0.1, t.base.y + 0.06, t.base.z + Math.sin(a) * 0.1);
+          growTendril(b, rng, start, new THREE.Vector3(Math.cos(a + 1), 0.25, Math.sin(a + 1)), 0.9 + rng() * 0.4, 0.07, 0.3, 1, limit);
+        }
+      } else if (t.radius > 0.7) {
         // the middle tube: the body, with tendrils reaching out in every direction
         const c = new THREE.Vector3(t.base.x, t.base.y + t.height * 0.52, t.base.z);
         b.blob(c, 0.36, 1.3);
@@ -257,17 +265,18 @@ export class Organism {
         }
       }
       // dark teal liquid filling the tube, so the glow stands out (drawn first, then the organism)
+      // (the smashed tube has none: it drained out across the floor)
       const liquid = new THREE.Mesh(new THREE.CylinderGeometry(t.radius - 0.015, t.radius - 0.015, t.height, 32, 1, true), this.liquidMaterial);
       liquid.position.set(t.base.x, t.base.y + t.height / 2, t.base.z);
       liquid.renderOrder = 1;
-      this.group.add(liquid);
+      if (!t.broken) this.group.add(liquid);
       const mesh = new THREE.Mesh(b.build(), this.material);
       mesh.frustumCulled = false;
       mesh.renderOrder = 2;
       this.group.add(mesh);
 
       // specks drifting up through the liquid
-      const count = t.radius > 0.7 ? 90 : 50;
+      const count = t.broken ? 0 : t.radius > 0.7 ? 90 : 50;
       const pos = new Float32Array(count * 3);
       for (let k = 0; k < count; k++) {
         const a = rng() * Math.PI * 2, rr = Math.sqrt(rng()) * (t.radius - 0.05);

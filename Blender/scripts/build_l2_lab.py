@@ -74,6 +74,7 @@ kit.mat('rubber', (0.04, 0.04, 0.045), 0.9, 0.0)
 kit.mat('coat', (0.95, 0.95, 0.94), 0.95, 0.0)
 kit.mat('screen_ui', (0.04, 0.10, 0.16), 0.3, 0.0, (0.30, 0.72, 1.0), 0.7)
 kit.mat('rack_light', (0.9, 0.95, 1.0), 0.4, 0.0, (0.9, 0.95, 1.0), 1.4)
+kit.mat('glass_broken', (0.70, 0.88, 0.96), 0.05, 0.0, alpha=0.4)   # smashed glass: a little more visible
 kit.mat('leaf', (0.10, 0.30, 0.10), 0.7, 0.0)
 kit.MATS['leaf'].use_backface_culling = False
 
@@ -162,6 +163,41 @@ for x in (-1.15, 1.15):
         y += 0.95
 
 # ------------------------------------------------------------------ the organism tubes
+BROKEN_TUBE = 3        # this one is smashed: jagged stumps of glass, its liquid drained across the floor
+
+
+def jagged_glass(cx, cy, r, z0, hmin, hmax, down=False, seg=32):
+    """The stump of a smashed glass tube: a ring of glass with a ragged edge (drawn both sides)."""
+    hs = [random.uniform(hmin, hmax) for _ in range(seg)]
+    hs.append(hs[0])
+    sign = -1 if down else 1
+    for k in range(seg):
+        a0, a1 = k / seg * math.tau, (k + 1) / seg * math.tau
+        b0 = Vector((cx + r * math.cos(a0), cy + r * math.sin(a0), z0))
+        b1 = Vector((cx + r * math.cos(a1), cy + r * math.sin(a1), z0))
+        t0 = b0 + Vector((0, 0, sign * hs[k]))
+        t1 = b1 + Vector((0, 0, sign * hs[k + 1]))
+        for quad in ((b0, b1, t1, t0), (t0, t1, b1, b0)):
+            v = [glass.bm.verts.new(p) for p in quad]
+            glass.tag('glass_broken', [glass.bm.faces.new(v)])
+
+
+def glass_piece(c, r, ang0, ang1, h, yaw, tilt):
+    """A big curved piece of the tube lying on the floor."""
+    pts = []
+    for i in range(4):
+        a = ang0 + (ang1 - ang0) * i / 3
+        for zz in (0.0, h):
+            pts.append(Vector((r * math.cos(a), r * math.sin(a) - r, zz)))
+    mat = Matrix.Translation(Vector(c)) @ Matrix.Rotation(rad(yaw), 4, 'Z') @ Matrix.Rotation(rad(tilt), 4, 'X')
+    pts = [mat @ p for p in pts]
+    for i in range(3):
+        q = (pts[2 * i], pts[2 * i + 2], pts[2 * i + 3], pts[2 * i + 1])
+        for quad in (q, q[::-1]):
+            v = [glass.bm.verts.new(p) for p in quad]
+            glass.tag('glass_broken', [glass.bm.faces.new(v)])
+
+
 TUBE_Y = 25.75
 TUBE_X = (-4.6, -2.3, 0.0, 2.3, 4.6)
 GLASS_BOTTOM = Z + 0.5
@@ -173,7 +209,12 @@ for i, x in enumerate(TUBE_X):
     cyl(tubes, 'navy', (x, TUBE_Y, Z + 0.03), r + 0.22, 0.06, 32)
     cyl(tubes, 'mint_glow', (x, TUBE_Y, GLASS_BOTTOM + 0.02), r + 0.04, 0.05, 32)  # light ring at the foot
     cyl(tubes, 'soft_black', (x, TUBE_Y, GLASS_BOTTOM + 0.01), r - 0.02, 0.02, 32)
-    cyl(glass, 'glass', (x, TUBE_Y, GLASS_BOTTOM + hb / 2), r, hb, 32)
+    if i == BROKEN_TUBE:
+        jagged_glass(x, TUBE_Y, r, GLASS_BOTTOM, 0.15, 0.95)                  # what is left at the bottom
+        jagged_glass(x, TUBE_Y, r, GLASS_TOP, 0.1, 0.6, down=True)             # and hanging from the top
+        cyl(glow, 'goo_glow', (x, TUBE_Y, GLASS_BOTTOM + 0.02), r - 0.03, 0.02, 32)   # the dregs, pooled in the bottom
+    else:
+        cyl(glass, 'glass', (x, TUBE_Y, GLASS_BOTTOM + hb / 2), r, hb, 32)
     cyl(tubes, 'smooth_white', (x, TUBE_Y, GLASS_TOP + 0.2), r + 0.14, 0.4, 32)      # top cap
     cyl(tubes, 'navy', (x, TUBE_Y, GLASS_TOP + 0.41), r + 0.1, 0.03, 32)
     cyl(tubes, 'mint_glow', (x, TUBE_Y, GLASS_TOP - 0.02), r + 0.03, 0.04, 32)
@@ -183,7 +224,7 @@ for i, x in enumerate(TUBE_X):
     box(tubes, 'orange', (x - 0.13, TUBE_Y - r - 0.24, Z + 0.17), (x + 0.13, TUBE_Y - r - 0.2, Z + 0.21))
     box(tubes, 'screen_ui', (x - 0.22, TUBE_Y - r - 0.205, Z + 0.27), (x + 0.22, TUBE_Y - r - 0.2, Z + 0.37))
     kit.col_box((x - r - 0.2, TUBE_Y - r - 0.25, Z), (x + r + 0.2, TUBE_Y + r + 0.2, HL))
-    empty('ORG_%d' % i, (x, TUBE_Y, GLASS_BOTTOM))
+    empty('ORG_%d' % i + ('_broken' if i == BROKEN_TUBE else ''), (x, TUBE_Y, GLASS_BOTTOM))
 box(tubes, 'navy_light', (X0 + 1.0, TUBE_Y - 0.95, Z), (X1 - 1.0, Y1, Z + 0.04))   # the plinth they stand on
 # pipes running along the back wall above the tubes (as in the reference)
 for k, z in enumerate((HL - 0.45, HL - 0.62)):
@@ -630,6 +671,23 @@ def broken_tube(c, k):
         glass.tag('glass', [glass.bm.faces.new(v)])
     empty('ORGFRAG_%d' % k, (p.x, p.y, p.z + 0.01))
 
+
+bx = TUBE_X[BROKEN_TUBE]
+verts = bmesh.ops.create_circle(glow.bm, cap_ends=True, segments=36, radius=1.0)['verts']   # the drained liquid
+for v in verts:
+    if v.co.length > 1e-4:
+        ang = math.atan2(v.co.y, v.co.x)
+        v.co *= 1 + 0.25 * math.sin(3 * ang + 1.3) + 0.15 * math.sin(7 * ang + 0.4)
+bmesh.ops.scale(glow.bm, vec=(1.25, 1.0, 1), verts=verts)
+bmesh.ops.translate(glow.bm, vec=Vector((bx - 0.2, TUBE_Y - 1.5, Z + 0.012)), verts=verts)
+glow.tag('goo_glow', _faces(verts))
+for k, (dx, dy, yaw, tilt) in enumerate(((-0.6, -1.3, 20, 82), (0.5, -1.7, 140, 86), (0.1, -2.2, 260, 88), (-1.0, -1.9, 75, 84))):
+    glass_piece((bx + dx, TUBE_Y + dy, Z + 0.02), 0.55, -0.5, 0.5, random.uniform(0.25, 0.5), yaw, tilt)
+for s_ in range(40):
+    q = Vector((bx + random.uniform(-1.4, 1.4), TUBE_Y - random.uniform(0.6, 2.6), Z + 0.016))
+    v = [glass.bm.verts.new(q + Vector((random.uniform(-0.05, 0.05), random.uniform(-0.05, 0.05), random.uniform(0, 0.01)))) for _ in range(3)]
+    glass.tag('glass', [glass.bm.faces.new(v)])
+empty('PT_Clue_5', (bx, TUBE_Y - 1.0, Z + 0.05))
 
 broken_tube((0.75, 23.55, Z), 0)       # in the aisle in front of the tubes: you see it as you walk in
 broken_tube((-0.85, 21.2, Z), 1)       # fallen off the end of island A

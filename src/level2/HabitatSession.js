@@ -22,6 +22,27 @@ import '../ui/level2.css';
 
 const SOLID = ['COL_', 'DOOR_'];
 
+// Glass everywhere (the sea window, railings, the lab's tubes and beakers): dark and one-sided, so
+// it adds reflections without laying a milky white film over what is behind it, and clear face-on
+// but bright and nearly solid at its edges, as real glass is (Fresnel)
+function realGlass(m, opacity = 0.18) {
+  m.color.set(0x0a1414);
+  m.opacity = opacity;
+  m.roughness = 0.08;
+  m.envMapIntensity = 0.9;
+  m.side = THREE.FrontSide;
+  m.transparent = true;
+  m.depthWrite = false;
+  m.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
+      float glassRim = pow(1.0 - abs(dot(normalize(vViewPosition), normal)), 3.0);
+      diffuseColor.a = mix(diffuseColor.a, 0.85, glassRim);
+      outgoingLight += vec3(0.75, 0.88, 0.95) * glassRim * 0.5;
+      #include <opaque_fragment>`);
+  };
+  m.needsUpdate = true;
+}
+
 export class HabitatSession {
   constructor(game) {
     this.game = game;
@@ -119,6 +140,8 @@ export class HabitatSession {
           m.alphaToCoverage = true;
           m.transparent = false;
           m.side = THREE.DoubleSide;
+        } else if (m.name === 'glass' || m.name === 'glass_broken') {
+          realGlass(m, m.name === 'glass' ? 0.18 : 0.4);
         } else if (m.opacity < 1) {
           m.transparent = true;
           m.depthWrite = false;
@@ -161,7 +184,7 @@ export class HabitatSession {
     this._setUpLab(lab);
 
     // the sea outside the window wall
-    this.sea = new DeepSeaWindow({ radius: 17.9, a0: 62, a1: 118, bottom: 0.8, height: 4.2 });
+    this.sea = new DeepSeaWindow({ radius: 17.9, a0: 62, a1: 118, bottom: 0.8, height: 4.2, clear: true });
     scene.add(this.sea.mesh);
 
     // soft, calm light (not glaring): a gentle sky light, the skylight panel, two fills, the lift
@@ -247,7 +270,8 @@ export class HabitatSession {
     const tubes = find('ORG_').map((o) => ({
       base: o.getWorldPosition(new THREE.Vector3()),
       radius: o.name === 'ORG_2' ? 0.8 : 0.55,
-      height: 3.0
+      height: 3.0,
+      broken: o.name.endsWith('_broken')
     }));
     const frags = find('ORGFRAG_').map((o) => o.getWorldPosition(new THREE.Vector3()));
     this.organism = new Organism(this.game.scene, tubes, frags);
@@ -256,26 +280,7 @@ export class HabitatSession {
     this.gooMats = [];
     lab.traverse((o) => {
       if (!o.isMesh) return;
-      if (o.name === 'Lab_Glass') {                       // glass drawn over the liquid and the organism, kept clear
-        o.renderOrder = 3;
-        // dark and one-sided, so it adds reflections without a milky white layer over the organism
-        for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
-          m.color.set(0x0a1414);
-          m.opacity = 0.2;
-          m.roughness = 0.08;
-          m.envMapIntensity = 0.9;
-          m.side = THREE.FrontSide;
-          // real glass is clear face-on but bright and nearly solid at its edges (Fresnel)
-          m.onBeforeCompile = (shader) => {
-            shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
-              float glassRim = pow(1.0 - abs(dot(normalize(vViewPosition), normal)), 3.0);
-              diffuseColor.a = mix(diffuseColor.a, 0.85, glassRim);
-              outgoingLight += vec3(0.75, 0.88, 0.95) * glassRim * 0.5;
-              #include <opaque_fragment>`);
-          };
-          m.needsUpdate = true;
-        }
-      }
+      if (o.name === 'Lab_Glass') o.renderOrder = 3;     // glass drawn over the liquid and the organism
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
         if (m.name === 'goo_glow' && !this.gooMats.includes(m)) this.gooMats.push(m);
       }

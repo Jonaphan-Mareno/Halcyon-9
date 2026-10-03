@@ -1,5 +1,5 @@
-// Downloads the free plant models Level 2 uses from Poly Haven (CC0, by Rob Tuytel and
-// Rico Cilliers; credit them on the credits screen) into Blender/assets/plants/<id>/.
+// Downloads the free plant and food models Level 2 uses from Poly Haven (CC0; credit Poly Haven
+// and the artists on the credits screen) into Blender/assets/plants/<id>/.
 // The raw downloads are not kept in git; run this once before building the atrium:
 //   node Blender/scripts/fetch_plants.cjs
 const fs = require('fs');
@@ -11,7 +11,14 @@ const PLANTS = [
   'calathea_orbifolia_01',   // broad-leaf plant
   'anthurium_botany_01',     // red-flowered plant
   'fern_02',                 // fern
-  'shrub_sorrel_01'          // small flowers
+  'shrub_sorrel_01',         // small flowers
+  'potted_plant_01',         // potted plant (by the window)
+  'potted_plant_04',         // succulent in a pot
+  'food_lime_01',            // spilled food (the crew grew and stored their own)
+  'food_apple_01',
+  'sweet_potato',
+  'yellow_onion',
+  'lemon'
 ];
 const OUT = path.join(__dirname, '..', 'assets', 'plants');
 

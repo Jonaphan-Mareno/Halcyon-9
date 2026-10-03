@@ -193,9 +193,42 @@ def flush(acc):
     return ob
 
 
-def finish(out_blend=None, out_glb=None, image_format='AUTO'):
+def smooth(ob):
+    """Smooth shading everywhere (soft things: pillows, cushions)."""
+    for p in ob.data.polygons:
+        p.use_smooth = True
+    for e in ob.data.edges:
+        e.use_edge_sharp = False
+
+
+def polish(ob, width=0.01, angle=35.0):
+    """Smooth shading with sharp edges kept sharp, and a small bevel on every hard edge, so the
+    edges catch the light like real objects instead of looking cut from card. The bevel is a
+    modifier, applied when the file is exported."""
+    me = ob.data
+    for p in me.polygons:
+        p.use_smooth = True
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    lim = rad(angle)
+    for e in bm.edges:
+        e.smooth = not (len(e.link_faces) != 2 or e.calc_face_angle(0.0) > lim)
+    bm.to_mesh(me)
+    bm.free()
+    mod = ob.modifiers.new('bevel', 'BEVEL')
+    mod.width = width
+    mod.segments = 1
+    mod.limit_method = 'ANGLE'
+    mod.angle_limit = lim
+    mod.use_clamp_overlap = True
+    mod.harden_normals = True
+
+
+def finish(out_blend=None, out_glb=None, image_format='AUTO', post=None):
     objs = [flush(a) for a in list(ACC.values())]
     flush(CS)
+    if post:
+        post(objs)
     tris = sum(sum(len(p.vertices) - 2 for p in o.data.polygons) for o in objs)
     print('objects:', len(objs), 'visible triangles ~', tris)
     if out_blend:

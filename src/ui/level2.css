@@ -1,0 +1,124 @@
+/* Level 2 only: level tag, "no signal" marker, videotape viewer, hold-to-repair bar,
+   and the icons for items that have no 3D model yet. Kept in its own file so it does not
+   collide with edits to style.css. */
+
+#level-tag {
+  position: absolute;
+  top: 0.9rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.8rem;
+  letter-spacing: 0.35rem;
+  color: var(--primary-color);
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.5);
+}
+#level-tag.visible { opacity: 0.75; }
+
+#no-signal {
+  position: absolute;
+  top: 0.9rem;
+  right: 1.2rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid #ff3d3d;
+  color: #ff5a5a;
+  font-size: 0.8rem;
+  letter-spacing: 0.25rem;
+  background: rgba(30, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+#no-signal.visible { opacity: 1; animation: no-signal-blink 1.8s ease-in-out infinite; }
+@keyframes no-signal-blink { 50% { opacity: 0.45; } }
+
+#hold-bar {
+  position: absolute;
+  left: 50%;
+  top: 62%;
+  transform: translateX(-50%);
+  width: 220px;
+  height: 8px;
+  border: 1px solid var(--primary-color);
+  background: rgba(0, 12, 22, 0.7);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+#hold-bar.visible { opacity: 1; }
+#hold-fill { height: 100%; width: 0; background: var(--primary-color); box-shadow: 0 0 10px var(--primary-color); }
+
+/* Videotape viewer */
+#tape-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.82);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+  z-index: 17;
+}
+#tape-overlay.visible { opacity: 1; }
+.tape-screen {
+  width: min(680px, 92vw);
+  padding: 1.6rem 2rem;
+  background: #04090d;
+  border: 1px solid #1d4a5c;
+  box-shadow: 0 0 40px rgba(0, 150, 200, 0.2), inset 0 0 60px rgba(0, 60, 90, 0.35);
+  position: relative;
+}
+.tape-screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 3px);
+  pointer-events: none;
+}
+.tape-rec { color: #ff4a4a; font-size: 0.75rem; letter-spacing: 0.2rem; margin-bottom: 0.4rem; }
+.tape-title { color: var(--primary-color); font-size: 1rem; letter-spacing: 0.3rem; margin-bottom: 1rem; }
+.tape-body { font-size: 0.98rem; line-height: 1.6; color: #cfe8ef; margin: 0 0 1rem; }
+.tape-voss { font-size: 0.95rem; line-height: 1.5; color: #ff8a8a; font-style: italic; margin: 0 0 1.2rem; }
+.tape-continue { text-align: center; font-size: 0.78rem; letter-spacing: 0.2rem; color: var(--primary-color); opacity: 0.75; }
+
+/* Icons for items without a 3D model */
+.inv-icon { width: 100%; max-width: 160px; height: 100px; position: relative; }
+.inv-icon::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(90deg, #1b2a38, #4a6578 55%, #1b2a38);
+  border: 1px solid var(--primary-color);
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.25);
+}
+.inv-icon.coolant::before { width: 34px; height: 70px; border-radius: 8px; }
+.inv-icon.prybar::before { width: 90px; height: 10px; border-radius: 4px; transform: translate(-50%, -50%) rotate(-28deg); }
+.inv-icon.flare::before { width: 14px; height: 74px; border-radius: 6px; background: linear-gradient(180deg, #ff5a5a, #5a1a1a); border-color: #ff7a7a; box-shadow: 0 0 16px rgba(255, 70, 70, 0.55); }
+
+/* Loading screen, shown while the atrium's shaders compile */
+#level-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  background: #020508;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+  z-index: 18;
+}
+#level-loading.visible { opacity: 1; }
+.loading-title { font-size: 1.6rem; letter-spacing: 0.8rem; color: var(--primary-color); text-shadow: 0 0 14px rgba(0, 229, 255, 0.5); }
+.loading-sub { font-size: 0.85rem; letter-spacing: 0.2rem; opacity: 0.7; }
+.loading-bar { width: 240px; height: 3px; background: rgba(0, 229, 255, 0.15); overflow: hidden; }
+.loading-bar div { width: 40%; height: 100%; background: var(--primary-color); animation: loading-sweep 1.3s ease-in-out infinite; }
+@keyframes loading-sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+/* Level 2 works like It Takes Two: dying restarts the course, so there are no lives to show */
+#hud .hud-row:nth-child(2) { display: none; }

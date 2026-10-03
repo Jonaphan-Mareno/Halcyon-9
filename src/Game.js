@@ -3,6 +3,9 @@ import { Renderer } from './core/Renderer.js';
 import { Camera } from './core/Camera.js';
 import { Controls } from './core/Controls.js';
 import { Level1 } from './levels/Level1.js';
+import { Level2Session } from './levels/Level2Session.js';
+import { HoseTestSession } from './level2/HoseTestSession.js';
+import { HabitatSession } from './level2/HabitatSession.js';
 import { UIManager } from './ui/UIManager.js';
 import { HUD } from './ui/HUD.js';
 import { Inventory } from './ui/Inventory.js';
@@ -92,6 +95,8 @@ export class Game {
     // INIT, WAKING, PLAYING, DIALOGUE, TUTORIAL, PUZZLE, INVENTORY, DEAD, GAME_OVER
     this.state = 'INIT';
     this.lastTime = performance.now();
+    // ?level=2 in the address starts straight in level 2, at the elevator (for testing)
+    this.startLevel = new URLSearchParams(window.location.search).get('level');
 
     this.width = window.innerWidth;
     this.height = window.innerHeight;
@@ -127,6 +132,11 @@ export class Game {
     this.camera = new Camera(this.width / this.height);
     this.camera.instance.position.set(0, 3, 0); // adjust ctor args to match your Camera class
     this.renderer = new Renderer();
+
+    if (this.startLevel === '2' || this.startLevel === 'hose' || this.startLevel === 'reactor') {
+      this._initLevel2();
+      return;
+    }
 
     // Load first level
     this.currentLevel = new Level1(this.scene);
@@ -176,6 +186,25 @@ export class Game {
     this.startLoop();
   }
 
+  // Level 2 has its own physics player, HUD wiring, machines and story beats; all of that
+  // lives in levels/Level2Session.js so it stays out of this file
+  _initLevel2() {
+    this.level2Mode = true;
+    this.ui = new UIManager();
+    this.reticle = document.getElementById('reticle');
+    // ?level=2: the NEW level 2, the habitat atrium (environment preview for now)
+    // ?level=hose: the coolant hose test room
+    // ?level=reactor: the old cargo atrium, kept to become Level 3's reactor room
+    const sessions = { '2': HabitatSession, hose: HoseTestSession, reactor: Level2Session };
+    this.level2 = new sessions[this.startLevel](this);
+    window.addEventListener('resize', () => this.onResize());
+    this.startLoop();
+  }
+
+  updateLevel2(delta) {
+    this.level2.update(delta);
+  }
+
   // Connect a freshly built level to the UI, sound and story
   _wireLevel() {
     const level = this.currentLevel;
@@ -220,8 +249,12 @@ export class Game {
       requestAnimationFrame(loop);
       const delta = (time - this.lastTime) / 1000;
       this.lastTime = time;
-      this.update(delta);
-      this.currentLevel?.ariaManager?.renderHead(this.renderer.instance);
+      if (this.level2Mode) {
+        this.updateLevel2(Math.min(delta, 0.05));
+      } else {
+        this.update(delta);
+        this.currentLevel?.ariaManager?.renderHead(this.renderer.instance);
+      }
       this.renderer.render(this.scene, this.camera.instance);
     };
     requestAnimationFrame(loop);

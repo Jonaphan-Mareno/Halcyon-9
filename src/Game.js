@@ -6,6 +6,7 @@ import { Level1 } from './levels/Level1.js';
 import { Level2Session } from './levels/Level2Session.js';
 import { HoseTestSession } from './level2/HoseTestSession.js';
 import { HabitatSession } from './level2/HabitatSession.js';
+import { KeypadUI } from './ui/KeypadUI.js';
 import { UIManager } from './ui/UIManager.js';
 import { HUD } from './ui/HUD.js';
 import { Inventory } from './ui/Inventory.js';
@@ -24,6 +25,9 @@ const OBJECTIVES = [
   'Turn the relay rings until every marker lines up with the rail',
   'Power restored'
 ];
+
+//TEMP access code
+const ELEVATOR_ACCESS_CODE = '123456';
 
 // Circuit puzzle timing: each failed attempt adds a little time, up to a cap,
 // so it never becomes frustrating
@@ -92,7 +96,7 @@ const formatTime = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor
 
 export class Game {
   constructor() {
-    // INIT, WAKING, PLAYING, DIALOGUE, TUTORIAL, PUZZLE, INVENTORY, DEAD, GAME_OVER
+    // INIT, WAKING, PLAYING, KEYPAD, RETURNING, DIALOGUE, TUTORIAL, PUZZLE, INVENTORY, DEAD, GAME_OVER
     this.state = 'INIT';
     this.lastTime = performance.now();
     // ?level=2 in the address starts straight in level 2, at the elevator (for testing)
@@ -105,6 +109,22 @@ export class Game {
     this._wpVec = new THREE.Vector3();
     this._wpCam = new THREE.Vector3();
     this._wpInfo = { x: 0, y: 0, angle: 0, onScreen: true, label: '', distance: 0 };
+
+    this.interactionDistance = 4;
+    this.keypadTransitionDuration = 0.38;
+    this.keypadTransition = null;
+    this.keypadReturnPose = null;
+    this._keypadWorldPos =
+      new THREE.Vector3();
+    this._keypadNormal =
+      new THREE.Vector3();
+    this._keypadWorldQuat =
+      new THREE.Quaternion();
+    this._focusLookTarget =
+      new THREE.Vector3();
+    this._focusObject =
+      new THREE.Object3D();
+    
 
     this.player = new PlayerStats();
     this._resetProgress();
@@ -146,6 +166,12 @@ export class Game {
 
     // Overlay UI, sound, the opening conversation and the circuit puzzle
     const uiRoot = document.getElementById('ui-layer');
+    
+    this.keypadUI = new KeypadUI({
+      onSubmit: (code) => this.onKeypadSubmit(code),
+      onCancel: () => this.exitKeypadMode()
+    });
+
     this.ui = new UIManager();
     this.hud = new HUD(uiRoot, { onRestart: () => this.restart() });
     this.inventory = new Inventory(uiRoot);
@@ -216,6 +242,9 @@ export class Game {
       this.ui.showToast('Torch picked up. F switches it on or off. I opens your inventory.');
     };
     level.onInspectGenerator = () => this.startPuzzle();
+    level.onUseKeypad = (keypad) => {
+      this.enterKeypadMode(keypad);
+    };
     level.onLockedHint = (text) => this.ui.showToast(text);
     level.onRingTurned = () => this.audio.clunk();
     level.onRelayAligned = () => this.onRelayAligned();
@@ -244,6 +273,242 @@ export class Game {
     }
   }
 
+  resumePlayerControls() {
+    if (!this.controls) return;
+
+    this.controls.instance.enabled = true;
+    // if (!this.controls.instance.isLocked) {
+    //   this.controls.lock();
+    // }
+
+    this.state = 'PLAYING';
+    this.reticle.classList.add('visible');
+  }
+
+  enterKeypadMode(keypad) {
+    if (this.state !== 'PLAYING' || !keypad) return;
+
+    const camera = this.camera.instance;
+
+    // Stop normal FPS controls
+    this.controls.stop();
+    this.controls.instance.unlock();
+
+    this.state = 'KEYPAD';
+
+    this.reticle.classList.remove('visible');
+    this.ui.setPrompt(null);
+    this.ui.setWaypoint(null);
+
+    // Make sure the keypad's world transform is current
+    keypad.updateWorldMatrix(true, false);
+
+    // Centre of the keypad in world space
+    keypad.getWorldPosition(this._keypadWorldPos);
+
+    // Rotation of keypad in world space
+    keypad.getWorldQuaternion(this._keypadWorldQuat);
+
+    /*
+    * The keypad face was built facing along its local +Z axis.
+    * Convert that direction into world space.
+    */
+    this._keypadNormal
+      .set(0, 0, 1)
+      .applyQuaternion(this._keypadWorldQuat)
+      .normalize();
+
+    const focusDistance =
+      keypad.userData.focusDistance ?? 1.15;
+
+    /*
+    * Put the camera just in front of the keypad.
+    */
+    const targetPosition = this._keypadWorldPos
+      .clone()
+      .addScaledVector(
+        this._keypadNormal,
+        focusDistance
+      );
+
+    /*
+    * Store exactly where the player was before using
+    * the keypad.
+    */
+    this.keypadReturnPose = {
+      position: camera.position.clone(),
+      quaternion: camera.quaternion.clone(),
+      fov: camera.fov
+    };
+
+    /*
+    * Work out the camera rotation required to look
+    * directly at the keypad.
+    */
+    this._focusObject.position.copy(targetPosition);
+    this._focusObject.up.copy(camera.up);
+    this._focusObject.lookAt(this._keypadWorldPos);
+
+    this.keypadTransition = {
+      elapsed: 0,
+
+      fromPosition: camera.position.clone(),
+      toPosition: targetPosition,
+
+      fromQuaternion: camera.quaternion.clone(),
+      toQuaternion: this._focusObject.quaternion.clone(),
+
+      fromFov: camera.fov,
+      toFov: 48,
+
+      mode: 'focus'
+    };
+
+    /*
+    * Don't open the large UI immediately.
+    *
+    * First let the player actually see the camera
+    * move toward the physical keypad.
+    *
+    * updateCameraTransition() opens it once the
+    * movement finishes.
+    */
+  }
+
+  exitKeypadMode() {
+    if (this.state !== 'KEYPAD') return;
+
+    this.keypadUI.close();
+
+    if (!this.keypadReturnPose) {
+      this.keypadTransition = null;
+      this.resumePlayerControls();
+      return;
+    }
+
+    const camera = this.camera.instance;
+
+    this.keypadUI.close();
+
+    /*
+    * Request pointer lock now because this method is
+    * normally being triggered by a real button/key
+    * press.
+    *
+    * Controls remain disabled until the camera
+    * finishes moving back.
+    */
+    //this.controls.lock();
+
+    const returnPose = this.keypadReturnPose;
+
+    this.keypadTransition = {
+      elapsed: 0,
+
+      fromPosition: camera.position.clone(),
+      toPosition: returnPose.position.clone(),
+
+      fromQuaternion: camera.quaternion.clone(),
+      toQuaternion: returnPose.quaternion.clone(),
+
+      fromFov: camera.fov,
+      toFov: returnPose.fov,
+
+      mode: 'return'
+    };
+
+    this.state = 'RETURNING';
+  }
+  
+  onKeypadSubmit(code) {
+    console.log(`Six-digit keypad input received: ${code}`);
+
+    if (code === ELEVATOR_ACCESS_CODE) {
+      console.log('ACCESS GRANTED');
+
+      this.currentLevel.openElevatorDoor?.();
+
+      this.ui.showToast('ACCESS GRANTED');
+    } else {
+      console.log('ACCESS DENIED');
+
+      this.ui.showToast('ACCESS DENIED');
+    }
+
+    this.exitKeypadMode();
+  }
+
+  updateCameraTransition(delta) {
+    if (!this.keypadTransition) return;
+
+    const camera = this.camera.instance;
+    const transition = this.keypadTransition;
+
+    transition.elapsed += delta;
+
+    const rawT = Math.min(
+      1,
+      transition.elapsed /
+        this.keypadTransitionDuration
+    );
+
+    /*
+    * Smoothstep:
+    * slow at the beginning,
+    * faster in the middle,
+    * slow at the end.
+    */
+    const t =
+      rawT *
+      rawT *
+      (3 - 2 * rawT);
+
+    // Position
+    camera.position.lerpVectors(
+      transition.fromPosition,
+      transition.toPosition,
+      t
+    );
+
+    // Rotation
+    camera.quaternion.slerpQuaternions(
+      transition.fromQuaternion,
+      transition.toQuaternion,
+      t
+    );
+
+    // Slight zoom
+    camera.fov = THREE.MathUtils.lerp(
+      transition.fromFov,
+      transition.toFov,
+      t
+    );
+
+    camera.updateProjectionMatrix();
+
+    if (rawT < 1) return;
+
+    /*
+    * Transition finished.
+    */
+    const mode = transition.mode;
+
+    this.keypadTransition = null;
+
+    if (mode === 'focus') {
+      /*
+      * Now that we've physically zoomed toward the
+      * keypad, display the large interactive UI.
+      */
+      this.keypadUI.open();
+    }
+    else if (mode === 'return') {
+      this.keypadReturnPose = null;
+
+      this.resumePlayerControls();
+    }
+  }
+
   startLoop() {
     const loop = (time) => {
       requestAnimationFrame(loop);
@@ -261,12 +526,19 @@ export class Game {
   }
 
   update(delta) {
-    const live = this.state === 'PLAYING' || this.state === 'WAKING' || this.state === 'DIALOGUE' ||
+    const live = this.state === 'PLAYING' || this.state === 'WAKING' || this.state === 'KEYPAD' || 
+                 this.state === 'RETURNING' || this.state === 'DIALOGUE' ||
                  this.state === 'TUTORIAL' || this.state === 'PUZZLE' || this.state === 'INVENTORY' ||
                  this.state === 'DEAD' || this.state === 'RING_PUZZLE';
 
     if (this.state === 'PLAYING') {
       this.controls.update(delta);
+    }
+    if (
+      this.state === 'KEYPAD' ||
+      this.state === 'RETURNING'
+    ) {
+      this.updateCameraTransition(delta);
     }
     if (live && this.currentLevel) {
       this.currentLevel.update(delta, this.camera.instance.position, this.camera.instance);
@@ -411,6 +683,14 @@ export class Game {
   onKeyDown(event) {
     const confirm = event.code === 'Space' || event.code === 'Enter' || event.code === 'KeyE';
 
+    if (this.state === 'KEYPAD') {
+      if (event.code === 'Escape') {
+        event.preventDefault();
+        this.exitKeypadMode();
+      }
+
+      return;
+    }
     // Space or Enter skips whatever ARIA is saying, from almost anywhere
     if ((event.code === 'Space' || event.code === 'Enter') && this.ui.isAriaLine() &&
         (this.state === 'PLAYING' || this.state === 'PUZZLE' || this.state === 'INVENTORY')) {

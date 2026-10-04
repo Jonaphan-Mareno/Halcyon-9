@@ -154,11 +154,15 @@ export class AriaManager {
     this.active = true;
   }
 
-  // Keep ARIA on the monitor with this mesh name (e.g. the wake-up scene)
-  pinMonitor(meshName) {
-    this.pinnedMonitor = this.monitors.find((m) => m.name === meshName) || null;
+  // Keep ARIA on this monitor (e.g. the wake-up scene). Accepts the mesh itself
+  // or its name: model re-exports keep renaming this object, so callers that
+  // resolved the screen themselves should pass the mesh.
+  pinMonitor(meshOrName) {
+    this.pinnedMonitor = typeof meshOrName === 'string'
+      ? this.monitors.find((m) => m.name === meshOrName) || null
+      : this.monitors.find((m) => m === meshOrName) || null;
     if (!this.pinnedMonitor) {
-      console.warn(`AriaManager: no monitor named "${meshName}" to pin.`);
+      console.warn(`AriaManager: no monitor named "${meshOrName}" to pin.`);
     }
   }
 
@@ -171,19 +175,35 @@ export class AriaManager {
   // Proximity-based "Following" Mechanic
   // ---------------------------------------------------------
   
-  // Traverse the loaded GLB model and collect all screen meshes
-  collectMonitors(glbScene) {
+  // Traverse the loaded GLB model and collect all screen meshes.
+  //
+  // `screen` is the wall screen the caller resolved by geometry rather than by
+  // name (see Level1._resolveWallScreen). Re-exports keep renaming that object,
+  // and the name it loses can land on the bezel around it, so a name scan alone
+  // can pick the wrong mesh. `ignore` lists meshes the scan must skip for the
+  // same reason — those bezels are part of the room, not screens.
+  collectMonitors(glbScene, { screen = null, ignore = [] } = {}) {
+    const add = (mesh) => {
+      if (!mesh || !mesh.isMesh || this.monitors.includes(mesh)) return;
+      this.monitors.push(mesh);
+      mesh.material = this.idleMaterial; // Start all screens as idle
+
+      const backing = new THREE.Mesh(mesh.geometry, this.backingMaterial);
+      backing.raycast = () => {}; // clicks and collisions still hit the monitor itself
+      mesh.add(backing);
+    };
+
+    // The resolved wall screen first, so it is the fallback when nothing is
+    // pinned and no player position has been supplied yet
+    add(screen);
+
     glbScene.traverse((child) => {
       // Look for any mesh whose name contains 'Monitor' (case-insensitive)
-      if (child.isMesh && child.name.toLowerCase().includes('monitor')) {
-        this.monitors.push(child);
-        child.material = this.idleMaterial; // Start all screens as idle
-
-        const backing = new THREE.Mesh(child.geometry, this.backingMaterial);
-        backing.raycast = () => {}; // clicks and collisions still hit the monitor itself
-        child.add(backing);
-      }
+      if (!child.isMesh || !child.name.toLowerCase().includes('monitor')) return;
+      if (ignore.includes(child)) return;
+      add(child);
     });
+
     console.log(`AriaManager: Found ${this.monitors.length} monitors in the room.`);
   }
 

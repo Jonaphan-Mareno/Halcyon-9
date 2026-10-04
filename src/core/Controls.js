@@ -10,6 +10,7 @@ export class Controls {
     this.moveBackward = false;
     this.moveLeft = false;
     this.moveRight = false;
+    //this.inputEnabled = true;
 
     this.velocity = new THREE.Vector3();
     this.direction = new THREE.Vector3();
@@ -38,6 +39,23 @@ export class Controls {
   lock() {
     this.instance.lock();
   }
+  // setInputEnabled(enabled) {
+  //   this.inputEnabled = enabled;
+  //   this.instance.enabled = enabled;
+
+  //   if (!enabled) {
+  //     this.stopMovement();
+  //   }
+  // }
+
+// stopMovement() {
+//   this.moveForward = false;
+//   this.moveBackward = false;
+//   this.moveLeft = false;
+//   this.moveRight = false;
+
+//   this.velocity.set(0, 0, 0);
+// }
 
   // Freeze movement and mouse-look (used during dialogue)
   stop() {
@@ -47,6 +65,8 @@ export class Controls {
   }
 
   onKeyDown(event) {
+    //if (!this.inputEnabled) return;
+
     switch (event.code) {
       case 'ArrowUp': case 'KeyW': this.moveForward = true; break;
       case 'ArrowLeft': case 'KeyA': this.moveLeft = true; break;

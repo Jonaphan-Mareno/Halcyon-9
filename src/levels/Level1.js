@@ -27,6 +27,17 @@ const RELAY_STEPS = 8;
 // Where the torch lies: on the floor in front of ARIA's wall monitor
 const TORCH_XZ = new THREE.Vector2(1.2, -7.3);
 
+// Every name ARIA's wall screen has shipped under. controlroom.glb is exported
+// by hand from Blender/controlroom.blend, and the screen object has been renamed
+// between exports: the level-2-lab model calls it "Monitor_wall_01" while the
+// Keypad-combination/exit model calls it "Sphere.008" — and in the latter the
+// freed-up "Monitor_wall_01" name was reused for the bezel around it. Resolve
+// the screen by geometry across all of these instead of trusting one name.
+//
+// Spelled without dots: GLTFLoader's sanitizeNodeName strips them, so the loaded
+// object is "Sphere008". Compared against the same cleaned names buildRoom uses.
+const WALL_SCREEN_NAMES = ['Monitor_wall_01', 'Sphere008'];
+
 export class Level1{
 
   constructor(scene){
@@ -42,6 +53,11 @@ export class Level1{
     this.shaderMaterials = []
     this.lights = [];
     this.LightsPuzzle = [];
+    //this.keypadInteractables = [];
+    this.keypad = null;
+    this.doorMixer = null;
+    this.doorActions = [];
+    this.doorOpened = false;
 
     this.ringPuzzle = null;          // the wall panel puzzle (RingPuzzle)
     this.ringPuzzleSolved = false;   // ARIA stays off until this is true
@@ -56,6 +72,8 @@ export class Level1{
     this.onTalkToAria = null;      // set by the Game
     this.onInspectGenerator = null; // set by the Game: opens the cable puzzle
     this.onLockedHint = null;      // set by the Game: shows a "do this first" message
+    
+    this.onUseKeypad = null;
 
     // Torch and flashlight
     this.torch = null;             // group lying on the floor until picked up
@@ -234,11 +252,22 @@ export class Level1{
 
       this.room = ctrlRoom;
       this.room.position.set(0, 0, 0);
+      this.setupDoorAnimation(roomGlb.animations);
 
       ctrlRoom.traverse((child) => {
         // GLTFLoader strips dots from node names ("Plane.066" -> "Plane066")
         const cleanName = child.name.replace(/\./g, '');
 
+        if (child.isMesh) {
+          const worldPos = new THREE.Vector3();
+          child.getWorldPosition(worldPos);
+
+          console.log(
+            'ROOM MESH:',
+            child.name,
+            worldPos
+          );
+        }
         if(child.isMesh){
           child.castShadow = true;
           // NOTE: ShaderMaterial has no shadow chunks yet, so nothing actually
@@ -264,9 +293,11 @@ export class Level1{
           }
         }
 
-        // (GLB has 7 point lights + 1 directional "Sun"; the shader treats
-        // every light as positional, so the far Sun contributes almost nothing.
-        // Brightness is set every frame in update(), from the power level.)
+        // (The export's punctual lights: point fixtures plus a directional
+        // "Sun"; the shader treats every light as positional, so the far Sun
+        // contributes almost nothing. Duplicates and overflow are trimmed by
+        // _dedupeLights() once the world matrices exist. Brightness is set
+        // every frame in update(), from the power level.)
         if(child.isLight){
           this.lights.push(child);
         }
@@ -283,18 +314,23 @@ export class Level1{
 
       });
 
-      if (this.lights.length > MAX_LIGHTS - 1) {
-        console.warn(`Control room has ${this.lights.length} lights but the shader has room for ${MAX_LIGHTS - 1} plus the flashlight; extra lights are ignored.`);
-      }
       this.scene.add(this.room);
+      this.buildKeypad();
       this.room.updateMatrixWorld(true);
+
+      // Re-exports of controlroom.glb have shipped this room with duplicate
+      // lights and with ARIA's screen renamed. Both are repaired here rather
+      // than in Blender so the level survives the next export.
+      this._dedupeLights();
 
       // Collect monitor screens from the 3D model
       if (this.ariaManager) {
-        this.ariaManager.collectMonitors(this.room);
+        const { screen, frames } = this._resolveWallScreen();
+        if (screen) this._ensureMonitorUVs(screen);
+        this.ariaManager.collectMonitors(this.room, { screen, ignore: frames });
         // Voss wakes up with ARIA on the wall monitor in front of him;
         // call unpinMonitor() after the intro so she follows the player
-        this.ariaManager.pinMonitor('Monitor_wall_01');
+        if (screen) this.ariaManager.pinMonitor(screen);
         this.wallMonitor = this.ariaManager.pinnedMonitor;
       }
 
@@ -316,6 +352,135 @@ export class Level1{
         this.defaultRoom();
     }
 
+  }
+
+  // ---------------------------------------------------------------------
+  // Repairs for hand-exported controlroom.glb revisions
+  // ---------------------------------------------------------------------
+
+  // Find ARIA's wall screen without trusting its object name.
+  //
+  // The screen and the bezel around it share one transform, and re-exports have
+  // swapped which of them carries the name "Monitor_wall_01". Every candidate
+  // name is collected and the innermost one wins: the glass always sits inside
+  // its own frame, so the bezel is the box that contains the others.
+  //
+  // Returns { screen, frames } — `frames` are the bezels, which must not be
+  // handed to AriaManager as monitors (it would repaint them as screens).
+  _resolveWallScreen() {
+    const clean = (name) => name.replace(/\./g, '');
+    const candidates = [];
+    this.room.traverse((child) => {
+      if (child.isMesh && WALL_SCREEN_NAMES.includes(clean(child.name))) candidates.push(child);
+    });
+    if (candidates.length === 0) {
+      console.warn(`Level1: none of [${WALL_SCREEN_NAMES.join(', ')}] found in controlroom.glb; ARIA has no wall screen.`);
+      return { screen: null, frames: [] };
+    }
+
+    let best = 0;
+    if (candidates.length > 1) {
+      const boxes = candidates.map((mesh) => new THREE.Box3().setFromObject(mesh));
+      const diagonal = (i) => boxes[i].getSize(new THREE.Vector3()).length();
+      const enclosedByOthers = (i) => boxes.every((box, j) => j === i || box.containsBox(boxes[i]));
+
+      // Prefer a candidate enclosed by all the others; if nothing nests cleanly
+      // (a future export drops the bezel, or they end up the same size) fall back
+      // to the whole list. Either way the smallest one is the glass, not the frame.
+      const eligible = candidates.map((mesh, i) => i).filter(enclosedByOthers);
+      const pool = eligible.length > 0 ? eligible : candidates.map((mesh, i) => i);
+      best = pool[0];
+      for (const i of pool) if (diagonal(i) < diagonal(best)) best = i;
+    }
+
+    const screen = candidates[best];
+    const frames = candidates.filter((mesh) => mesh !== screen);
+    console.log(`Level1: wall screen resolved to "${screen.name}"${frames.length ? ` (bezels: ${frames.map((m) => `"${m.name}"`).join(', ')})` : ''}.`);
+    return { screen, frames };
+  }
+
+  // Rebuild the screen's UVs as one clean 0..1 planar island.
+  //
+  // ARIA's hologram shader samples the whole face texture across vUv, so the
+  // screen needs a single unwrapped island. Exports have shipped it with no
+  // TEXCOORD_0 at all, and with Blender's Smart UV Project fragments — and both
+  // fail identically, because vUv collapses and the shader's luminance test
+  // discards every pixel under additive blending. Checking for a missing `uv`
+  // attribute is therefore not enough: overwrite it every time.
+  //
+  // Projection axes and orientation match the known-good level-2-lab export
+  // exactly (u = 1 - normalized local Y, v = normalized local Z on that model):
+  // project along the mesh's thinnest local axis, which is the one the glass
+  // faces away from.
+  _ensureMonitorUVs(mesh) {
+    const geometry = mesh.geometry;
+    const position = geometry.getAttribute('position');
+    if (!position) return;
+
+    geometry.computeBoundingBox();
+    const { min, max } = geometry.boundingBox;
+    const extents = [0, 1, 2].map((i) => max.getComponent(i) - min.getComponent(i));
+    const thin = extents.indexOf(Math.min(...extents));
+    const uAxis = (thin + 1) % 3;
+    const vAxis = (thin + 2) % 3;
+    const uMin = min.getComponent(uAxis);
+    const vMin = min.getComponent(vAxis);
+    const uSpan = extents[uAxis] || 1;
+    const vSpan = extents[vAxis] || 1;
+
+    const uv = new Float32Array(position.count * 2);
+    for (let i = 0; i < position.count; i++) {
+      // Mirrored in U so the face reads the right way round from the player side
+      uv[i * 2] = 1 - (position.getComponent(i, uAxis) - uMin) / uSpan;
+      uv[i * 2 + 1] = (position.getComponent(i, vAxis) - vMin) / vSpan;
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geometry.attributes.uv.needsUpdate = true;
+  }
+
+  // Collapse lights exported more than once, then trim to the shader's budget.
+  //
+  // Re-exports have shipped this room with the same fixtures duplicated
+  // (Point.007-.012 copying Point.001-.006, Sun.001 copying Sun), which pushes
+  // the count past MAX_LIGHTS - 1 so update() silently drops whichever lights
+  // land last. Directional lights are shed first once the budget is still
+  // exceeded: the shader treats every light as positional, so a distant Sun
+  // contributes almost nothing.
+  _dedupeLights() {
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const seen = new Set();
+    const unique = [];
+
+    for (const light of this.lights) {
+      light.getWorldPosition(pos);
+      light.getWorldQuaternion(quat);
+      const key = [
+        light.type,
+        pos.x.toFixed(3), pos.y.toFixed(3), pos.z.toFixed(3),
+        quat.x.toFixed(4), quat.y.toFixed(4), quat.z.toFixed(4), quat.w.toFixed(4),
+        light.color.getHexString(),
+        light.intensity.toFixed(3)
+      ].join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(light);
+    }
+
+    const budget = MAX_LIGHTS - 1;
+    let kept = unique;
+    if (unique.length > budget) {
+      kept = [
+        ...unique.filter((light) => !light.isDirectionalLight),
+        ...unique.filter((light) => light.isDirectionalLight)
+      ].slice(0, budget);
+    }
+
+    const dropped = this.lights.length - kept.length;
+    if (dropped > 0) {
+      console.warn(`Control room exported ${this.lights.length} lights; kept ${kept.length} after removing ${this.lights.length - unique.length} duplicate(s) and ${unique.length - kept.length} over the shader budget of ${budget}.`);
+    }
+    this.lights = kept;
   }
 
   // Where the glowing rings sit on the generator: sparks fly from around here
@@ -437,7 +602,11 @@ onRingPuzzleComplete() {
     if (this.relay) this._interactables.push(this.relay.root);
     if (this.torch && !this.hasTorch) this._interactables.push(this.torch);
     if (this.ringPuzzle) this._interactables.push(this.ringPuzzle.hub);
+    if (this.keypad) {
+      this._interactables.push(this.keypad);
+    }
   }
+
 
   _isGeneratorPart(object) {
     return this.generatorParts.includes(object);
@@ -449,6 +618,15 @@ onRingPuzzleComplete() {
     }
     return false;
   }
+  _isKeypadPart(object) {
+    for (let o = object; o; o = o.parent) {
+      if (o === this.keypad) {
+        return true;
+      }
+    }
+
+    return false;
+  }
 
   // Free everything this level created (used when the game restarts). Removing a
   // mesh from the scene does not free its GPU memory: geometries and
@@ -456,7 +634,7 @@ onRingPuzzleComplete() {
   dispose() {
     this.ariaManager?.dispose();
     this.sparks.dispose();
-    for (const object of [this.room, this.torch, this.relay?.root, this.ringPuzzle?.hub]) {
+    for (const object of [this.room, this.torch, this.relay?.root, this.ringPuzzle?.hub, this.keypad]) {
       if (!object) continue;
       object.traverse((o) => o.geometry?.dispose?.());
       this.scene.remove(object);
@@ -467,13 +645,534 @@ onRingPuzzleComplete() {
     this.lights.length = 0;
     this._interactables.length = 0;
   }
+  _makeKeypadMaterial(
+    color,
+    {
+      glow = 0x000000,
+      glowAmount = 0
+    } = {}
+  ) {
+    const material = this._makeLevelMaterial({
+      color: new THREE.Color(color)
+    });
 
+    // Keep the casing quite dark even in the powered room.
+    material.uniforms.ambientColor.value.setScalar(0.015);
+
+    material.uniforms.glowColor.value.set(glow);
+    material.uniforms.glowAmount.value = glowAmount;
+
+    return material;
+  }
+
+  setupDoorAnimation(clips = []) {
+    this.doorMixer = new THREE.AnimationMixer(this.room);
+
+    this.doorActions = clips
+      .filter((clip) =>
+        clip.tracks.some((track) =>
+          track.name.includes('Door_Left') ||
+          track.name.includes('Door_Right')
+        )
+      )
+      .map((clip) => {
+        const action = this.doorMixer.clipAction(clip);
+
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+
+        return action;
+      });
+
+    console.log(
+      'Door animations:',
+      this.doorActions.length,
+      clips.map((clip) => clip.name)
+    );
+  }
+
+  openElevatorDoor() {
+    if (this.doorOpened) return;
+
+    if (!this.doorActions.length) {
+      console.warn('No elevator door animation found.');
+      return;
+    }
+
+    this.doorOpened = true;
+
+    for (const action of this.doorActions) {
+      action.reset();
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+      action.play();
+    }
+
+    console.log('Elevator door opening');
+  }
+
+  buildKeypad() {
+    const keypad = new THREE.Group();
+    keypad.name = 'SecurityKeypad';
+    keypad.scale.setScalar(0.34);
+
+    /*
+    * TEMP position — move later when the double door is built.
+    */
+    const keypadHeight = 2.15;
+
+    keypad.position.set(
+      1.0,
+      keypadHeight,
+      1.80
+    );
+
+    keypad.rotation.y = Math.PI;
+
+    keypad.userData.interactionType = 'keypad';
+    keypad.userData.maxInteractionDistance = 3.25;
+    keypad.userData.focusDistance = 0.55;
+
+    // =========================================================
+    // Materials
+    // =========================================================
+    const mountMat =
+      this._makeKeypadMaterial(0x070a0c);
+
+    const housingMat =
+      this._makeKeypadMaterial(0x0c1115);
+
+    const bezelMat =
+      this._makeKeypadMaterial(0x030608);
+
+    const darkMetalMat =
+      this._makeKeypadMaterial(0x0a0f12);
+
+    const boltMat =
+      this._makeKeypadMaterial(0x283238);
+
+    const trimMat =
+      this._makeKeypadMaterial(
+        0x071317,
+        {
+          glow: 0x00a6b8,
+          glowAmount: 0.12
+        }
+      );
+
+    const screenGlassMat =
+      new THREE.MeshBasicMaterial({
+        color: 0x010507
+      });
+
+    const ledMat =
+      this._makeKeypadMaterial(
+        0x07171b,
+        {
+          glow: 0x22d5e5,
+          glowAmount: 0.65
+        }
+      );
+    // =========================================================
+    // Back mounting plate
+    // =========================================================
+    const mountPlate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.98, 1.56, 0.06),
+      mountMat
+    );
+    mountPlate.position.z = -0.015;
+    mountPlate.name = 'SecurityKeypadMountPlate';
+    keypad.add(mountPlate);
+
+    // =========================================================
+    // Main keypad housing
+    // =========================================================
+    const housing = new THREE.Mesh(
+      new THREE.BoxGeometry(0.82, 1.34, 0.18),
+      housingMat
+    );
+    housing.position.z = 0.055;
+    housing.name = 'SecurityKeypadHousing';
+    keypad.add(housing);
+
+    // Slightly inset inner face panel
+    const facePanel = new THREE.Mesh(
+      new THREE.BoxGeometry(0.74, 1.22, 0.04),
+      darkMetalMat
+    );
+    facePanel.position.z = 0.14;
+    facePanel.name = 'SecurityKeypadFacePanel';
+    keypad.add(facePanel);
+
+    // Thin emissive trim border
+    const trimTop = new THREE.Mesh(
+      new THREE.BoxGeometry(0.72, 0.01, 0.008),
+      trimMat
+    );
+    trimTop.position.set(0, 0.56, 0.163);
+
+    const trimBottom = trimTop.clone();
+    trimBottom.position.set(0, -0.56, 0.163);
+
+    const trimLeft = new THREE.Mesh(
+      new THREE.BoxGeometry(0.01, 1.12, 0.008),
+      trimMat
+    );
+    trimLeft.position.set(-0.36, 0, 0.163);
+
+    const trimRight = trimLeft.clone();
+    trimRight.position.set(0.36, 0, 0.163);
+
+    keypad.add(trimTop, trimBottom, trimLeft, trimRight);
+
+    // =========================================================
+    // Corner bolts
+    // =========================================================
+    const boltPositions = [
+      [-0.43,  0.67, 0.165],
+      [ 0.43,  0.67, 0.165],
+      [-0.43, -0.67, 0.165],
+      [ 0.43, -0.67, 0.165]
+    ];
+
+    boltPositions.forEach(([x, y, z]) => {
+      const bolt = this.createKeypadBolt(boltMat);
+      bolt.position.set(x, y, z);
+      keypad.add(bolt);
+    });
+
+    // =========================================================
+    // Screen bezel + glass
+    // =========================================================
+    const screenBezel = new THREE.Mesh(
+      new THREE.BoxGeometry(0.56, 0.26, 0.035),
+      bezelMat
+    );
+    screenBezel.position.set(0, 0.36, 0.16);
+    keypad.add(screenBezel);
+
+    const screenGlass = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.50, 0.20),
+      screenGlassMat
+    );
+    screenGlass.position.set(0, 0.36, 0.179);
+    keypad.add(screenGlass);
+
+    const screenTexture = this.createKeypadScreenTexture();
+    const screenUI = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.48, 0.18),
+      new THREE.MeshBasicMaterial({
+        map: screenTexture,
+        transparent: false
+      })
+    );
+    screenUI.position.set(0, 0.36, 0.1805);
+    screenUI.name = 'SecurityKeypadScreenUI';
+    keypad.add(screenUI);
+
+    // =========================================================
+    // Status light
+    // =========================================================
+    const ledHousing = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.032, 0.032, 0.02, 20),
+      bezelMat
+    );
+    ledHousing.rotation.x = Math.PI / 2;
+    ledHousing.position.set(0, 0.12, 0.17);
+    keypad.add(ledHousing);
+
+    const led = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.022, 0.022, 0.016, 20),
+      ledMat
+    );
+    led.rotation.x = Math.PI / 2;
+    led.position.set(0, 0.12, 0.182);
+    keypad.add(led);
+
+    // =========================================================
+    // Speaker grille
+    // =========================================================
+    const grilleBarMat =
+      this._makeKeypadMaterial(0x11191d);
+
+    for (let i = 0; i < 5; i++) {
+      const bar = new THREE.Mesh(
+        new THREE.BoxGeometry(0.18, 0.007, 0.008),
+        grilleBarMat
+      );
+      bar.position.set(0, -0.49 + i * 0.02, 0.171);
+      keypad.add(bar);
+    }
+
+    // =========================================================
+    // Physical raised buttons
+    // =========================================================
+    const labels = [
+      '1', '2', '3',
+      '4', '5', '6',
+      '7', '8', '9',
+      'CLR', '0', 'ENT'
+    ];
+
+    const startX = -0.19;
+    const startY = 0.0;
+    const gapX = 0.19;
+    const gapY = 0.16;
+
+    labels.forEach((label, index) => {
+      const col = index % 3;
+      const row = Math.floor(index / 3);
+
+      const isEnter = label === 'ENT';
+      const isClear = label === 'CLR';
+
+      const key = this.createKeypadButton(label, {
+        isEnter,
+        isClear
+      });
+
+      key.position.set(
+        startX + col * gapX,
+        startY - row * gapY,
+        0.175
+      );
+
+      keypad.add(key);
+    });
+
+    // =========================================================
+    // Small printed plate / serial text area
+    // =========================================================
+    const badgeTexture = this.createKeypadBadgeTexture();
+    const badge = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.28, 0.06),
+      new THREE.MeshBasicMaterial({
+        map: badgeTexture,
+        transparent: false
+      })
+    );
+    badge.position.set(0, -0.57, 0.181);
+    keypad.add(badge);
+
+    // Raycast should hit the group via parent traversal
+    keypad.traverse((child) => {
+      child.userData.interactionOwner = keypad;
+    });
+
+    console.log('ROOM BOUNDS:', this.bounds);
+    console.log('KEYPAD POSITION:', keypad.position);
+    this.scene.add(keypad);
+    this.keypad = keypad;
+    this._rebuildInteractables();
+  }
+
+  createKeypadBolt(material) {
+    const bolt = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.022, 0.022, 0.014, 20),
+      material
+    );
+
+    bolt.rotation.x = Math.PI / 2;
+
+    const slot = new THREE.Mesh(
+      new THREE.BoxGeometry(0.024, 0.004, 0.003),
+      this._makeKeypadMaterial(0x151c20)
+    );
+
+    slot.position.z = 0.0075;
+    bolt.add(slot);
+
+    return bolt;
+  }
+
+  createKeypadButton(label, { isEnter = false, isClear = false } = {}) {
+    const group = new THREE.Group();
+
+    const buttonMat =
+      isEnter
+        ? this._makeKeypadMaterial(
+            0x0b1714,
+            {
+              glow: 0x1a8063,
+              glowAmount: 0.12
+            }
+          )
+        : isClear
+          ? this._makeKeypadMaterial(
+              0x1c110d,
+              {
+                glow: 0x7a341c,
+                glowAmount: 0.08
+              }
+            )
+          : this._makeKeypadMaterial(
+              0x0b1114
+            );
+
+    const button = new THREE.Mesh(
+      new THREE.BoxGeometry(0.11, 0.105, 0.035),
+      buttonMat
+    );
+    group.add(button);
+
+    const labelTexture = this.createKeypadButtonLabelTexture(label, {
+      isEnter,
+      isClear
+    });
+
+    const labelMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.08, 0.042),
+      new THREE.MeshBasicMaterial({
+        map: labelTexture,
+        transparent: true
+      })
+    );
+
+    labelMesh.position.z = 0.0185;
+    group.add(labelMesh);
+
+    return group;
+  }
+
+  createKeypadScreenTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+
+    const ctx = canvas.getContext('2d');
+
+    // Background
+    const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bg.addColorStop(0, '#08171d');
+    bg.addColorStop(1, '#030a0d');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Inner border
+    ctx.strokeStyle = '#1ddff2';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+
+    // Subtle scanlines
+    for (let y = 0; y < canvas.height; y += 4) {
+      ctx.fillStyle = 'rgba(0, 229, 255, 0.03)';
+      ctx.fillRect(0, y, canvas.width, 1);
+    }
+
+    // Header line
+    ctx.fillStyle = '#58f4ff';
+    ctx.font = 'bold 25px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('SECURITY ACCESS', canvas.width / 2, 68);
+
+    // Status line
+    ctx.fillStyle = '#76a8b0';
+    ctx.font = '16px monospace';
+    ctx.fillText('AUTH // 6 DIGIT', canvas.width / 2, 95);
+
+    // Code slots
+    const slotY = 145;
+    const slotW = 40;
+    const slotH = 28;
+    const gap = 14;
+    const totalW = 6 * slotW + 5 * gap;
+    const startX = (canvas.width - totalW) / 2;
+
+    for (let i = 0; i < 6; i++) {
+      const x = startX + i * (slotW + gap);
+
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.65)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, slotY, slotW, slotH);
+
+      ctx.fillStyle = 'rgba(0, 229, 255, 0.04)';
+      ctx.fillRect(x, slotY, slotW, slotH);
+    }
+
+    // Locked status
+    ctx.fillStyle = '#f0a15d';
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText('STATUS: LOCKED', canvas.width / 2, 204);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+
+    return texture;
+  }
+
+  createKeypadButtonLabelTexture(label, { isEnter = false, isClear = false } = {}) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 64;
+
+    const ctx = canvas.getContext('2d');
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.font = label.length > 1
+      ? 'bold 24px monospace'
+      : 'bold 32px monospace';
+
+    ctx.fillStyle = isEnter
+      ? '#7affd8'
+      : isClear
+        ? '#ffb08a'
+        : '#d9fbff';
+
+    ctx.shadowColor = isEnter
+      ? 'rgba(122,255,216,0.35)'
+      : isClear
+        ? 'rgba(255,176,138,0.25)'
+        : 'rgba(0,229,255,0.18)';
+
+    ctx.shadowBlur = 8;
+    ctx.fillText(label, canvas.width / 2, canvas.height / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+
+    return texture;
+  }
+
+  createKeypadBadgeTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#0b1215';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = 'rgba(0, 229, 255, 0.25)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+
+    ctx.fillStyle = '#7eaab2';
+    ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('H9 ACCESS NODE // PRESSURE SAFE', canvas.width / 2, canvas.height / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+
+    return texture;
+  }
+  
   getBounds(){
     return this.bounds;
   }
 
   get interactables() {
-    return this._interactables;
+    return this._interactables;/*[
+      ...this.LightsPuzzle,
+      ...this.keypadInteractables
+    ];*/
   }
 
   // How close the player must be to use things (world units)
@@ -486,6 +1185,13 @@ onRingPuzzleComplete() {
   // Text for the on-screen prompt while looking at an object, or null for none.
   // The torch and the generator stay locked until the player has talked to ARIA.
   getInteractPrompt(object, distance) {
+    if (this._isKeypadPart(object)) {
+      if (distance > this.keypad.userData.maxInteractionDistance) {
+        return null;
+      }
+
+      return 'Click or press E to use keypad';
+    }
     if (object === this.wallMonitor) {
   if (!this.ringPuzzleSolved) {
     return distance <= Level1.MONITOR_RANGE ? 'The monitor is dead. No power' : null;
@@ -517,6 +1223,9 @@ onRingPuzzleComplete() {
 
   // Range checks only: the "locked" messages are shown from onInteract
   canInteract(object, distance) {
+    if (this._isKeypadPart(object)) {
+      return distance <= this.keypad.userData.maxInteractionDistance;
+    }
     if (object === this.wallMonitor) {
       return this.talkEnabled && distance <= Level1.MONITOR_RANGE;
     }
@@ -536,6 +1245,10 @@ onRingPuzzleComplete() {
   }
 
   onInteract(object, options = {}) {
+    if (this._isKeypadPart(object)) {
+      this.onUseKeypad?.(this.keypad);
+      return;
+    }
     if (object === this.wallMonitor) {
   if (!this.ringPuzzleSolved) {
     this.onLockedHint?.('The monitor is dead. Something on the wall panel controls its power.');
@@ -923,6 +1636,8 @@ onRingPuzzleComplete() {
   }
 
   update(delta, playerPosition, camera) {
+    
+    this.doorMixer?.update(delta);
     this.time += delta;
     this.power += (this.powerTarget - this.power) * Math.min(1, delta * 1.5);
     if (this.ariaManager) {

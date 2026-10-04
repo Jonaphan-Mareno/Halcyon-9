@@ -10,6 +10,10 @@ import { PlayerController } from '../player/PlayerController.js';
 import { createHubTextures, applyHubMaterials } from '../graphics/HubMaterials.js';
 import { DeepSeaWindow } from '../graphics/DeepSeaWindow.js';
 import { AriaManager } from '../entities/AriaManager.js';
+import { Organism } from './Organism.js';
+import { LabScreens } from './LabScreens.js';
+import { HoloScreens } from './HoloScreens.js';
+import { Sparks } from './Sparks.js';
 import '../ui/level2.css';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
@@ -17,6 +21,27 @@ import '../ui/level2.css';
 // No gameplay yet: that is designed and added after the environment is approved.
 
 const SOLID = ['COL_', 'DOOR_'];
+
+// Glass everywhere (the sea window, railings, the lab's tubes and beakers): dark and one-sided, so
+// it adds reflections without laying a milky white film over what is behind it, and clear face-on
+// but bright and nearly solid at its edges, as real glass is (Fresnel)
+function realGlass(m, opacity = 0.18) {
+  m.color.set(0x0a1414);
+  m.opacity = opacity;
+  m.roughness = 0.08;
+  m.envMapIntensity = 0.9;
+  m.side = THREE.FrontSide;
+  m.transparent = true;
+  m.depthWrite = false;
+  m.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
+      float glassRim = pow(1.0 - abs(dot(normalize(vViewPosition), normal)), 3.0);
+      diffuseColor.a = mix(diffuseColor.a, 0.85, glassRim);
+      outgoingLight += vec3(0.75, 0.88, 0.95) * glassRim * 0.5;
+      #include <opaque_fragment>`);
+  };
+  m.needsUpdate = true;
+}
 
 export class HabitatSession {
   constructor(game) {
@@ -61,6 +86,11 @@ export class HabitatSession {
     const webgl = g.renderer.instance;
     webgl.toneMapping = THREE.ACESFilmicToneMapping;
     webgl.toneMappingExposure = 0.75;
+    // shadows from the lab's ceiling light only, drawn once (nothing in the lab moves), so they cost
+    // almost nothing per frame
+    webgl.shadowMap.enabled = true;
+    webgl.shadowMap.type = THREE.PCFShadowMap;
+    webgl.shadowMap.autoUpdate = false;
     webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     const size = new THREE.Vector2();
     webgl.getSize(size);
@@ -77,29 +107,30 @@ export class HabitatSession {
     window.addEventListener('resize', () => this.composer.setSize(window.innerWidth, window.innerHeight));
     const pmrem = new THREE.PMREMGenerator(webgl);
     g.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    g.scene.environmentIntensity = 0.45;
+    g.scene.environmentIntensity = 0.32;
     pmrem.dispose();
     g.scene.background = new THREE.Color(0xdfe7ee);
     g.scene.fog = null;
   }
 
-  async _load() {
-    const scene = this.game.scene;
-    const gltf = await new GLTFLoader().loadAsync('./assets/models/l2-atrium.glb');
-    const atrium = gltf.scene;
-    atrium.updateMatrixWorld(true);
-    for (const node of [...atrium.children]) {
+  // Loads one of the level's models: collision into the physics world, then the game's materials
+  async _loadModel(url) {
+    const gltf = await new GLTFLoader().loadAsync(url);
+    const model = gltf.scene;
+    model.updateMatrixWorld(true);
+    for (const node of [...model.children]) {
       if (SOLID.some((p) => node.name.startsWith(p))) this.physics.addStaticObject(node);
-      if (node.name.startsWith('COL_')) atrium.remove(node);
+      if (node.name.startsWith('COL_')) model.remove(node);
     }
     // glass and leaves: see-through glass, leaves cut out by their alpha
-    atrium.traverse((o) => {
+    model.traverse((o) => {
       if (!o.isMesh) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       for (const m of mats) {
         if (m.name === 'white_glow') m.emissiveIntensity = 0.24;  // the skylight panel: soft, not blinding
         if (m.name === 'blue_glow') m.emissiveIntensity *= 0.55;  // LED lines: a calm accent
         if (m.name === 'aria_screen') m.emissiveIntensity *= 0.7;
+        if (m.name === 'panel_mint' || m.name === 'panel_blue') m.emissiveIntensity *= 0.3;   // soft tint, not white
         if (m.name.startsWith('palm_leaf') || m.name.startsWith('veg_') || o.name.startsWith('PLANT_')) {
           m.envMapIntensity = 0.35;     // leaves catch less of the room's reflections, so they don't look lit up
           m.roughness = Math.max(m.roughness, 0.75);
@@ -109,15 +140,28 @@ export class HabitatSession {
           m.alphaToCoverage = true;
           m.transparent = false;
           m.side = THREE.DoubleSide;
+        } else if (m.name === 'glass' || m.name === 'glass_broken') {
+          realGlass(m, m.name === 'glass' ? 0.18 : 0.4);
         } else if (m.opacity < 1) {
           m.transparent = true;
           m.depthWrite = false;
         }
       }
     });
-    applyHubMaterials(atrium, createHubTextures());
-    scene.add(atrium);
+    this.hubTextures = this.hubTextures || createHubTextures();
+    applyHubMaterials(model, this.hubTextures);
+    this.game.scene.add(model);
+    return model;
+  }
+
+  async _load() {
+    const scene = this.game.scene;
+    const [atrium, lab] = await Promise.all([
+      this._loadModel('./assets/models/l2-atrium.glb'),
+      this._loadModel('./assets/models/l2-lab.glb')
+    ]);
     this.atrium = atrium;
+    this.lab = lab;
 
     // arrive in the lift, facing the hall (north)
     const spawn = atrium.getObjectByName('SPAWN_Lift').getWorldPosition(new THREE.Vector3());
@@ -127,18 +171,57 @@ export class HabitatSession {
       if (n) this.doors.push({ node: n, closed: n.position.clone(), open: n.position.clone().add(new THREE.Vector3(name.endsWith('L') ? -1.9 : 1.9, 0, 0)) });
     }
 
-    this._addAriaScreens(atrium);
+    // the lab's sliding double doors open as you walk up to them
+    this.labDoors = [];
+    for (const name of ['LABDOOR_L', 'LABDOOR_R']) {
+      const n = atrium.getObjectByName(name);
+      if (n) this.labDoors.push({ node: n, closed: n.position.clone(), open: n.position.clone().add(new THREE.Vector3(Math.sign(n.position.x) * 1.8, 0, 0)) });
+    }
+    this.labDoorCentre = new THREE.Vector3(0, 5.5, -17.25);
+    this.labDoorOpen = 0;
+
+    this._addAriaScreens([atrium, lab]);
+    this._setUpLab(lab);
 
     // the sea outside the window wall
-    this.sea = new DeepSeaWindow({ radius: 17.9, a0: 62, a1: 118, bottom: 0.8, height: 4.2 });
+    this.sea = new DeepSeaWindow({ radius: 17.9, a0: 62, a1: 118, bottom: 0.8, height: 4.2, clear: true });
     scene.add(this.sea.mesh);
 
     // soft, calm light (not glaring): a gentle sky light, the skylight panel, two fills, the lift
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x8c949c, 0.38));
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8c949c, 0.22));
     // daylight-like light from the skylight: even, no hot spot on the ceiling
-    const sky = new THREE.DirectionalLight(0xfaf6ee, 0.85);
+    // (the main light, so its shadows read; the sky light and reflections are the soft fill)
+    const sky = new THREE.DirectionalLight(0xfaf6ee, 1.9);
     sky.position.set(4, 20, 6);
+    // it casts the hall's shadows (pillars, gallery, furniture, the clutter on the floor), drawn
+    // once like the lab's. The ceiling and skylight do not block it.
+    sky.castShadow = true;
+    sky.shadow.mapSize.set(2048, 2048);
+    Object.assign(sky.shadow.camera, { left: -20, right: 20, top: 20, bottom: -20, near: 1, far: 50 });
+    sky.shadow.bias = -0.0005;
+    sky.shadow.normalBias = 0.03;
     scene.add(sky);
+    atrium.traverse((o) => {
+      if (!o.isMesh) return;
+      const base = o.name.replace(/_\d+$/, '');
+      const see = Array.isArray(o.material) ? o.material : [o.material];
+      if (see.some((m) => m.transparent)) return;            // glass casts no shadow
+      o.receiveShadow = true;
+      o.castShadow = !['Atrium_Ceiling', 'Atrium_Wall', 'Atrium_Floor'].includes(base);
+    });
+
+    // damaged wiring that sparks, and the dangling ceiling light that flickers with it
+    const sparkAt = [];
+    atrium.traverse((o) => { if (o.name.startsWith('PT_Sparks_')) sparkAt.push(o.getWorldPosition(new THREE.Vector3())); });
+    this.sparks = new Sparks(scene, sparkAt);
+    this.flickerMats = [];
+    atrium.traverse((o) => {
+      if (!o.isMesh) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        if (m.name === 'flicker_glow' && !this.flickerMats.includes(m)) this.flickerMats.push(m);
+      }
+    });
+    this.flicker = 0;
     for (const [x, y, z, intensity, dist] of [[10, 7, 6, 55, 30], [-10, 7, -6, 55, 30], [0, 3.2, 19.1, 10, 6]]) {
       const l = new THREE.PointLight(0xf4f9ff, intensity, dist, 2);
       l.position.set(x, y, z);
@@ -148,11 +231,11 @@ export class HabitatSession {
 
   // ARIA on every monitor (the ARIA_ markers from the model), idling for now. Same face and
   // hologram shader as Level 1; one shared material, so more screens cost almost nothing.
-  _addAriaScreens(atrium) {
-    const SIZES = { ARIA_M1: [4.2, 2.3], ARIA_Lift: [1.3, 0.73], ARIA_M10: [0.8, 0.45] };
+  _addAriaScreens(models) {
+    const SIZES = { ARIA_M1: [4.2, 2.3], ARIA_Lift: [1.3, 0.73], ARIA_M10: [0.8, 0.45], ARIA_Lab: [1.4, 0.8] };
     const screens = new THREE.Group();
     const markers = [];
-    atrium.traverse((o) => { if (o.name.startsWith('ARIA_') && !o.isMesh) markers.push(o); });
+    for (const m of models) m.traverse((o) => { if (o.name.startsWith('ARIA_') && !o.isMesh) markers.push(o); });
     for (const marker of markers) {
       const [w, h] = SIZES[marker.name] || [1.5, 0.84];
       const geo = new THREE.PlaneGeometry(w, h);
@@ -162,8 +245,10 @@ export class HabitatSession {
       screen.name = marker.name + '_monitor';
       const p = marker.getWorldPosition(new THREE.Vector3());
       screen.position.copy(p);
-      // the big screen over the lounge faces the lift; the rest face the middle of the hall
+      // the big screen over the lounge faces the lift, the lab's faces into the lab (north),
+      // the rest face the middle of the hall
       if (marker.name === 'ARIA_M1') screen.lookAt(p.x, p.y, p.z + 1);
+      else if (marker.name === 'ARIA_Lab') screen.lookAt(p.x, p.y, p.z - 1);
       else screen.lookAt(0, p.y, 0);
       screens.add(screen);
     }
@@ -174,6 +259,55 @@ export class HabitatSession {
     this.aria.playIdle();
   }
 
+  // The lab: the organism in its tubes (and the pieces in the spills), the workstation screens,
+  // the glowing spills, and the lab's one light (in the budget: 6 lights in the whole level)
+  _setUpLab(lab) {
+    const find = (prefix) => {
+      const out = [];
+      lab.traverse((o) => { if (o.name.startsWith(prefix)) out.push(o); });
+      return out.sort((a, b) => a.name.localeCompare(b.name));
+    };
+    const tubes = find('ORG_').map((o) => ({
+      base: o.getWorldPosition(new THREE.Vector3()),
+      radius: o.name === 'ORG_2' ? 0.8 : 0.55,
+      height: 3.0,
+      broken: o.name.endsWith('_broken')
+    }));
+    const frags = find('ORGFRAG_').map((o) => o.getWorldPosition(new THREE.Vector3()));
+    this.organism = new Organism(this.game.scene, tubes, frags);
+    this.labScreens = new LabScreens(this.game.scene, find('PT_LabScreen_'));
+    this.holoScreens = new HoloScreens(this.game.scene, find('PT_Holo_'));
+    this.gooMats = [];
+    lab.traverse((o) => {
+      if (!o.isMesh) return;
+      if (o.name === 'Lab_Glass') o.renderOrder = 3;     // glass drawn over the liquid and the organism
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        if (m.name === 'goo_glow' && !this.gooMats.includes(m)) this.gooMats.push(m);
+      }
+    });
+    // the lab's ceiling light: a wide spotlight, the lab's main light, casting the shadows that sit
+    // the objects on the desks and floor (strong enough to stand out from the soft fill light;
+    // its reach ends at the lab's walls)
+    this.labLight = new THREE.SpotLight(0xc4e4ff, 140, 11, 1.15, 0.7, 2);
+    this.labLight.position.set(0, 9.5, -22.4);
+    this.labLight.target.position.set(0, 5.5, -22.4);
+    this.labLight.castShadow = true;
+    this.labLight.shadow.mapSize.set(2048, 2048);
+    this.labLight.shadow.bias = -0.0004;
+    this.labLight.shadow.normalBias = 0.02;
+    this.labLight.shadow.camera.near = 0.5;
+    this.labLight.shadow.camera.far = 11;
+    this.game.scene.add(this.labLight, this.labLight.target);
+    lab.traverse((o) => {
+      if (!o.isMesh) return;
+      // (meshes with several materials load as numbered parts, e.g. Lab_Furniture_3)
+      const base = o.name.replace(/_\d+$/, '');
+      const solid = ['Lab_Furniture', 'Lab_Clutter', 'Lab_Tubes', 'Lab_ChairFallen', 'Lab_ScopeFallen'].includes(base);
+      if (solid) o.castShadow = true;
+      if (solid || base === 'Lab_Room') o.receiveShadow = true;
+    });
+  }
+
   async _precompile() {
     const webgl = this.game.renderer.instance;
     try {
@@ -181,6 +315,7 @@ export class HabitatSession {
     } catch (e) {
       webgl.compile(this.game.scene, this.game.camera.instance);
     }
+    this.game.renderer.instance.shadowMap.needsUpdate = true;   // draw the lab's shadows once
     this.composer.render();
   }
 
@@ -197,6 +332,24 @@ export class HabitatSession {
       for (const d of this.doors) d.node.position.lerpVectors(d.closed, d.open, t);
     }
     this.sea.update(dt, g.camera.instance);
+    // the lab doors slide open when you are near them
+    const near = this.controls.position.distanceTo(this.labDoorCentre) < 4;
+    this.labDoorOpen = THREE.MathUtils.clamp(this.labDoorOpen + (near ? dt : -dt) / 0.7, 0, 1);
+    const ld = this.labDoorOpen * this.labDoorOpen * (3 - 2 * this.labDoorOpen);
+    for (const d of this.labDoors) d.node.position.lerpVectors(d.closed, d.open, ld);
+    // the organism, its readings, the spills and the lab light all follow its surges
+    this.organism.update(dt);
+    const surge = this.organism.surge;
+    this.labScreens.update(dt, surge);
+    this.holoScreens.update(dt, surge);
+    // sparks crackle from the damaged wiring; the dangling light stutters, cutting out on each crackle
+    this.sparks.update(dt);
+    if (this.sparks.burstNow) this.flicker = 0.35;
+    this.flicker = Math.max(0, this.flicker - dt);
+    const buzz = this.flicker > 0 ? (Math.random() < 0.5 ? 0.05 : 1.6) : (Math.random() < 0.015 ? 0.1 : 1.0);
+    for (const m of this.flickerMats) m.emissiveIntensity = buzz * 1.4;
+    for (const m of this.gooMats) m.emissiveIntensity = 0.3 + 0.12 * Math.sin(this.organism.time * 2.3) + surge * 0.7;
+    this.labLight.intensity = 140 + surge * 100;
     // ARIA idles on every screen (not AriaManager.update, which shows her on the nearest one only)
     this.aria.ariaMaterial.uniforms.uTime.value += dt;
     if (this.aria.useHead) this.aria.head.update(dt);

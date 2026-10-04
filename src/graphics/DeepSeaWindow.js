@@ -243,7 +243,9 @@ function squid(ctx, t, s) {
 // ---------------------------------------------------------------- the screen
 export class DeepSeaWindow {
   // The screen's placement can be changed for another window (defaults: the old atrium's window)
-  constructor({ radius = SCREEN_RADIUS, bottom = SCREEN_BOTTOM, height = SCREEN_HEIGHT, a0 = A0, a1 = A1 } = {}) {
+  // clear: brighter, bluer water with light shafts from above (easier to see through a window)
+  constructor({ radius = SCREEN_RADIUS, bottom = SCREEN_BOTTOM, height = SCREEN_HEIGHT, a0 = A0, a1 = A1, clear = false } = {}) {
+    this.clear = clear;
     this.canvas = document.createElement('canvas');
     this.canvas.width = W;
     this.canvas.height = H;
@@ -255,7 +257,7 @@ export class DeepSeaWindow {
 
     const geo = new THREE.CylinderGeometry(radius, radius, height, 48, 1, true,
       ((a0 + 90) * Math.PI) / 180, ((a1 - a0) * Math.PI) / 180);
-    const mat = new THREE.MeshBasicMaterial({ map: this.texture, side: THREE.BackSide, fog: false });
+    const mat = new THREE.MeshBasicMaterial({ map: this.texture, side: THREE.BackSide, fog: false, toneMapped: !clear });
     this.mesh = new THREE.Mesh(geo, mat);
     this.mesh.position.y = bottom + height / 2;
     this.mesh.name = 'DeepSeaWindow';
@@ -292,9 +294,15 @@ export class DeepSeaWindow {
     const ctx = this.ctx;
     // deep water: black at the top, a trace of blue-green far below
     const bg = ctx.createLinearGradient(0, 0, 0, H);
-    bg.addColorStop(0, '#01060a');
-    bg.addColorStop(0.55, '#020c12');
-    bg.addColorStop(1, '#04202a');
+    if (this.clear) {
+      bg.addColorStop(0, '#0b3a55');
+      bg.addColorStop(0.5, '#062b42');
+      bg.addColorStop(1, '#073848');
+    } else {
+      bg.addColorStop(0, '#01060a');
+      bg.addColorStop(0.55, '#020c12');
+      bg.addColorStop(1, '#04202a');
+    }
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
     ctx.fillStyle = bg;
@@ -302,6 +310,21 @@ export class DeepSeaWindow {
 
     // a faint glow from the vent far below
     ctx.globalCompositeOperation = 'lighter';
+    if (this.clear) {
+      // shafts of light slanting down from far above, slowly swaying
+      for (let i = 0; i < 6; i++) {
+        const x = W * (0.08 + i * 0.17) + Math.sin(t * 0.15 + i * 2.1) * 60;
+        const g = ctx.createLinearGradient(x, 0, x - 160, H);
+        const a = 0.07 + 0.04 * Math.sin(t * 0.3 + i);
+        g.addColorStop(0, 'rgba(140,210,240,' + a + ')');
+        g.addColorStop(1, 'rgba(140,210,240,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(x - 40, 0); ctx.lineTo(x + 40, 0); ctx.lineTo(x - 120, H); ctx.lineTo(x - 260, H);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
     glow(ctx, W * 0.62, H * 1.15, 520, '30,110,130', 0.28 + 0.05 * Math.sin(t * 0.4));
 
     // twinkling plankton, and a flash of blue now and then

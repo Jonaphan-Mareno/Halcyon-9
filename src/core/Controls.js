@@ -21,6 +21,13 @@ export class Controls {
     this.eyeHeight = 2.6;
     this.floorSmoothing = 15;
     this.maxRayDistance = 5;
+    // The floor probe starts this far above the camera so steps and ramps are
+    // still caught while descending. It must stay below the headroom of the
+    // tightest space in a level: once the probe starts above a ceiling, that
+    // ceiling reads as the floor (see updateFloorHeight).
+    this.floorProbeLift = 1.0;
+    // A surface this close to eye level or above is overhead, not underfoot
+    this.floorEpsilon = 0.05;
 
     // Wall collision
     this.collisionRadius = 0.5; // how close the camera can get to a wall
@@ -28,6 +35,7 @@ export class Controls {
     this._raycaster = new THREE.Raycaster();
     this._downVec = new THREE.Vector3(0, -1, 0);
     this._rayOrigin = new THREE.Vector3();
+    this._hitNormal = new THREE.Vector3();
     this._matCol = new THREE.Vector3(); // local X column of camera matrix
     this._rightDir = new THREE.Vector3();
     this._forwardDir = new THREE.Vector3();
@@ -89,15 +97,40 @@ export class Controls {
     if (!room) return;
 
     const pos = this.camera.position;
-    this._rayOrigin.set(pos.x, pos.y + 1.0, pos.z);
+    this._rayOrigin.set(pos.x, pos.y + this.floorProbeLift, pos.z);
     this._raycaster.set(this._rayOrigin, this._downVec);
     this._raycaster.far = this.maxRayDistance;
 
     const hits = this._raycaster.intersectObject(room, true);
-    if (hits.length === 0) return;
 
-    const targetY = hits[0].point.y + this.eyeHeight;
+    // hits[0] is not necessarily the floor. The probe is lifted above the
+    // camera, so in any space with less headroom than eyeHeight + that lift the
+    // probe starts *above* the ceiling — and because every level material is
+    // DoubleSide, the ray reports the ceiling's top face as the nearest hit.
+    // Trusting hits[0] there floors the player onto the roof, and it is
+    // self-sustaining: rising lifts the probe further above the ceiling, so the
+    // same surface keeps being picked. This is what launched Voss out of the
+    // lift cabin in controlroom.glb, whose ceiling tops out at y=3.50.
+    //
+    // The floor you stand on is always below your eyes and faces up, so filter
+    // on that. Hits stay sorted by distance, so find() takes the nearest valid
+    // one — the highest walkable surface under the camera, as before.
+    const floor = hits.find(
+      (hit) => hit.point.y < pos.y - this.floorEpsilon && this._facesUp(hit)
+    );
+    if (!floor) return;
+
+    const targetY = floor.point.y + this.eyeHeight;
     pos.y += (targetY - pos.y) * Math.min(1, this.floorSmoothing * delta);
+  }
+
+  // World-space upward normal for a raycast hit. Geometry normals are not
+  // flipped for backfaces, so under DoubleSide this cleanly separates the top
+  // of a slab (walkable) from its underside (not).
+  _facesUp(hit) {
+    if (!hit.face) return false;
+    this._hitNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+    return this._hitNormal.y > 0;
   }
 
   // Clamps an intended movement distance along `dir` so the camera stops

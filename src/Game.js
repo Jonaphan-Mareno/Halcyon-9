@@ -23,7 +23,8 @@ const OBJECTIVES = [
   'Find the torch on the floor',
   'Repair the generator circuit',
   'Turn the relay rings until every marker lines up with the rail',
-  'Power restored'
+  'Use the security keypad beside the lift doors',
+  'Step into the lift and press the call panel to go down'
 ];
 
 //TEMP access code
@@ -96,7 +97,7 @@ const formatTime = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor
 
 export class Game {
   constructor() {
-    // INIT, WAKING, PLAYING, KEYPAD, RETURNING, DIALOGUE, TUTORIAL, PUZZLE, INVENTORY, DEAD, GAME_OVER
+    // INIT, WAKING, PLAYING, KEYPAD, RETURNING, DIALOGUE, TUTORIAL, PUZZLE, INVENTORY, DEAD, GAME_OVER, DEPARTING
     this.state = 'INIT';
     this.lastTime = performance.now();
     // ?level=2 in the address starts straight in level 2, at the elevator (for testing)
@@ -196,13 +197,18 @@ export class Game {
     this.center = new THREE.Vector2(0, 0);
     this.reticle = document.getElementById('reticle');
 
-    document.addEventListener('click', (e) => this.onClick(e));
-    document.addEventListener('keydown', (e) => this.onKeyDown(e));
+    // Kept as named references so they can be taken back off again when level 1
+    // is torn down for level 2, which installs its own input handling.
+    this._onDocClick = (e) => this.onClick(e);
+    this._onDocKeyDown = (e) => this.onKeyDown(e);
+    document.addEventListener('click', this._onDocClick);
+    document.addEventListener('keydown', this._onDocKeyDown);
 
     this.mouse = new THREE.Vector2();
     this.camAnim = null;
     this.savedCam = null;
     this._leavingRingPuzzle = false;
+    this._departing = false;   // the lift doors are shutting on the way to level 2
     this._createRingPuzzleUI();
     window.addEventListener('mousemove', (e) => {
       this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
@@ -221,10 +227,78 @@ export class Game {
     // ?level=2: the NEW level 2, the habitat atrium (environment preview for now)
     // ?level=hose: the coolant hose test room
     // ?level=reactor: the old cargo atrium, kept to become Level 3's reactor room
-    const sessions = { '2': HabitatSession, hose: HoseTestSession, reactor: Level2Session };
-    this.level2 = new sessions[this.startLevel](this);
+    this._mountLevel2(this.startLevel);
     window.addEventListener('resize', () => this.onResize());
     this.startLoop();
+  }
+
+  // Build one level 2 session. Split out of _initLevel2 because the lift out of
+  // the control room reaches level 2 the same way: there the renderer, camera,
+  // UIManager and the animation loop all already exist and must not be made a
+  // second time (startLoop is a recursive rAF with no way to cancel it, and
+  // UIManager's constructor appends DOM).
+  _mountLevel2(kind) {
+    const sessions = { '2': HabitatSession, hose: HoseTestSession, reactor: Level2Session };
+    this.startLevel = kind;
+    this.level2 = new sessions[kind](this);
+  }
+
+  // ---------------------------------------------------------
+  // Leaving level 1: Voss pressed the lift's call panel
+  // ---------------------------------------------------------
+
+  // The doors are shutting. Hold level 1 in place for as long as they take,
+  // then swap the level out from under the running game.
+  onElevatorDepart(seconds = 0) {
+    if (this.level2Mode || this._departing) return;
+    this._departing = true;
+
+    this.controls.stop();
+    this.controls.instance.unlock();
+    this.state = 'DEPARTING';
+
+    this.reticle.classList.remove('visible');
+    this.ui.setPrompt(null);
+    this.ui.setWaypoint(null);
+    this.ui.setObjective(null);
+    this.hud.setVisible(false);
+    this.audio.stopHum(0.6);
+    this.ui.showToast('Descending to the habitat deck...', seconds * 1000 + 2500);
+
+    setTimeout(() => this._leaveForLevel2(), seconds * 1000 + 700);
+  }
+
+  _leaveForLevel2() {
+    if (!this._departing) return;
+
+    // Level 1's input would otherwise keep firing at a level that no longer
+    // exists; HabitatSession puts its own click-to-lock handler on instead.
+    document.removeEventListener('click', this._onDocClick);
+    document.removeEventListener('keydown', this._onDocKeyDown);
+
+    this.puzzle?.close?.();
+    this.inventory?.close?.();
+    this.ui.hideDialogue();
+    this.ui.hideToast();
+    this.currentLevel?.dispose?.();
+    this.currentLevel = null;
+    this.ringCloseBtn?.remove();
+    this.ringCloseBtn = null;
+
+    // Everything level 1 put on screen goes, except what was already in the HTML
+    // and the UIManager elements level 2 reuses.
+    const keep = [
+      document.getElementById('welcome-screen'),
+      this.reticle,
+      this.ui.blink, this.ui.prompt, this.ui.toast,
+      this.ui.objective, this.ui.waypoint, this.ui.overloadBanner, this.ui.dialogue
+    ].filter(Boolean);
+    document.getElementById('ui-layer').replaceChildren(...keep);
+
+    this.level2Mode = true;
+    this.state = 'PLAYING';
+    this._mountLevel2('2');
+    this._departing = false;
   }
 
   updateLevel2(delta) {
@@ -250,6 +324,7 @@ export class Game {
     level.onRelayAligned = () => this.onRelayAligned();
     level.onOpenRingPuzzle = () => this.enterRingPuzzle();
     level.onRingPuzzleSolved = () => this.onRingPuzzleSolved();
+    level.onElevatorDepart = (seconds) => this.onElevatorDepart(seconds);
   }
 
   onResize() {
@@ -526,10 +601,14 @@ export class Game {
   }
 
   update(delta) {
+    // Between disposing level 1 and mounting level 2 there is no level to update
+    if (!this.currentLevel) return;
+
     const live = this.state === 'PLAYING' || this.state === 'WAKING' || this.state === 'KEYPAD' || 
                  this.state === 'RETURNING' || this.state === 'DIALOGUE' ||
                  this.state === 'TUTORIAL' || this.state === 'PUZZLE' || this.state === 'INVENTORY' ||
-                 this.state === 'DEAD' || this.state === 'RING_PUZZLE';
+                 this.state === 'DEAD' || this.state === 'RING_PUZZLE' ||
+                 this.state === 'DEPARTING';
 
     if (this.state === 'PLAYING') {
       this.controls.update(delta);
@@ -548,7 +627,8 @@ export class Game {
     }
 
     // The status display appears once the intro conversation is over
-    this.hud.setVisible(!this.currentLevel.talkEnabled && this.state !== 'GAME_OVER' && this.state !== 'INIT');
+    this.hud.setVisible(!this.currentLevel.talkEnabled && this.state !== 'GAME_OVER' &&
+                        this.state !== 'INIT' && this.state !== 'DEPARTING');
     this.hud.update(this.player);
 
     // The torch in the corner slot (and on the inventory screen) is a live 3D model
@@ -577,14 +657,15 @@ export class Game {
     const level = this.currentLevel;
 
     // Stage 0: Turn on Monitor, 1: talk to ARIA, 2: find the torch, 3: repair the circuit,
-    // 4: align the relay rings, 5: done
+    // 4: align the relay rings, 5: open the lift with the keypad, 6: ride the lift down
     let stage;
     if (!level.ringPuzzleSolved) stage = 0;
     else if (level.talkEnabled) stage = 1;
     else if (!level.hasTorch) stage = 2;
     else if (!level.cablesFixed) stage = 3;
     else if (!level.relaySolved) stage = 4;
-    else stage = 5;
+    else if (!level.doorOpened) stage = 5;
+    else stage = 6;
 
     if (stage !== this._stage) {
       this._stage = stage;

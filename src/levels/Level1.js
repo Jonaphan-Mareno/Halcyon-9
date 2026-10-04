@@ -58,6 +58,14 @@ export class Level1{
     this.doorMixer = null;
     this.doorActions = [];
     this.doorOpened = false;
+    this.doorClosed = false;
+
+    // The lift out of the control room. Console_Screen is the call panel inside
+    // the cabin; clicking it shuts the doors and hands the game to level 2.
+    this.elevatorConsoleScreen = null;
+    this.elevatorRiding = false;
+    this._consoleCentre = new THREE.Vector3();
+    this.onElevatorDepart = null;   // set by the Game
 
     this.ringPuzzle = null;          // the wall panel puzzle (RingPuzzle)
     this.ringPuzzleSolved = false;   // ARIA stays off until this is true
@@ -312,6 +320,14 @@ export class Level1{
           this.generatorParts.push(child);
         }
 
+        // The lift's call panel, on the cabin's right-hand wall. Blender names
+        // the mesh data-block Cube.040 but the exported node — which is what
+        // GLTFLoader actually names the object — is Console_Screen, so match
+        // either: a re-export has renamed this object before.
+        if (child.isMesh && (cleanName === 'Console_Screen' || cleanName === 'Cube040')) {
+          this.elevatorConsoleScreen = child;
+        }
+
       });
 
       this.scene.add(this.room);
@@ -336,6 +352,11 @@ export class Level1{
 
       this._measureGenerator();
       if (this.wallMonitor) new THREE.Box3().setFromObject(this.wallMonitor).getCenter(this._monitorCentre);
+      if (this.elevatorConsoleScreen) {
+        new THREE.Box3().setFromObject(this.elevatorConsoleScreen).getCenter(this._consoleCentre);
+      } else {
+        console.warn('Level1: no Console_Screen in controlroom.glb; the lift cannot be called.');
+      }
       this._pickFlickeringLights();
       try { this._buildRingPuzzle(); } catch (e) { console.error('Ring puzzle failed to build:', e); }
       this._rebuildInteractables();
@@ -605,6 +626,11 @@ onRingPuzzleComplete() {
     if (this.keypad) {
       this._interactables.push(this.keypad);
     }
+    // The lift's call panel only answers once the doors are open, and stops
+    // being clickable again as soon as the ride has started
+    if (this.elevatorConsoleScreen && this.doorOpened && !this.elevatorRiding) {
+      this._interactables.push(this.elevatorConsoleScreen);
+    }
   }
 
 
@@ -625,6 +651,13 @@ onRingPuzzleComplete() {
       }
     }
 
+    return false;
+  }
+
+  _isConsoleScreenPart(object) {
+    for (let o = object; o; o = o.parent) {
+      if (o === this.elevatorConsoleScreen) return true;
+    }
     return false;
   }
 
@@ -700,15 +733,58 @@ onRingPuzzleComplete() {
     }
 
     this.doorOpened = true;
+    this.doorClosed = false;
 
     for (const action of this.doorActions) {
       action.reset();
       action.setLoop(THREE.LoopOnce, 1);
       action.clampWhenFinished = true;
+      action.timeScale = 1;
       action.play();
     }
 
+    // The call panel inside the cabin only becomes usable once the doors are open
+    this._rebuildInteractables();
+
     console.log('Elevator door opening');
+  }
+
+  // controlroom.glb ships no "close" clip: each of the two actions runs its door
+  // from the rest (shut) position out to the open position, so shutting them is
+  // the same clips played backwards — negative timeScale, started at the end.
+  // Returns the seconds until they are shut, so the Game can time the hand-off.
+  closeElevatorDoor() {
+    if (this.doorClosed || !this.doorActions.length) return 0;
+
+    this.doorClosed = true;
+    this.doorOpened = false;
+
+    let duration = 0;
+    for (const action of this.doorActions) {
+      const clip = action.getClip();
+      duration = Math.max(duration, clip.duration);
+      action.reset();
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+      action.timeScale = -1;
+      action.time = clip.duration; // start fully open, run back to rest
+      action.play();
+    }
+
+    console.log(`Elevator door closing (${duration.toFixed(2)}s)`);
+    return duration;
+  }
+
+  // Voss pressed the lift's call panel: shut the doors, then let the Game take
+  // the level down to the habitat deck once they are closed.
+  rideElevator() {
+    if (this.elevatorRiding || !this.doorOpened) return;
+
+    this.elevatorRiding = true;
+    this._rebuildInteractables(); // the panel is no longer clickable mid-ride
+
+    const seconds = this.closeElevatorDoor();
+    this.onElevatorDepart?.(seconds);
   }
 
   buildKeypad() {
@@ -1181,6 +1257,9 @@ onRingPuzzleComplete() {
   static GENERATOR_RANGE = 5.5;
   static RELAY_RANGE = 6.5;
   static RING_PANEL_RANGE = 5;
+  // The cabin is only ~3m across, so this stays short: from inside the lift the
+  // panel is about 1.3m away, and the doorway puts it just under 2m.
+  static CONSOLE_RANGE = 2.2;
 
   // Text for the on-screen prompt while looking at an object, or null for none.
   // The torch and the generator stay locked until the player has talked to ARIA.
@@ -1191,6 +1270,11 @@ onRingPuzzleComplete() {
       }
 
       return 'Click or press E to use keypad';
+    }
+    if (this._isConsoleScreenPart(object)) {
+      return this.canInteract(object, distance)
+        ? 'Click or press E to ride the lift down'
+        : null;
     }
     if (object === this.wallMonitor) {
   if (!this.ringPuzzleSolved) {
@@ -1226,6 +1310,9 @@ onRingPuzzleComplete() {
     if (this._isKeypadPart(object)) {
       return distance <= this.keypad.userData.maxInteractionDistance;
     }
+    if (this._isConsoleScreenPart(object)) {
+      return this.doorOpened && !this.elevatorRiding && distance <= Level1.CONSOLE_RANGE;
+    }
     if (object === this.wallMonitor) {
       return this.talkEnabled && distance <= Level1.MONITOR_RANGE;
     }
@@ -1247,6 +1334,10 @@ onRingPuzzleComplete() {
   onInteract(object, options = {}) {
     if (this._isKeypadPart(object)) {
       this.onUseKeypad?.(this.keypad);
+      return;
+    }
+    if (this._isConsoleScreenPart(object)) {
+      this.rideElevator();
       return;
     }
     if (object === this.wallMonitor) {
@@ -1311,6 +1402,12 @@ onRingPuzzleComplete() {
     } else if (!this.relaySolved) {
       w.position.copy(this._generatorCentre);
       w.label = 'Relay rings';
+    } else if (!this.doorOpened && this.keypad) {
+      w.position.copy(this.keypad.position);
+      w.label = 'Keypad';
+    } else if (this.doorOpened && !this.elevatorRiding) {
+      w.position.copy(this._consoleCentre);
+      w.label = 'Lift';
     } else {
       return null;
     }

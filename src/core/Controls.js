@@ -26,8 +26,9 @@ export class Controls {
     // tightest space in a level: once the probe starts above a ceiling, that
     // ceiling reads as the floor (see updateFloorHeight).
     this.floorProbeLift = 1.0;
-    // A surface this close to eye level or above is overhead, not underfoot
-    this.floorEpsilon = 0.05;
+    // How far above his own feet Voss can be pulled in one go. He cannot jump
+    // in level 1, so anything taller than a step is not a floor he walked onto.
+    this.maxStepUp = 0.45;
 
     // Wall collision
     this.collisionRadius = 0.5; // how close the camera can get to a wall
@@ -110,13 +111,19 @@ export class Controls {
     // Trusting hits[0] there floors the player onto the roof, and it is
     // self-sustaining: rising lifts the probe further above the ceiling, so the
     // same surface keeps being picked. This is what launched Voss out of the
-    // lift cabin in controlroom.glb, whose ceiling tops out at y=3.50.
+    // lift cabin in controlroom.glb, whose ceiling tops out at y=3.50 against
+    // an interior height of only 3.35m.
     //
-    // The floor you stand on is always below your eyes and faces up, so filter
-    // on that. Hits stay sorted by distance, so find() takes the nearest valid
-    // one — the highest walkable surface under the camera, as before.
+    // So snap to the ground instead of to whatever is nearest: the floor he is
+    // standing on is the highest upward-facing surface within one step of his
+    // feet. Descending stays unlimited, so drops and stairs still work, while
+    // ceilings and tall props are never mistaken for floors — which also ends
+    // the old "brush against a tank, get teleported on top of it" behaviour.
+    // Hits come back sorted by distance, and the ray points down, so find()
+    // yields the highest surface that passes.
+    const feet = pos.y - this.eyeHeight;
     const floor = hits.find(
-      (hit) => hit.point.y < pos.y - this.floorEpsilon && this._facesUp(hit)
+      (hit) => hit.point.y <= feet + this.maxStepUp && this._facesUp(hit)
     );
     if (!floor) return;
 

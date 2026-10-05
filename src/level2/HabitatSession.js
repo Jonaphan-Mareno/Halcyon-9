@@ -10,7 +10,7 @@ import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { Physics } from '../core/Physics.js';
 import { PlayerController } from '../player/PlayerController.js';
 import { createHubTextures, applyHubMaterials } from '../graphics/HubMaterials.js';
-import { DeepSeaWindow } from '../graphics/DeepSeaWindow.js';
+import { VideoWindow } from '../graphics/VideoWindow.js';
 import { AriaManager } from '../entities/AriaManager.js';
 import { Organism } from './Organism.js';
 import { LabScreens } from './LabScreens.js';
@@ -204,8 +204,11 @@ export class HabitatSession {
     this._addAriaScreens([atrium, lab]);
     this._setUpLab(lab);
 
-    // the sea outside the window wall
-    this.sea = new DeepSeaWindow({ radius: 17.9, a0: 62, a1: 118, bottom: 0.8, height: 4.2, clear: true });
+    // the sea outside the big window: a looping video, the window's exact shape (16:9: 4.2 m tall,
+    // 7.47 m wide along the inside of the 17 m wall, so 12.58 degrees either side of north)
+    const winHalf = THREE.MathUtils.radToDeg((4.2 * 16 / 9) / 17) / 2;
+    this.sea = new VideoWindow({ src: './assets/video/sea_loop.mp4', radius: 17.9, wallRadius: 17,
+      a0: 90 - winHalf, a1: 90 + winHalf, bottom: 0.8, height: 4.2 });
     scene.add(this.sea.mesh);
 
     // Two lights only: a soft sky light and the sun through the skylight (which also casts every

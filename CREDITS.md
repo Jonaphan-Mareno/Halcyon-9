@@ -25,6 +25,12 @@ Downloaded by `Blender/scripts/fetch_plants.cjs`.
 Suggested credits-screen line: *"Plant and food models from Poly Haven (polyhaven.com, CC0) by
 Rob Tuytel, Rico Cilliers, James Ray Cock, Oliver Harries, Kuutti Siitonen and Jan Martens."*
 
+## Generated video
+
+| Asset | Source | Used for |
+|---|---|---|
+| `public/assets/video/sea_loop.mp4` | Generated with Google Gemini (Veo) by Naomi Mareno; trimmed into a seamless loop with FFmpeg | the deep sea outside the atrium's big window |
+
 ## To add when used
 
 - Sketchfab models (vegetable plants, sea creatures) for the final submission: record the model

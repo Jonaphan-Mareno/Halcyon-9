@@ -363,9 +363,8 @@ export class Game {
   enterKeypadMode(keypad) {
     if (this.state !== 'PLAYING' || !keypad) return;
 
-    const camera = this.camera.instance;
+    const cam = this.camera.instance;
 
-    // Stop normal FPS controls
     this.controls.stop();
     this.controls.instance.unlock();
 
@@ -375,79 +374,92 @@ export class Game {
     this.ui.setPrompt(null);
     this.ui.setWaypoint(null);
 
-    // Make sure the keypad's world transform is current
-    keypad.updateWorldMatrix(true, false);
+    keypad.updateWorldMatrix(true, true);
 
-    // Centre of the keypad in world space
-    keypad.getWorldPosition(this._keypadWorldPos);
-
-    // Rotation of keypad in world space
-    keypad.getWorldQuaternion(this._keypadWorldQuat);
+    // Save the exact camera pose so we can smoothly return to it.
+    this.keypadReturnPose = {
+      position: cam.position.clone(),
+      quaternion: cam.quaternion.clone()
+    };
 
     /*
-    * The keypad face was built facing along its local +Z axis.
+    * Frame the actual keypad geometry rather than moving to a
+    * hard-coded distance from its object origin.
+    */
+    const box = new THREE.Box3().setFromObject(keypad);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+
+    /*
+    * Keypad face points along its local +Z.
     * Convert that direction into world space.
     */
-    this._keypadNormal
-      .set(0, 0, 1)
-      .applyQuaternion(this._keypadWorldQuat)
+    const worldQuat = keypad.getWorldQuaternion(
+      new THREE.Quaternion()
+    );
+
+    const normal = new THREE.Vector3(0, 0, 1)
+      .applyQuaternion(worldQuat)
       .normalize();
 
-    const focusDistance =
-      keypad.userData.focusDistance ?? 1.15;
-
     /*
-    * Put the camera just in front of the keypad.
+    * Same principle as the ring puzzle:
+    * calculate a camera distance from the object's physical size
+    * and the camera's FOV.
     */
-    const targetPosition = this._keypadWorldPos
-      .clone()
-      .addScaledVector(
-        this._keypadNormal,
-        focusDistance
+    const verticalFov =
+      THREE.MathUtils.degToRad(cam.fov);
+
+    const horizontalFov =
+      2 * Math.atan(
+        Math.tan(verticalFov / 2) * cam.aspect
       );
 
-    /*
-    * Store exactly where the player was before using
-    * the keypad.
-    */
-    this.keypadReturnPose = {
-      position: camera.position.clone(),
-      quaternion: camera.quaternion.clone(),
-      fov: camera.fov
-    };
+    const verticalDistance =
+      size.y /
+      (2 * Math.tan(verticalFov / 2));
+
+    const horizontalDistance =
+      size.x /
+      (2 * Math.tan(horizontalFov / 2));
+
+    // Slight padding so the keypad does not fill the whole screen.
+    const distance =
+      Math.max(
+        verticalDistance,
+        horizontalDistance
+      ) * 1.35;
+
+    const toPos = center
+      .clone()
+      .addScaledVector(normal, distance);
 
     /*
-    * Work out the camera rotation required to look
-    * directly at the keypad.
+    * Exactly the same look-at approach used by the ring puzzle.
     */
-    this._focusObject.position.copy(targetPosition);
-    this._focusObject.up.copy(camera.up);
-    this._focusObject.lookAt(this._keypadWorldPos);
+    const matrix = new THREE.Matrix4().lookAt(
+      toPos,
+      center,
+      new THREE.Vector3(0, 1, 0)
+    );
 
-    this.keypadTransition = {
-      elapsed: 0,
-
-      fromPosition: camera.position.clone(),
-      toPosition: targetPosition,
-
-      fromQuaternion: camera.quaternion.clone(),
-      toQuaternion: this._focusObject.quaternion.clone(),
-
-      fromFov: camera.fov,
-      toFov: 48,
-
-      mode: 'focus'
-    };
+    const toQuat =
+      new THREE.Quaternion()
+        .setFromRotationMatrix(matrix);
 
     /*
-    * Don't open the large UI immediately.
-    *
-    * First let the player actually see the camera
-    * move toward the physical keypad.
-    *
-    * updateCameraTransition() opens it once the
-    * movement finishes.
+    * Use the ring puzzle camera animation instead of the
+    * separate keypadTransition system.
     */
+    this._startCamAnim(
+      toPos,
+      toQuat,
+      () => {
+        if (this.state === 'KEYPAD') {
+          this.keypadUI.open();
+        }
+      }
+    );
   }
 
   exitKeypadMode() {
@@ -456,43 +468,29 @@ export class Game {
     this.keypadUI.close();
 
     if (!this.keypadReturnPose) {
-      this.keypadTransition = null;
-      this.resumePlayerControls();
+      this.state = 'PLAYING';
+      this.controls.instance.enabled = true;
+      this.reticle.classList.add('visible');
       return;
     }
 
-    const camera = this.camera.instance;
-
-    this.keypadUI.close();
-
-    /*
-    * Request pointer lock now because this method is
-    * normally being triggered by a real button/key
-    * press.
-    *
-    * Controls remain disabled until the camera
-    * finishes moving back.
-    */
-    //this.controls.lock();
-
     const returnPose = this.keypadReturnPose;
 
-    this.keypadTransition = {
-      elapsed: 0,
-
-      fromPosition: camera.position.clone(),
-      toPosition: returnPose.position.clone(),
-
-      fromQuaternion: camera.quaternion.clone(),
-      toQuaternion: returnPose.quaternion.clone(),
-
-      fromFov: camera.fov,
-      toFov: returnPose.fov,
-
-      mode: 'return'
-    };
-
     this.state = 'RETURNING';
+
+    this._startCamAnim(
+      returnPose.position,
+      returnPose.quaternion,
+      () => {
+        this.keypadReturnPose = null;
+
+        this.controls.instance.enabled = true;
+
+        this.state = 'PLAYING';
+
+        this.reticle.classList.add('visible');
+      }
+    );
   }
   
   onKeypadSubmit(code) {
@@ -613,12 +611,7 @@ export class Game {
     if (this.state === 'PLAYING') {
       this.controls.update(delta);
     }
-    if (
-      this.state === 'KEYPAD' ||
-      this.state === 'RETURNING'
-    ) {
-      this.updateCameraTransition(delta);
-    }
+  
     if (live && this.currentLevel) {
       this.currentLevel.update(delta, this.camera.instance.position, this.camera.instance);
     }

@@ -27,11 +27,25 @@ const RELAY_STEPS = 8;
 // Where the torch lies: on the floor in front of ARIA's wall monitor
 const TORCH_XZ = new THREE.Vector2(1.2, -7.3);
 
+// The starting cell: Voss wakes up locked in a room attached to the control room. cell.glb
+// holds just the cell pieces from the same Blender scene, so everything lines up with
+// controlroom.glb and walking out of the door leads straight into the control room.
+const CELL_MODEL = './assets/models/cell.glb';
+const CELL_LIGHT_COLOR = 0xff4a30;   // the red emergency light (the cell's only light)
+const CELL_LIGHT_BASE = 1;          // its brightness and how far it pulses
+const CELL_LIGHT_PULSE = 2;
+const CELL_LIGHT_HEIGHT = 1;
+const BRICK_RANGE = 3;               // how close you must be to pick it up
+const BRICK_HOLD_DISTANCE = 1.4;
+const BRICK_THROW_SPEED = 15;
+const GRAVITY = 9.8;
+
 export class Level1{
 
-  constructor(scene){
+  constructor(scene, camera){
     this.name = 'Control Room';
     this.scene = scene;
+    this.camera = camera || null;   // the player's camera (used to place Voss in the cell)
 
     this.width = window.innerWidth;
     this.height = window.innerHeight;
@@ -107,6 +121,37 @@ export class Level1{
 
     // Which room lights keep working (stuttering) while the power is out
     this._flicker = new Set();
+
+    // The starting cell: break the window with the brick, the door unlocks, walk out
+    this.inCell = true;            // false once Voss has left (or if the model has no cell)
+    this.door = null;              // the door leaf (its handle is parented to the same pivot)
+    this.doorPivot = null;
+    this.doorOpening = false;
+    this.doorOpen = false;
+    this.window = null;            // { glass, source, shards, box, broken }
+    this.brick = null;
+    this.brickHeld = false;
+    this.brickFlying = false;
+    this.onBrickPickedUp = null;   // set by the Game (shows a hint)
+    this.onWindowBroken = null;    // set by the Game (optional)
+    this.onLeftCell = null;        // set by the Game (optional)
+    this._brickVel = new THREE.Vector3();
+    this._brickStart = new THREE.Vector3();
+    this._doorCentre = new THREE.Vector3();
+    this._doorwayCentre = new THREE.Vector3();
+    this._doorOpenAngle = -Math.PI / 2;
+    this._doorOpenAt = -1;
+    this._cellFloorY = 0;
+    this._shards = [];             // window pieces in flight
+    this._glassMaterial = null;
+    this._cellLightPos = new THREE.Vector3();
+    this._cellLightLevel = 0;      // fades to 0 once Voss leaves, freeing its light slot
+    this._cellLightTarget = 0;
+    this._cam = this.camera;
+    this._rc = new THREE.Raycaster();
+    this._tmpA = new THREE.Vector3();
+    this._tmpB = new THREE.Vector3();
+    this._tmpC = new THREE.Vector3();
 
     this.time = 0;
 
@@ -224,8 +269,20 @@ export class Level1{
   async buildRoom(){
     try {
       const gltfLoader = new GLTFLoader();
-      const roomGlb = await gltfLoader.loadAsync('./assets/models/controlroom.glb');
+      const [roomGlb, cellGlb] = await Promise.all([
+        gltfLoader.loadAsync('./assets/models/controlroom.glb'),
+        new GLTFLoader().loadAsync(CELL_MODEL).catch((e) => {
+          console.error('Failed to load cell.glb; starting in the control room:', e);
+          return null;
+        })
+      ]);
       const ctrlRoom = roomGlb.scene;
+
+      // The cell becomes part of the room, so the walls, floor and door collide like
+      // everything else (and the bounds below include it)
+      if (cellGlb) {
+        for (const node of [...cellGlb.scene.children]) ctrlRoom.add(node);
+      }
 
       const box = new THREE.Box3().setFromObject(ctrlRoom);
       this.bounds = { minX: box.min.x, maxX: box.max.x,
@@ -239,7 +296,10 @@ export class Level1{
         // GLTFLoader strips dots from node names ("Plane.066" -> "Plane066")
         const cleanName = child.name.replace(/\./g, '');
 
-        if(child.isMesh){
+        if (child.isMesh && this._isCellGlass(cleanName)) {
+          // The cell window and its fracture pieces stay see-through
+          child.material = this._getGlassMaterial();
+        } else if(child.isMesh){
           child.castShadow = true;
           // NOTE: ShaderMaterial has no shadow chunks yet, so nothing actually
           // receives shadows; flags kept for when the shader supports it
@@ -289,6 +349,8 @@ export class Level1{
       this.scene.add(this.room);
       this.room.updateMatrixWorld(true);
 
+      this._setUpCell();
+
       // Collect monitor screens from the 3D model
       if (this.ariaManager) {
         this.ariaManager.collectMonitors(this.room);
@@ -313,6 +375,7 @@ export class Level1{
     } catch (error) {
         console.error('Failed to load controlroom.glb:', error);
         console.log('Stuck in purgatory')
+        this.inCell = false;
         this.defaultRoom();
     }
 
@@ -437,6 +500,7 @@ onRingPuzzleComplete() {
     if (this.relay) this._interactables.push(this.relay.root);
     if (this.torch && !this.hasTorch) this._interactables.push(this.torch);
     if (this.ringPuzzle) this._interactables.push(this.ringPuzzle.hub);
+    if (this.brick && this.brick.visible) this._interactables.push(this.brick);
   }
 
   _isGeneratorPart(object) {
@@ -456,12 +520,14 @@ onRingPuzzleComplete() {
   dispose() {
     this.ariaManager?.dispose();
     this.sparks.dispose();
-    for (const object of [this.room, this.torch, this.relay?.root, this.ringPuzzle?.hub]) {
+    for (const object of [this.room, this.torch, this.brick, ...this._shards, this.relay?.root, this.ringPuzzle?.hub]) {
       if (!object) continue;
       object.traverse((o) => o.geometry?.dispose?.());
       this.scene.remove(object);
     }
     for (const material of this.shaderMaterials) material.dispose();
+    this._glassMaterial?.dispose();
+    this._shards.length = 0;
     
     this.shaderMaterials.length = 0;
     this.lights.length = 0;
@@ -486,6 +552,10 @@ onRingPuzzleComplete() {
   // Text for the on-screen prompt while looking at an object, or null for none.
   // The torch and the generator stay locked until the player has talked to ARIA.
   getInteractPrompt(object, distance) {
+    if (object === this.brick) {
+      if (this.brickHeld) return 'Click: throw   E: drop';
+      return this.canInteract(object, distance) ? 'Click or press E to pick up the brick' : null;
+    }
     if (object === this.wallMonitor) {
   if (!this.ringPuzzleSolved) {
     return distance <= Level1.MONITOR_RANGE ? 'The monitor is dead. No power' : null;
@@ -517,6 +587,9 @@ onRingPuzzleComplete() {
 
   // Range checks only: the "locked" messages are shown from onInteract
   canInteract(object, distance) {
+    if (object === this.brick) {
+      return !this.brickHeld && distance <= BRICK_RANGE && this._clearLineTo(object.position, distance);
+    }
     if (object === this.wallMonitor) {
       return this.talkEnabled && distance <= Level1.MONITOR_RANGE;
     }
@@ -536,6 +609,10 @@ onRingPuzzleComplete() {
   }
 
   onInteract(object, options = {}) {
+    if (object === this.brick) {
+      this._pickUpBrick();
+      return;
+    }
     if (object === this.wallMonitor) {
   if (!this.ringPuzzleSolved) {
     this.onLockedHint?.('The monitor is dead. Something on the wall panel controls its power.');
@@ -581,6 +658,7 @@ onRingPuzzleComplete() {
 
   // What the on-screen waypoint should point at right now (or null)
   getWaypoint() {
+    if (this.inCell) return this._cellWaypoint();
     const w = this._waypoint;
     if (!this.ringPuzzleSolved && this.ringPuzzle) {
       w.position.copy(this.ringPuzzle.hub.position);
@@ -615,6 +693,391 @@ onRingPuzzleComplete() {
 
   toggleFlashlight() {
     if (this.hasTorch) this.flashlightOn = !this.flashlightOn;
+  }
+
+
+  // ---------------------------------------------------------
+  // The starting cell
+  // ---------------------------------------------------------
+  _isCellGlass(cleanName) {
+    return cleanName.startsWith('window');
+  }
+
+  _getGlassMaterial() {
+    if (!this._glassMaterial) {
+      this._glassMaterial = new THREE.MeshBasicMaterial({
+        color: 0x9fd8ff, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false
+      });
+    }
+    return this._glassMaterial;
+  }
+
+  // Finds a node by name, ignoring the dots GLTFLoader strips ("window.001" -> "window001")
+  _findNode(name) {
+    let found = null;
+    this.room.traverse((c) => {
+      if (!found && c.name.replace(/\./g, '') === name) found = c;
+    });
+    return found;
+  }
+
+  // True when nothing solid (apart from the window glass) is between the camera and `point`
+  _clearLineTo(point, distance) {
+    const cam = this._cam;
+    if (!cam || !this.room) return true;
+    const dir = this._tmpA.copy(point).sub(cam.position).normalize();
+    this._rc.set(cam.position, dir);
+    this._rc.far = Math.max(0, distance - 0.05);
+    const blocker = this._rc.intersectObject(this.room, true)
+      .find((h) => !this._isCellGlass(h.object.name.replace(/\./g, '')));
+    return !blocker;
+  }
+
+  _setUpCell() {
+    const spawn = this._findNode('spawn');
+    if (!this._findNode('cell') || !spawn) {
+      this.inCell = false;   // no cell in the model: the game starts in the control room
+      return;
+    }
+    this._setUpDoor(this._findNode('door'), this._findNode('Vert'), this._findNode('frame'));
+    this._setUpWindow(this._findNode('window'), this._findNode('window001'));
+
+    // Under the spawn point: where the floor is (shards and the brick rest on it)
+    const spawnPos = spawn.getWorldPosition(new THREE.Vector3());
+    this._rc.set(new THREE.Vector3(spawnPos.x, spawnPos.y + 1, spawnPos.z), new THREE.Vector3(0, -1, 0));
+    this._rc.far = 6;
+    const floor = this._rc.intersectObject(this.room, true)[0];
+    this._cellFloorY = floor ? floor.point.y : 0;
+
+    this._buildBrick(spawnPos);
+
+    // The cell's single light, over the middle of the room
+    const cellBox = new THREE.Box3().setFromObject(this._findNode('cell'));
+    cellBox.getCenter(this._cellLightPos);
+    this._cellLightPos.y = Math.min(CELL_LIGHT_HEIGHT, cellBox.max.y - 0.5);
+    this._cellLightLevel = this._cellLightTarget = 1;
+
+    // Voss wakes up on the spawn point, facing the door
+    if (this.camera) {
+      this.camera.position.copy(spawnPos);
+      this.camera.lookAt(this._doorwayCentre.x, spawnPos.y, this._doorwayCentre.z);
+    }
+  }
+
+  // The door's geometry is baked around the world origin, so it is parented to a pivot on
+  // its hinge edge. The handle goes on the same pivot, so it swings with the door. The
+  // handle marks the latch side; the hinge is the opposite edge.
+  _setUpDoor(door, handle, frame) {
+    if (!door) {
+      console.warn('The cell door was not found in cell.glb');
+      return;
+    }
+    this.room.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(door);
+    box.getCenter(this._doorCentre);
+
+    const handleX = handle
+      ? new THREE.Box3().setFromObject(handle).getCenter(this._tmpA).x
+      : box.min.x;
+    const hingeAtMax = handleX < this._doorCentre.x;
+    const hingeX = hingeAtMax ? box.max.x : box.min.x;
+    const freeX = hingeAtMax ? box.min.x : box.max.x;
+
+    const pivot = new THREE.Object3D();
+    pivot.name = 'DoorPivot';
+    pivot.position.set(hingeX, 0, this._doorCentre.z);
+    this.room.add(pivot);
+    pivot.updateMatrixWorld(true);
+    pivot.attach(door);
+    if (handle) pivot.attach(handle);
+
+    // Swing away from the player: out of the cell (towards -z)
+    this._doorOpenAngle = Math.sign(freeX - hingeX) * (Math.PI / 2);
+    this.door = door;
+    this.doorPivot = pivot;
+
+    const doorway = frame ? new THREE.Box3().setFromObject(frame) : box;
+    doorway.getCenter(this._doorwayCentre);
+    this._doorwayCentre.y = 1.5;
+  }
+
+  _setUpWindow(glass, source) {
+    const shards = [];
+    this.room.traverse((c) => {
+      if (c.isMesh && c.name.replace(/\./g, '').startsWith('window001_cell')) shards.push(c);
+    });
+    if (!glass || shards.length === 0) {
+      console.warn('The cell window or its fracture pieces were not found in cell.glb');
+      return;
+    }
+
+    // The pieces are modelled in place, but their origin may not be at their centre:
+    // re-centre each one so it tumbles around itself instead of around the world origin
+    const centre = new THREE.Vector3();
+    for (const shard of shards) {
+      shard.geometry.computeBoundingBox();
+      shard.geometry.boundingBox.getCenter(centre);
+      if (centre.lengthSq() > 1e-6) {
+        shard.updateMatrix();
+        const placed = centre.clone().applyMatrix4(shard.matrix);
+        shard.geometry.translate(-centre.x, -centre.y, -centre.z);
+        shard.position.copy(placed);
+      }
+      shard.visible = false;   // hidden until the glass breaks
+    }
+    if (source) source.visible = false;   // the duplicate the pieces were cut from
+
+    const box = new THREE.Box3().setFromObject(glass);
+    box.expandByScalar(0.25);
+    this.window = { glass, source, shards, box, broken: false };
+  }
+
+  _buildBrick(spawnPos) {
+    const geo = new THREE.BoxGeometry(0.35, 0.2, 0.2);
+    this.brick = new THREE.Mesh(geo, this._makeLevelMaterial({ color: new THREE.Color(0x888888) }));
+    this.brick.name = 'Brick';
+    this.brick.castShadow = true;
+    this.scene.add(this.brick);   // not part of the room, so it never blocks the player
+
+    this.brick.position.set(spawnPos.x + 1, this._cellFloorY + 0.1, spawnPos.z - 1);
+    this._brickStart.copy(this.brick.position);
+  }
+
+  _pickUpBrick() {
+    if (!this.brick || this.brickHeld) return;
+    this.brickHeld = true;
+    this.brickFlying = false;
+    this.onBrickPickedUp?.();
+  }
+
+  _dropBrick() {
+    this.brickHeld = false;
+    this.brickFlying = true;
+    this._brickVel.set(0, 0, 0);
+  }
+
+  _throwBrick() {
+    const cam = this._cam;
+    if (!cam) return;
+    cam.getWorldDirection(this._tmpA);
+    this._brickVel.copy(this._tmpA).multiplyScalar(BRICK_THROW_SPEED);
+    this.brickHeld = false;
+    this.brickFlying = true;
+  }
+
+  // Called by the Game for a click or E while something is in Voss's hands.
+  // Click throws, E drops. Returns true when it handled the input.
+  handleHeldItem(options = {}) {
+    if (!this.brickHeld) return false;
+    if (options.fromKey) this._dropBrick();
+    else this._throwBrick();
+    return true;
+  }
+
+  openDoor() {
+    if (!this.doorPivot || this.doorOpening || this.doorOpen || this._doorOpenAt >= 0) return;
+    this._doorOpenAt = this.time + 0.7;   // a beat after the glass goes, so it reads
+  }
+
+  shatterWindow(impactPoint) {
+    const w = this.window;
+    if (!w || w.broken) return;
+    w.broken = true;
+
+    // Remove the glass (and the hidden duplicate): raycasts ignore `visible`, so left in
+    // the room they would block the doorway
+    w.glass.removeFromParent();
+    w.source?.removeFromParent();
+
+    const worldPos = new THREE.Vector3();
+    for (const shard of w.shards) {
+      shard.visible = true;
+      this.scene.attach(shard);   // frees the piece from the room, so it can fall
+      shard.getWorldPosition(worldPos);
+
+      const outward = worldPos.clone().sub(impactPoint);
+      if (outward.lengthSq() < 1e-4) outward.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
+      outward.normalize();
+
+      const velocity = outward.multiplyScalar(2 + Math.random() * 3);
+      velocity.y += 1 + Math.random() * 2;   // slight upward pop
+      shard.userData.velocity = velocity;
+      shard.userData.spin = new THREE.Vector3(
+        (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6
+      );
+      shard.userData.age = 0;
+      this._shards.push(shard);
+    }
+
+    this.onWindowBroken?.();
+    this.openDoor();
+  }
+
+  _updateCell(delta, playerPosition, camera) {
+    if (camera) this._cam = camera;
+    if (!this.brick) return;
+
+    this._updateBrick(delta);
+    this._updateShards(delta);
+
+    // The door unlocks a beat after the glass breaks, then swings open
+    if (this._doorOpenAt >= 0 && this.time >= this._doorOpenAt) {
+      this._doorOpenAt = -1;
+      this.doorOpening = true;
+    }
+    if (this.doorOpening && this.doorPivot) {
+      const target = this._doorOpenAngle;
+      this.doorPivot.rotation.y = THREE.MathUtils.lerp(this.doorPivot.rotation.y, target, Math.min(1, 4 * delta));
+      if (Math.abs(this.doorPivot.rotation.y - target) < 0.01) {
+        this.doorPivot.rotation.y = target;
+        this.doorOpening = false;
+        this.doorOpen = true;
+      }
+    }
+
+    // Through the door: the cell is behind Voss now, nothing to load, the control room is right there
+    if (this.inCell && (this.doorOpen || this.doorOpening) && playerPosition &&
+        playerPosition.z < this._doorCentre.z - 0.3 &&
+        Math.abs(playerPosition.x - this._doorCentre.x) < 1.5) {
+      this._leaveCell();
+    }
+
+    // The red light fades out once Voss has left, which frees its light slot
+    this._cellLightLevel += (this._cellLightTarget - this._cellLightLevel) * Math.min(1, delta * 1.5);
+    if (this._cellLightTarget === 0 && this._cellLightLevel < 0.01) this._cellLightLevel = 0;
+  }
+
+  _leaveCell() {
+    this.inCell = false;
+    this._cellLightTarget = 0;
+    // The brick stays behind in the cell
+    this.brickHeld = false;
+    this.brickFlying = false;
+    this.brick.visible = false;
+    this._rebuildInteractables();
+    this.onLeftCell?.();
+  }
+
+  _updateBrick(delta) {
+    const brick = this.brick;
+    const cam = this._cam;
+    if (!brick.visible) return;
+
+    if (this.brickHeld && cam) {
+      // Carried in front of Voss, a little below the crosshair
+      cam.getWorldDirection(this._tmpA);
+      brick.position.copy(cam.position).addScaledVector(this._tmpA, BRICK_HOLD_DISTANCE);
+      brick.position.y -= 0.3;
+      brick.quaternion.copy(cam.quaternion);
+      return;
+    }
+    if (!this.brickFlying) return;
+
+    // One continuous ray per frame from the old position to the new one, so a fast
+    // throw cannot skip through the window or a wall
+    const dt = Math.min(delta, 0.05);
+    this._brickVel.y -= GRAVITY * dt;
+    const step = this._tmpA.copy(this._brickVel).multiplyScalar(dt);
+    const length = step.length();
+    brick.rotation.x += dt * 5;
+    brick.rotation.z += dt * 3;
+
+    if (length > 1e-6) {
+      const dir = this._tmpB.copy(step).divideScalar(length);
+      const prev = brick.position;
+
+      const w = this.window;
+      if (w && !w.broken) {
+        this._rc.set(prev, dir);
+        const entry = this._rc.ray.intersectBox(w.box, this._tmpC);
+        const inside = w.box.containsPoint(prev);
+        if (inside || (entry && prev.distanceTo(entry) <= length)) {
+          this.shatterWindow(inside ? prev.clone() : entry.clone());
+          this._brickVel.multiplyScalar(0.2);   // the glass takes most of its speed
+          return;
+        }
+      }
+
+      this._rc.set(prev, dir);
+      this._rc.far = length + 0.1;
+      const hit = this._rc.intersectObject(this.room, true)
+        .find((h) => !this._isCellGlass(h.object.name.replace(/\./g, '')));
+      if (hit) {
+        const normal = hit.face
+          ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+          : new THREE.Vector3(0, 1, 0);
+        if (normal.dot(dir) > 0) normal.negate();
+        brick.position.copy(hit.point).addScaledVector(normal, 0.1);
+        if (normal.y > 0.5 && this._brickVel.y <= 0) {
+          // Landed: rests on the floor and can be picked up again
+          this._brickVel.set(0, 0, 0);
+          this.brickFlying = false;
+          brick.rotation.set(0, brick.rotation.y, 0);
+        } else {
+          this._brickVel.reflect(normal).multiplyScalar(0.35);
+        }
+      } else {
+        brick.position.add(step);
+      }
+    }
+
+    // Fell out of the world: put it back where it started
+    if (brick.position.y < this._cellFloorY - 10) {
+      brick.position.copy(this._brickStart);
+      brick.rotation.set(0, 0, 0);
+      this._brickVel.set(0, 0, 0);
+      this.brickFlying = false;
+    }
+  }
+
+  // The window pieces fall to the cell floor and stay there
+  _updateShards(delta) {
+    const dt = Math.min(delta, 0.05);
+    for (const shard of this._shards) {
+      const u = shard.userData;
+      if (u.resting) continue;
+      u.age += dt;
+      shard.position.addScaledVector(u.velocity, dt);
+      u.velocity.y -= GRAVITY * dt;
+      shard.rotation.x += u.spin.x * dt;
+      shard.rotation.y += u.spin.y * dt;
+      shard.rotation.z += u.spin.z * dt;
+      if (shard.position.y <= this._cellFloorY + 0.02 || u.age > 6) {
+        shard.position.y = Math.max(shard.position.y, this._cellFloorY + 0.02);
+        u.resting = true;
+      }
+    }
+  }
+
+  getCellObjective() {
+    if (this.doorOpen || this.doorOpening) return 'Leave through the door';
+    if (this.window?.broken) return 'The door is unlocking...';
+    if (this.brickHeld) return 'Throw the brick at the window';
+    return 'Find a way out of the cell';
+  }
+
+  // The marker for the cell stage: the brick, then the window, then the door
+  _cellWaypoint() {
+    const w = this._waypoint;
+    if (this.window && !this.window.broken) {
+      if (this.brickHeld) {
+        // box centre, not getWorldPosition: the window's node origin sits at the world origin
+        this.window.box.getCenter(w.position);
+        w.label = 'Window';
+      } else if (this.brick) {
+        w.position.copy(this.brick.position);
+        w.position.y += 0.3;
+        w.label = 'Brick';
+      } else {
+        return null;
+      }
+    } else if (this.door) {
+      w.position.copy(this._doorwayCentre);
+      w.label = 'Door';
+    } else {
+      return null;
+    }
+    return w;
   }
 
   addLighting(){
@@ -935,9 +1398,12 @@ onRingPuzzleComplete() {
     this._updateGenerator(delta);
     this._updateRelay(delta);
     this.ringPuzzle?.update(delta);
+    this._updateCell(delta, playerPosition, camera);
 
     const flash = this.flashlightOn && camera;
-    const roomCount = Math.min(this.lights.length, MAX_LIGHTS - 1);
+    // The cell's light takes a slot while it is on (the far "Sun" gives up its slot)
+    const cellLightOn = this._cellLightLevel > 0.01;
+    const roomCount = Math.min(this.lights.length, MAX_LIGHTS - 1 - (cellLightOn ? 1 : 0));
     let count = 0;
 
     // Gather light data once per frame instead of once per material
@@ -948,6 +1414,16 @@ onRingPuzzleComplete() {
       this._lightWorldColors[count].copy(light.color);
       this._lightWorldIntensities[count] = LIGHT_FULL * this._lightFactor(i);
       this._lightCones[count].set(-2, -2); // plain point light
+      count++;
+    }
+
+    if (cellLightOn) {
+      // The cell's red emergency light, pulsing
+      this._lightWorldPositions[count].copy(this._cellLightPos);
+      this._lightCones[count].set(-2, -2);
+      this._lightWorldColors[count].set(CELL_LIGHT_COLOR);
+      this._lightWorldIntensities[count] =
+        this._cellLightLevel * (CELL_LIGHT_BASE + Math.sin(this.time * 5) * CELL_LIGHT_PULSE);
       count++;
     }
 

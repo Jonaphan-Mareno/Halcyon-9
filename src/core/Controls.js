@@ -73,10 +73,13 @@ export class Controls {
     this._raycaster.set(this._rayOrigin, this._downVec);
     this._raycaster.far = this.maxRayDistance;
 
-    const hits = this._raycaster.intersectObject(room, true);
-    if (hits.length === 0) return;
+    // The ray starts above the head. A surface higher than the eyes is never the floor:
+    // without this, walking through a doorway puts the ray inside the wall above it, which
+    // hits the underside of the lintel and lifts the camera up to the ceiling.
+    const hit = this._raycaster.intersectObject(room, true).find((h) => h.point.y < pos.y - 0.5);
+    if (!hit) return;
 
-    const targetY = hits[0].point.y + this.eyeHeight;
+    const targetY = hit.point.y + this.eyeHeight;
     pos.y += (targetY - pos.y) * Math.min(1, this.floorSmoothing * delta);
   }
 

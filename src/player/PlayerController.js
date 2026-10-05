@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
+import { Player } from '../entities/Player.js';
 
 // The player for the physics levels (level 2 onwards): a kinematic capsule moved
 // by Rapier's character controller, so it walks up stairs, slides along walls and
 // stands on moving platforms. Mouse looks, WASD moves, Shift runs, Space jumps,
-// V switches between first and third person.
+// V switches between first and third person. The body is Voss's model
+// (entities/Player.js): hands only in first person, the whole body in third.
 //
 // Sizes are metres: Voss is 1.8 m tall. A standing jump rises about 1.6 m (so a 1.2 m cargo
 // container is an easy climb) and a running jump clears about 4.5 m.
@@ -32,7 +34,7 @@ export class PlayerController {
     this.enabled = true;
     this.ready = false;
 
-    this.view = 'third';
+    this.view = 'first';
     this.viewLocked = false;     // true inside the crew quarters, where the camera network does not reach
     this.onViewChange = null;
     this.onRespawn = null;
@@ -67,6 +69,15 @@ export class PlayerController {
     visor.position.set(0, EYE - 0.02, -RADIUS + 0.04);
     this.body.add(torso, visor);
     scene.add(this.body);
+
+    // Voss replaces the placeholder once his model has loaded
+    this.character = new Player(scene);
+    this.character.setMode(this.view);
+    this.character.load().then(() => {
+      this.body.remove(torso, visor);
+      this.body.add(this.character.body);
+    }).catch((e) => console.warn('Player model failed to load; keeping the placeholder.', e));
+    if (import.meta.env.DEV) window.__player = this; // for poking at from the dev console
 
     this._fwd = new THREE.Vector3();
     this._right = new THREE.Vector3();
@@ -141,6 +152,7 @@ export class PlayerController {
   setView(view) {
     if (view === this.view) return;
     this.view = view;
+    this.character.setMode(view);
     this.onViewChange?.(view);
   }
 
@@ -223,6 +235,7 @@ export class PlayerController {
       this.jumpBuffer = 0;
       this.coyote = 0;
       this.grounded = false;
+      this.character.jumped();
     }
     if (!k.jumpHeld && this.velocity.y > 0) this.velocity.y *= Math.exp(-14 * dt);
 
@@ -241,6 +254,9 @@ export class PlayerController {
 
     const t = this.body_rb.translation();
     this.body_rb.setNextKinematicTranslation({ x: t.x + mv.x, y: t.y + mv.y, z: t.z + mv.z });
+    // How fast the body really moves over the ground (zero when pushing into a wall), for the walk cycle
+    const groundSpeed = dt > 0 ? Math.hypot(mv.x, mv.z) / dt : 0;
+    this._groundSpeed = (this._groundSpeed || 0) + (groundSpeed - (this._groundSpeed || 0)) * (1 - Math.exp(-12 * dt));
     this.physics.step(dt);
     const n = this.body_rb.translation();
     this.position.set(n.x, n.y - HEIGHT / 2, n.z);
@@ -257,6 +273,13 @@ export class PlayerController {
     }
 
     this._placeBodyAndCamera(dt, moving);
+    this.character.update(dt, {
+      grounded: this.grounded,
+      speed: this._groundSpeed,
+      verticalSpeed: this.velocity.y,
+      camera: this.camera,
+      bodyYaw: this.facing
+    });
   }
 
   _placeBodyAndCamera(dt, moving) {

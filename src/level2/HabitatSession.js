@@ -5,6 +5,8 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { Physics } from '../core/Physics.js';
 import { PlayerController } from '../player/PlayerController.js';
 import { createHubTextures, applyHubMaterials } from '../graphics/HubMaterials.js';
@@ -91,20 +93,35 @@ export class HabitatSession {
     webgl.shadowMap.enabled = true;
     webgl.shadowMap.type = THREE.PCFShadowMap;
     webgl.shadowMap.autoUpdate = false;
-    webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    // Performance (measured on Intel UHD 620): 4x MSAA cost ~9 ms a frame, so edges are smoothed
+    // by FXAA instead (~1 ms). The glow (bloom) is dropped automatically on slow machines.
+    webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
     const size = new THREE.Vector2();
     webgl.getSize(size);
     const pr = webgl.getPixelRatio();
-    const target = new THREE.WebGLRenderTarget(size.x * pr, size.y * pr, { type: THREE.HalfFloatType, samples: 4 });
+    const target = new THREE.WebGLRenderTarget(size.x * pr, size.y * pr, { type: THREE.HalfFloatType });
     this.composer = new EffectComposer(webgl, target);
     this.composer.addPass(new RenderPass(g.scene, g.camera.instance));
-    this.composer.addPass(new UnrealBloomPass(size.clone(), 0.12, 0.4, 1.0));
+    this.bloom = new UnrealBloomPass(size.clone().multiplyScalar(0.5), 0.12, 0.4, 1.0);
+    this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
+    this.fxaa = new ShaderPass(FXAAShader);
+    this.composer.addPass(this.fxaa);
+    const fitFxaa = () => {
+      const p = webgl.getPixelRatio();
+      this.fxaa.material.uniforms.resolution.value.set(1 / (window.innerWidth * p), 1 / (window.innerHeight * p));
+    };
+    fitFxaa();
+    this.frame = 0;
     g.renderer.render = () => {
-      if (this.aria) this.aria.renderHead(webgl);   // ARIA's face, drawn offscreen for the monitors
+      // ARIA's face is drawn offscreen for the monitors; half rate is plenty for a slow idle face
+      if (this.aria && (this.frame++ & 1) === 0) this.aria.renderHead(webgl);
       this.composer.render();
     };
-    window.addEventListener('resize', () => this.composer.setSize(window.innerWidth, window.innerHeight));
+    window.addEventListener('resize', () => {
+      this.composer.setSize(window.innerWidth, window.innerHeight);
+      fitFxaa();
+    });
     const pmrem = new THREE.PMREMGenerator(webgl);
     g.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     g.scene.environmentIntensity = 0.32;
@@ -123,6 +140,7 @@ export class HabitatSession {
       if (node.name.startsWith('COL_')) model.remove(node);
     }
     // glass and leaves: see-through glass, leaves cut out by their alpha
+    const leafCache = new Map();
     model.traverse((o) => {
       if (!o.isMesh) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -132,14 +150,13 @@ export class HabitatSession {
         if (m.name === 'aria_screen') m.emissiveIntensity *= 0.7;
         if (m.name === 'panel_mint' || m.name === 'panel_blue') m.emissiveIntensity *= 0.3;   // soft tint, not white
         if (m.name.startsWith('palm_leaf') || m.name.startsWith('veg_') || o.name.startsWith('PLANT_')) {
-          m.envMapIntensity = 0.35;     // leaves catch less of the room's reflections, so they don't look lit up
-          m.roughness = Math.max(m.roughness, 0.75);
-          // leaves: cut out by alpha. A low threshold plus alpha-to-coverage (the anti-aliasing blends
-          // the cut edges) keeps thin leaflets from vanishing at a distance
-          m.alphaTest = 0.25;
-          m.alphaToCoverage = true;
-          m.transparent = false;
-          m.side = THREE.DoubleSide;
+          // leaves: cut out by their alpha, both sides drawn. They get the cheaper Lambert lighting
+          // (measured: plants cost ~5 ms a frame with full PBR)
+          if (!leafCache.has(m)) {
+            leafCache.set(m, new THREE.MeshLambertMaterial({
+              name: m.name, color: m.color, map: m.map || null, alphaTest: 0.25, side: THREE.DoubleSide
+            }));
+          }
         } else if (m.name === 'glass' || m.name === 'glass_broken') {
           realGlass(m, m.name === 'glass' ? 0.18 : 0.4);
         } else if (m.opacity < 1) {
@@ -147,6 +164,10 @@ export class HabitatSession {
           m.depthWrite = false;
         }
       }
+    });
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      o.material = Array.isArray(o.material) ? o.material.map((m) => leafCache.get(m) || m) : (leafCache.get(o.material) || o.material);
     });
     this.hubTextures = this.hubTextures || createHubTextures();
     applyHubMaterials(model, this.hubTextures);
@@ -187,8 +208,11 @@ export class HabitatSession {
     this.sea = new DeepSeaWindow({ radius: 17.9, a0: 62, a1: 118, bottom: 0.8, height: 4.2, clear: true });
     scene.add(this.sea.mesh);
 
-    // soft, calm light (not glaring): a gentle sky light, the skylight panel, two fills, the lift
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x8c949c, 0.22));
+    // Two lights only: a soft sky light and the sun through the skylight (which also casts every
+    // shadow, the lab's included). Measured on Intel UHD 620: three extra fill lights and the lab's
+    // spotlight cost ~14 ms a frame, because every light is worked out for every pixel on screen.
+    // The room's reflections (environment) fill in the rest.
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8c949c, 0.42));
     // daylight-like light from the skylight: even, no hot spot on the ceiling
     // (the main light, so its shadows read; the sky light and reflections are the soft fill)
     const sky = new THREE.DirectionalLight(0xfaf6ee, 1.9);
@@ -197,7 +221,9 @@ export class HabitatSession {
     // once like the lab's. The ceiling and skylight do not block it.
     sky.castShadow = true;
     sky.shadow.mapSize.set(2048, 2048);
-    Object.assign(sky.shadow.camera, { left: -20, right: 20, top: 20, bottom: -20, near: 1, far: 50 });
+    sky.target.position.set(0, 0, -5);                     // aimed a little north so the lab is covered too
+    Object.assign(sky.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 60 });
+    scene.add(sky.target);
     sky.shadow.bias = -0.0005;
     sky.shadow.normalBias = 0.03;
     scene.add(sky);
@@ -222,11 +248,6 @@ export class HabitatSession {
       }
     });
     this.flicker = 0;
-    for (const [x, y, z, intensity, dist] of [[10, 7, 6, 55, 30], [-10, 7, -6, 55, 30], [0, 3.2, 19.1, 10, 6]]) {
-      const l = new THREE.PointLight(0xf4f9ff, intensity, dist, 2);
-      l.position.set(x, y, z);
-      scene.add(l);
-    }
   }
 
   // ARIA on every monitor (the ARIA_ markers from the model), idling for now. Same face and
@@ -285,19 +306,7 @@ export class HabitatSession {
         if (m.name === 'goo_glow' && !this.gooMats.includes(m)) this.gooMats.push(m);
       }
     });
-    // the lab's ceiling light: a wide spotlight, the lab's main light, casting the shadows that sit
-    // the objects on the desks and floor (strong enough to stand out from the soft fill light;
-    // its reach ends at the lab's walls)
-    this.labLight = new THREE.SpotLight(0xc4e4ff, 140, 11, 1.15, 0.7, 2);
-    this.labLight.position.set(0, 9.5, -22.4);
-    this.labLight.target.position.set(0, 5.5, -22.4);
-    this.labLight.castShadow = true;
-    this.labLight.shadow.mapSize.set(2048, 2048);
-    this.labLight.shadow.bias = -0.0004;
-    this.labLight.shadow.normalBias = 0.02;
-    this.labLight.shadow.camera.near = 0.5;
-    this.labLight.shadow.camera.far = 11;
-    this.game.scene.add(this.labLight, this.labLight.target);
+    // the lab's things cast and catch the sun's shadows (no light of its own: see the lights in _load)
     lab.traverse((o) => {
       if (!o.isMesh) return;
       // (meshes with several materials load as numbered parts, e.g. Lab_Furniture_3)
@@ -315,7 +324,7 @@ export class HabitatSession {
     } catch (e) {
       webgl.compile(this.game.scene, this.game.camera.instance);
     }
-    this.game.renderer.instance.shadowMap.needsUpdate = true;   // draw the lab's shadows once
+    this.game.renderer.instance.shadowMap.needsUpdate = true;   // draw the shadows once (nothing casting them moves)
     this.composer.render();
   }
 
@@ -337,22 +346,75 @@ export class HabitatSession {
     this.labDoorOpen = THREE.MathUtils.clamp(this.labDoorOpen + (near ? dt : -dt) / 0.7, 0, 1);
     const ld = this.labDoorOpen * this.labDoorOpen * (3 - 2 * this.labDoorOpen);
     for (const d of this.labDoors) d.node.position.lerpVectors(d.closed, d.open, ld);
-    // the organism, its readings, the spills and the lab light all follow its surges
-    this.organism.update(dt);
-    const surge = this.organism.surge;
-    this.labScreens.update(dt, surge);
-    this.holoScreens.update(dt, surge);
+    // the organism, its readings and the spills follow its surges. Only animated while you are in
+    // or near the lab (redrawing the screens costs time); the lab is north of the gallery door.
+    const p = this.controls.position;
+    const nearLab = p.y > 4 && p.z < -12;
+    if (nearLab) {
+      this.organism.update(dt);
+      this.labScreens.update(dt, this.organism.surge);
+      this.holoScreens.update(dt, this.organism.surge);
+      for (const m of this.gooMats) m.emissiveIntensity = 0.3 + 0.12 * Math.sin(this.organism.time * 2.3) + this.organism.surge * 0.7;
+    }
     // sparks crackle from the damaged wiring; the dangling light stutters, cutting out on each crackle
     this.sparks.update(dt);
     if (this.sparks.burstNow) this.flicker = 0.35;
     this.flicker = Math.max(0, this.flicker - dt);
     const buzz = this.flicker > 0 ? (Math.random() < 0.5 ? 0.05 : 1.6) : (Math.random() < 0.015 ? 0.1 : 1.0);
     for (const m of this.flickerMats) m.emissiveIntensity = buzz * 1.4;
-    for (const m of this.gooMats) m.emissiveIntensity = 0.3 + 0.12 * Math.sin(this.organism.time * 2.3) + surge * 0.7;
-    this.labLight.intensity = 140 + surge * 100;
     // ARIA idles on every screen (not AriaManager.update, which shows her on the nearest one only)
     this.aria.ariaMaterial.uniforms.uTime.value += dt;
     if (this.aria.useHead) this.aria.head.update(dt);
     g.reticle.classList.toggle('visible', this.controls.view === 'first');
+    this._perf(delta, playing);
+  }
+
+  // A small frame counter (top right; F3 hides it), and automatic quality: if the first few
+  // seconds of play run slowly, the glow is switched off, then the resolution lowered a little.
+  _perf(delta, playing) {
+    if (!this.fpsEl) {
+      this.fpsEl = document.createElement('div');
+      this.fpsEl.style.cssText = 'position:fixed;top:8px;right:10px;z-index:50;font:12px monospace;color:#cfefff;' +
+        'background:rgba(4,18,27,0.7);padding:3px 7px;border-radius:4px;pointer-events:none';
+      document.body.appendChild(this.fpsEl);
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'F3') { e.preventDefault(); this.fpsEl.style.display = this.fpsEl.style.display === 'none' ? '' : 'none'; }
+      });
+      this.fpsFrames = 0;
+      this.fpsTime = 0;
+      this.qualityTime = 0;
+      this.qualityFrames = 0;
+      this.qualityStep = 0;
+    }
+    this.fpsFrames++;
+    this.fpsTime += delta;
+    if (this.fpsTime >= 0.5) {
+      const fps = this.fpsFrames / this.fpsTime;
+      this.fpsEl.textContent = Math.round(fps) + ' fps  ' + (1000 / fps).toFixed(1) + ' ms' +
+        (this.qualityStep ? '  (quality ' + ['', 'medium', 'low'][this.qualityStep] + ')' : '');
+      this.fpsFrames = 0;
+      this.fpsTime = 0;
+    }
+    // automatic quality: judge each 4 seconds of play, at most twice
+    // (not while the tab is hidden, and ignoring one-off stalls: the browser slows hidden tabs down)
+    if (!playing || this.qualityStep >= 2 || document.hidden || delta > 0.2) return;
+    this.qualityTime += delta;
+    this.qualityFrames++;
+    if (this.qualityTime < 4) return;
+    const avg = this.qualityTime / this.qualityFrames;
+    this.qualityTime = 0;
+    this.qualityFrames = 0;
+    if (avg <= 1 / 40) { this.qualityStep = 2; return; }      // smooth enough: stop checking
+    const webgl = this.game.renderer.instance;
+    if (this.bloom.enabled) {
+      this.bloom.enabled = false;
+      this.qualityStep = 1;
+    } else {
+      webgl.setPixelRatio(Math.min(webgl.getPixelRatio(), 0.8));
+      this.composer.setSize(window.innerWidth, window.innerHeight);
+      const pr = webgl.getPixelRatio();
+      this.fxaa.material.uniforms.resolution.value.set(1 / (window.innerWidth * pr), 1 / (window.innerHeight * pr));
+      this.qualityStep = 2;
+    }
   }
 }

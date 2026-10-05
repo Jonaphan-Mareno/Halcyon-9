@@ -272,7 +272,7 @@ export class DeepSeaWindow {
   update(delta, camera = null) {
     this.time += delta;
     this._acc += delta;
-    if (this._acc < 1 / 20) return;   // 20 frames a second is plenty for slow swimmers
+    if (this._acc < 1 / 12) return;   // 12 frames a second is plenty for slow swimmers (each redraw costs time)
     this._acc = 0;
     // Redrawing and re-uploading the picture costs time, so skip it while the window is off screen
     if (camera) {

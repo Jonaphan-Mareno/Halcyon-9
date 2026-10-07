@@ -5,8 +5,9 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 // Voss, the scientist (human_scientist.glb, built in Blender from cvg.blend).
 //
 // One file holds the rig, the body parts and every clip:
-//   Idle, Walk, Jump, Jump_Up, Fall, Land  - the full body, all in place
-//   FP_Idle, FP_Walk, FP_Jump             - the arms only, posed for the first-person view
+//   Idle, Walk, Run, Jump, Jump_Up, Fall, Land  - the full body, all in place
+//   Crouch                                      - a pose, layered additively over Idle/Walk
+//   FP_Idle, FP_Walk, FP_Run, FP_Jump           - the arms only, posed for the first-person view
 // Body parts are separate meshes so a view can show just some of them:
 //   Coat_Torso, Sleeves, Hands, Shirt, Pants, Head, Hair, Glasses
 //
@@ -24,8 +25,14 @@ const MODEL_HEIGHT = 1.394;
 // Between the eyes, in model space (glTF axes, before the half turn below)
 const EYE = new THREE.Vector3(0, 1.300, 0.051);
 
-// Walk clip: a planted foot travels 1.356 m/s at model scale
+// How fast a planted foot travels at model scale: game speed / (this * scale) = clip speed
 const WALK_STRIDE_SPEED = 1.356;
+const RUN_STRIDE_SPEED = 2.463;
+// The run plays while the run key is held and the body is moving at least this fast (m/s)
+const RUN_MIN_SPEED = 4.0;
+// Where each gait's cycle starts relative to the other (left foot about to plant), so
+// switching between walk and run keeps the feet in step
+const GAIT_PHASE = { Walk: 0.32, Run: 0.0 };
 
 const FIRST_PERSON_PARTS = ['Sleeves', 'Hands'];
 
@@ -91,12 +98,26 @@ class Animator {
     return !!this.actions[name];
   }
 
-  // Loops unless `once`; a one-shot holds its last frame until something else plays
-  play(name, { fade = FADE, once = false, restart = false } = {}) {
+  // Loops unless `once`; a one-shot holds its last frame until something else plays.
+  // `phaseFrom`: start at the same point in the cycle as the clip being replaced
+  // (offsets per clip in GAIT_PHASE), so walk <-> run keeps the feet in step.
+  play(name, { fade = FADE, once = false, restart = false, phaseFrom = null } = {}) {
     const next = this.actions[name];
     if (!next) return null;
     if (next === this.current && !restart) return next;
-    next.reset();
+    const prev = this.current;
+    // Still fading out from a moment ago: pick it back up instead of restarting it,
+    // so quick back-and-forth switches never leave the weights short of 1
+    const fadingOut = next.isRunning() && next.getEffectiveWeight() > 0;
+    if (restart || !fadingOut) next.reset();
+    else next.stopFading();
+    if (phaseFrom && prev && !fadingOut) {
+      const from = prev.getClip().name;
+      if (from in phaseFrom && name in phaseFrom) {
+        const phase = prev.time / prev.getClip().duration - phaseFrom[from] + phaseFrom[name];
+        next.time = (((phase % 1) + 1) % 1) * next.getClip().duration;
+      }
+    }
     next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity);
     next.clampWhenFinished = once;
     next.enabled = true;
@@ -168,7 +189,7 @@ export class Player {
 
     // Clips by name; anything missing is reported once so a bad export is obvious
     const clips = gltf.animations;
-    const wanted = ['Idle', 'Walk', 'Jump', 'Jump_Up', 'Fall', 'Land', 'FP_Idle', 'FP_Walk', 'FP_Jump'];
+    const wanted = ['Idle', 'Walk', 'Run', 'Jump', 'Jump_Up', 'Fall', 'Land', 'Crouch', 'FP_Idle', 'FP_Walk', 'FP_Run', 'FP_Jump'];
     const missing = wanted.filter((n) => !clips.some((c) => c.name === n));
     if (missing.length) console.warn('Player: clips missing from', MODEL, missing);
 
@@ -198,7 +219,20 @@ export class Player {
     }
     this.viewModel.add(fpRoot);
 
-    this.anim = new Animator(bodyRoot, clips.filter((c) => !c.name.startsWith('FP_')));
+    this.anim = new Animator(bodyRoot, clips.filter((c) => !c.name.startsWith('FP_') && c.name !== 'Crouch'));
+    // Crouch is a pose made additive against its first frame (the rest pose), held at its
+    // last frame; its weight sinks Voss into a crouch on top of whatever else is playing
+    const crouch = clips.find((c) => c.name === 'Crouch');
+    if (crouch) {
+      const additive = THREE.AnimationUtils.makeClipAdditive(crouch.clone(), 0);
+      this.crouchAction = this.anim.mixer.clipAction(additive);
+      this.crouchAction.setLoop(THREE.LoopOnce, 1);
+      this.crouchAction.clampWhenFinished = true;
+      this.crouchAction.play();
+      this.crouchAction.time = additive.duration;
+      this.crouchAction.paused = true;
+      this.crouchAction.setEffectiveWeight(0);
+    }
     this.fpAnim = new Animator(fpRoot, clips.filter((c) => c.name.startsWith('FP_')));
     this.anim.play('Idle', { fade: 0 });
     this.fpAnim.play('FP_Idle', { fade: 0 });
@@ -267,9 +301,19 @@ export class Player {
 
   // Per frame, after the controller has moved the body and placed the camera.
   // speed: horizontal ground speed (m/s). camera: the game camera. bodyYaw: body facing.
-  update(dt, { grounded, speed, verticalSpeed, camera, bodyYaw }) {
+  // crouch: 0 standing .. 1 fully crouched (eased by the controller).
+  // running: the run key is held (and Voss is not crouched).
+  update(dt, { grounded, speed, verticalSpeed, camera, bodyYaw, crouch = 0, running: runKey = false }) {
     if (!this.ready) return;
+    // Undo last frame's head turn first: the mixer must only ever see the clips' own pose,
+    // otherwise a crossfade blends the old turn back in and the next turn adds to it
+    if (this._neckBase) {
+      this.neck.quaternion.copy(this._neckBase);
+      this.head.quaternion.copy(this._headBase);
+    }
     const moving = speed > 0.4;
+    const running = runKey && speed > RUN_MIN_SPEED && crouch < 0.5;
+    const gait = !moving ? 'Idle' : running && this.anim.has('Run') ? 'Run' : 'Walk';
 
     // ---------- third-person body: idle / walk / jump / fall / land ----------
     if (!grounded) this._airTime += dt;
@@ -298,22 +342,25 @@ export class Player {
       if (moving && this._landTimer < 0.18) this._landTimer = 0; // moving off quickly: blend straight into the walk
     } else {
       this.state = 'ground';
-      this.anim.play(moving ? 'Walk' : 'Idle', { fade: moving ? 0.15 : 0.25 });
+      this.anim.play(gait, { fade: moving ? 0.18 : 0.25, phaseFrom: GAIT_PHASE });
     }
+    this.crouchAction?.setEffectiveWeight(THREE.MathUtils.clamp(crouch, 0, 1));
 
-    // Walk speed follows the ground speed so the feet keep (roughly) planted
-    const walk = this.anim.actions.Walk;
-    const strideSpeed = WALK_STRIDE_SPEED * this.scale;
-    if (walk) walk.timeScale = THREE.MathUtils.clamp(speed / strideSpeed, 0.6, 2.4);
+    // Walk and run speeds follow the ground speed so the feet keep (roughly) planted
+    const walkRate = THREE.MathUtils.clamp(speed / (WALK_STRIDE_SPEED * this.scale), 0.6, 2.4);
+    const runRate = THREE.MathUtils.clamp(speed / (RUN_STRIDE_SPEED * this.scale), 0.8, 1.8);
+    if (this.anim.actions.Walk) this.anim.actions.Walk.timeScale = walkRate;
+    if (this.anim.actions.Run) this.anim.actions.Run.timeScale = runRate;
 
     // ---------- first-person arms ----------
+    const fpGait = gait === 'Run' && this.fpAnim.has('FP_Run') ? 'FP_Run' : moving ? 'FP_Walk' : 'FP_Idle';
     if (grounded && !this.fpAnim.is('FP_Jump')) {
-      this.fpAnim.play(moving ? 'FP_Walk' : 'FP_Idle', { fade: 0.25 });
+      this.fpAnim.play(fpGait, { fade: 0.25 });
     } else if (grounded && this.fpAnim.finished('FP_Jump')) {
-      this.fpAnim.play(moving ? 'FP_Walk' : 'FP_Idle', { fade: 0.2 });
+      this.fpAnim.play(fpGait, { fade: 0.2 });
     }
-    const fpWalk = this.fpAnim.actions.FP_Walk;
-    if (fpWalk) fpWalk.timeScale = THREE.MathUtils.clamp(speed / strideSpeed, 0.6, 2.4);
+    if (this.fpAnim.actions.FP_Walk) this.fpAnim.actions.FP_Walk.timeScale = walkRate;
+    if (this.fpAnim.actions.FP_Run) this.fpAnim.actions.FP_Run.timeScale = runRate;
 
     this.anim.update(dt);
     this.fpAnim.update(dt);
@@ -337,6 +384,10 @@ export class Player {
     const k = 1 - Math.exp(-LOOK_SMOOTHING * dt);
     this.lookYaw += (targetYaw - this.lookYaw) * k;
     this.lookPitch += (targetPitch - this.lookPitch) * k;
+
+    // Remember the clips' pose so the next frame can start from it (see update)
+    this._neckBase = (this._neckBase || new THREE.Quaternion()).copy(this.neck.quaternion);
+    this._headBase = (this._headBase || new THREE.Quaternion()).copy(this.head.quaternion);
 
     this.body.updateWorldMatrix(true, true);
     // The body's right side in world space: the axis to nod around

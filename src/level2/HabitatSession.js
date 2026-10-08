@@ -49,6 +49,7 @@ export class HabitatSession {
     this.ready = false;
     this.doorOpen = 0;
     this.doors = [];
+    this.doorColliders = {};   // DOOR_ nodes keep their collider here so it can be removed on open
     const camera = game.camera.instance;
     camera.far = 300;
     camera.updateProjectionMatrix();
@@ -119,7 +120,10 @@ export class HabitatSession {
     const model = gltf.scene;
     model.updateMatrixWorld(true);
     for (const node of [...model.children]) {
-      if (SOLID.some((p) => node.name.startsWith(p))) this.physics.addStaticObject(node);
+      if (SOLID.some((p) => node.name.startsWith(p))) {
+        const collider = this.physics.addStaticObject(node);
+        if (node.name.startsWith('DOOR_')) this.doorColliders[node.name] = collider;
+      }
       if (node.name.startsWith('COL_')) model.remove(node);
     }
     // glass and leaves: see-through glass, leaves cut out by their alpha
@@ -156,12 +160,14 @@ export class HabitatSession {
 
   async _load() {
     const scene = this.game.scene;
-    const [atrium, lab] = await Promise.all([
+    const [atrium, lab, voss] = await Promise.all([
       this._loadModel('./assets/models/l2-atrium.glb'),
-      this._loadModel('./assets/models/l2-lab.glb')
+      this._loadModel('./assets/models/l2-lab.glb'),
+      this._loadModel('./assets/models/l2-voss.glb')
     ]);
     this.atrium = atrium;
     this.lab = lab;
+    this.voss = voss;
 
     // arrive in the lift, facing the hall (north)
     const spawn = atrium.getObjectByName('SPAWN_Lift').getWorldPosition(new THREE.Vector3());
@@ -179,6 +185,18 @@ export class HabitatSession {
     }
     this.labDoorCentre = new THREE.Vector3(0, 5.5, -17.25);
     this.labDoorOpen = 0;
+
+    // Voss's quarter door (east gallery): slides up into the wall once you are at it, and stays open
+    this.vossDoor = atrium.getObjectByName('DOOR_VOSS');
+    this.vossDoorOpen = 0;
+    this.vossDoorOpened = false;
+    if (this.vossDoor) {
+      this.vossDoorClosedY = this.vossDoor.position.y;
+      // the DOOR_VOSS empty sits at the origin (its panels are world-placed children), so take
+      // the trigger point from the panels' bounds, 2.2 m out into the hall from them
+      this.vossDoorCentre = new THREE.Box3().setFromObject(this.vossDoor).getCenter(new THREE.Vector3())
+        .add(new THREE.Vector3(-2.2, 0, 0));
+    }
 
     this._addAriaScreens([atrium, lab]);
     this._setUpLab(lab);
@@ -337,6 +355,22 @@ export class HabitatSession {
     this.labDoorOpen = THREE.MathUtils.clamp(this.labDoorOpen + (near ? dt : -dt) / 0.7, 0, 1);
     const ld = this.labDoorOpen * this.labDoorOpen * (3 - 2 * this.labDoorOpen);
     for (const d of this.labDoors) d.node.position.lerpVectors(d.closed, d.open, ld);
+    // the Voss door: un-solid once, then slide up into the wall
+    if (this.vossDoor) {
+      if (!this.vossDoorOpened && this.controls.position.distanceTo(this.vossDoorCentre) < 3.5) {
+        this.vossDoorOpened = true;
+        const c = this.doorColliders.DOOR_VOSS;
+        if (c) {
+          this.physics.world.removeCollider(c, true);
+          delete this.doorColliders.DOOR_VOSS;
+        }
+      }
+      if (this.vossDoorOpened && this.vossDoorOpen < 1) {
+        this.vossDoorOpen = Math.min(1, this.vossDoorOpen + dt / 1.2);
+        const t = this.vossDoorOpen * this.vossDoorOpen * (3 - 2 * this.vossDoorOpen);
+        this.vossDoor.position.y = this.vossDoorClosedY + 3.4 * t;
+      }
+    }
     // the organism, its readings, the spills and the lab light all follow its surges
     this.organism.update(dt);
     const surge = this.organism.surge;

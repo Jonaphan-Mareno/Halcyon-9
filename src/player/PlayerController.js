@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
+import { Player } from '../entities/Player.js';
 
 // The player for the physics levels (level 2 onwards): a kinematic capsule moved
 // by Rapier's character controller, so it walks up stairs, slides along walls and
-// stands on moving platforms. Mouse looks, WASD moves, Shift runs, Space jumps,
-// V switches between first and third person.
+// stands on moving platforms. Mouse looks, WASD moves, double-tapping W runs,
+// Shift (held) crouches, Space jumps, V switches between first and third person. The body is Voss's model
+// (entities/Player.js): hands only in first person, the whole body in third.
 //
 // Sizes are metres: Voss is 1.8 m tall. A standing jump rises about 1.6 m (so a 1.2 m cargo
 // container is an easy climb) and a running jump clears about 4.5 m.
@@ -12,6 +14,12 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 const RADIUS = 0.35;
 const HEIGHT = 1.8;
 const EYE = 1.62;
+// Crouched: a shorter capsule, lower eyes, slower feet
+const CROUCH_HEIGHT = 1.35;
+const CROUCH_EYE = 1.19;
+const CROUCH_SPEED = 2.6;
+const CROUCH_EASE = 12;       // how fast the eyes sink and rise
+const DOUBLE_TAP = 0.3;       // seconds between two W presses that start a run
 
 const WALK_SPEED = 6.0;
 const SPRINT_SPEED = 9.0;
@@ -32,12 +40,16 @@ export class PlayerController {
     this.enabled = true;
     this.ready = false;
 
-    this.view = 'third';
+    this.view = 'first';
     this.viewLocked = false;     // true inside the crew quarters, where the camera network does not reach
     this.onViewChange = null;
     this.onRespawn = null;
 
-    this.keys = { forward: false, back: false, left: false, right: false, sprint: false, jumpHeld: false };
+    this.keys = { forward: false, back: false, left: false, right: false, sprint: false, crouch: false, jumpHeld: false };
+    this._lastForwardTap = -Infinity;
+    this.crouched = false;
+    this.height = HEIGHT;                // current capsule height (shorter while crouched)
+    this.eye = EYE;                      // current eye height; eases between standing and crouched
     this.jumpBuffer = 0;
 
     this.position = new THREE.Vector3(); // feet
@@ -67,6 +79,15 @@ export class PlayerController {
     visor.position.set(0, EYE - 0.02, -RADIUS + 0.04);
     this.body.add(torso, visor);
     scene.add(this.body);
+
+    // Voss replaces the placeholder once his model has loaded
+    this.character = new Player(scene);
+    this.character.setMode(this.view);
+    this.character.load().then(() => {
+      this.body.remove(torso, visor);
+      this.body.add(this.character.body);
+    }).catch((e) => console.warn('Player model failed to load; keeping the placeholder.', e));
+    if (import.meta.env.DEV) window.__player = this; // for poking at from the dev console
 
     this._fwd = new THREE.Vector3();
     this._right = new THREE.Vector3();
@@ -107,8 +128,8 @@ export class PlayerController {
     this.impulse.set(0, 0, 0);
     this.lastSafe.copy(p);
     this.velocity.set(0, 0, 0);
-    this.body_rb.setTranslation({ x: p.x, y: p.y + HEIGHT / 2, z: p.z }, true);
-    this.body_rb.setNextKinematicTranslation({ x: p.x, y: p.y + HEIGHT / 2, z: p.z });
+    this.body_rb.setTranslation({ x: p.x, y: p.y + this.height / 2, z: p.z }, true);
+    this.body_rb.setNextKinematicTranslation({ x: p.x, y: p.y + this.height / 2, z: p.z });
   }
 
   lock() {
@@ -133,7 +154,7 @@ export class PlayerController {
   // Freeze movement and mouse-look (used for menus and dialogue)
   stop() {
     this.keys.forward = this.keys.back = this.keys.left = this.keys.right = false;
-    this.keys.sprint = this.keys.jumpHeld = false;
+    this.keys.sprint = this.keys.crouch = this.keys.jumpHeld = false;
     this.velocity.x = this.velocity.z = 0;
     this.instance.enabled = false;
   }
@@ -141,16 +162,25 @@ export class PlayerController {
   setView(view) {
     if (view === this.view) return;
     this.view = view;
+    this.character.setMode(view);
     this.onViewChange?.(view);
   }
 
   _onKeyDown(e) {
     switch (e.code) {
-      case 'ArrowUp': case 'KeyW': this.keys.forward = true; break;
+      case 'ArrowUp': case 'KeyW':
+        // A second press soon after the first starts a run that lasts while W is held
+        if (!e.repeat) {
+          const now = performance.now() / 1000;
+          if (now - this._lastForwardTap < DOUBLE_TAP) this.keys.sprint = true;
+          this._lastForwardTap = now;
+        }
+        this.keys.forward = true;
+        break;
       case 'ArrowLeft': case 'KeyA': this.keys.left = true; break;
       case 'ArrowDown': case 'KeyS': this.keys.back = true; break;
       case 'ArrowRight': case 'KeyD': this.keys.right = true; break;
-      case 'ShiftLeft': case 'ShiftRight': this.keys.sprint = true; break;
+      case 'ShiftLeft': case 'ShiftRight': this.keys.crouch = true; break;
       case 'Space':
         e.preventDefault();
         if (!e.repeat) this.jumpBuffer = JUMP_BUFFER;
@@ -164,13 +194,38 @@ export class PlayerController {
 
   _onKeyUp(e) {
     switch (e.code) {
-      case 'ArrowUp': case 'KeyW': this.keys.forward = false; break;
+      case 'ArrowUp': case 'KeyW': this.keys.forward = this.keys.sprint = false; break;
       case 'ArrowLeft': case 'KeyA': this.keys.left = false; break;
       case 'ArrowDown': case 'KeyS': this.keys.back = false; break;
       case 'ArrowRight': case 'KeyD': this.keys.right = false; break;
-      case 'ShiftLeft': case 'ShiftRight': this.keys.sprint = false; break;
+      case 'ShiftLeft': case 'ShiftRight': this.keys.crouch = false; break;
       case 'Space': this.keys.jumpHeld = false; break;
     }
+  }
+
+  // Shrink or restore the capsule. The capsule stays centred on its body (the character
+  // controller does not handle an offset collider), so the body itself is moved to keep
+  // the feet where they are.
+  _setCrouched(on) {
+    this.crouched = on;
+    this.height = on ? CROUCH_HEIGHT : HEIGHT;
+    this.collider.setHalfHeight((this.height - RADIUS * 2) / 2);
+    const p = this.position;
+    this.body_rb.setTranslation({ x: p.x, y: p.y + this.height / 2, z: p.z }, true);
+    this.body_rb.setNextKinematicTranslation({ x: p.x, y: p.y + this.height / 2, z: p.z });
+    // The character controller reads the collider this frame, before the next physics step
+    this.physics.world.propagateModifiedBodyPositionsToColliders();
+  }
+
+  // Is there room to stand up? Sweeps a ball from the crouched head up to the standing head.
+  _canStand() {
+    const R = this.physics.RAPIER;
+    const p = this.position;
+    const hit = this.physics.world.castShape(
+      { x: p.x, y: p.y + CROUCH_HEIGHT - RADIUS, z: p.z }, { x: 0, y: 0, z: 0, w: 1 }, { x: 0, y: 1, z: 0 },
+      new R.Ball(RADIUS * 0.9), 0, HEIGHT - CROUCH_HEIGHT, true, R.QueryFilterFlags.EXCLUDE_KINEMATIC
+    );
+    return hit === null;
   }
 
   // `canMove` is false while the player is frozen (e.g. the wake-up blink)
@@ -196,7 +251,11 @@ export class PlayerController {
     // Horizontal velocity eases toward the wanted velocity; quicker on the ground
     // On ice you barely grip: you keep your momentum and steer slowly. Wading is slow.
     const onIce = this.grounded && this.surface === 'ice';
-    let speed = (k.sprint ? SPRINT_SPEED : WALK_SPEED) * this.speedScale;
+    // Crouch while Shift is held (only from the ground); stand again once there is room overhead
+    if (k.crouch && canMove && this.grounded && !this.crouched) this._setCrouched(true);
+    else if ((!k.crouch || !canMove) && this.crouched && this._canStand()) this._setCrouched(false);
+
+    let speed = (this.crouched ? CROUCH_SPEED : k.sprint ? SPRINT_SPEED : WALK_SPEED) * this.speedScale;
     if (this.surface === 'wade' && this.grounded) speed *= 0.55;
     if (onIce) speed *= 1.25;
     const grip = !this.grounded ? 4 : onIce ? 0.9 : 14;
@@ -218,11 +277,13 @@ export class PlayerController {
     // Jumping: coyote time, buffered presses, and a shorter hop if Space is let go early
     this.coyote = this.grounded ? COYOTE : this.coyote - dt;
     this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
-    if (this.jumpBuffer > 0 && this.coyote > 0 && canMove) {
+    if (this.jumpBuffer > 0 && this.coyote > 0 && canMove && this.crouched && this._canStand()) this._setCrouched(false);
+    if (this.jumpBuffer > 0 && this.coyote > 0 && canMove && !this.crouched) {
       this.velocity.y = JUMP_SPEED;
       this.jumpBuffer = 0;
       this.coyote = 0;
       this.grounded = false;
+      this.character.jumped();
     }
     if (!k.jumpHeld && this.velocity.y > 0) this.velocity.y *= Math.exp(-14 * dt);
 
@@ -241,9 +302,12 @@ export class PlayerController {
 
     const t = this.body_rb.translation();
     this.body_rb.setNextKinematicTranslation({ x: t.x + mv.x, y: t.y + mv.y, z: t.z + mv.z });
+    // How fast the body really moves over the ground (zero when pushing into a wall), for the walk cycle
+    const groundSpeed = dt > 0 ? Math.hypot(mv.x, mv.z) / dt : 0;
+    this._groundSpeed = (this._groundSpeed || 0) + (groundSpeed - (this._groundSpeed || 0)) * (1 - Math.exp(-12 * dt));
     this.physics.step(dt);
     const n = this.body_rb.translation();
-    this.position.set(n.x, n.y - HEIGHT / 2, n.z);
+    this.position.set(n.x, n.y - this.height / 2, n.z);
 
     // Remember the last place the player stood still and safe; falling out of the world returns there
     this._safeTimer += dt;
@@ -256,7 +320,17 @@ export class PlayerController {
       this.onRespawn?.();
     }
 
+    this.eye += ((this.crouched ? CROUCH_EYE : EYE) - this.eye) * (1 - Math.exp(-CROUCH_EASE * dt));
     this._placeBodyAndCamera(dt, moving);
+    this.character.update(dt, {
+      crouch: (EYE - this.eye) / (EYE - CROUCH_EYE),
+      running: this.keys.sprint && !this.crouched,
+      grounded: this.grounded,
+      speed: this._groundSpeed,
+      verticalSpeed: this.velocity.y,
+      camera: this.camera,
+      bodyYaw: this.facing
+    });
   }
 
   _placeBodyAndCamera(dt, moving) {
@@ -288,14 +362,14 @@ export class PlayerController {
 
     const cam = this.camera;
     if (!third) {
-      cam.position.set(this.position.x, baseY + EYE, this.position.z);
+      cam.position.set(this.position.x, baseY + this.eye, this.position.z);
       return;
     }
 
     // Behind and slightly over the right shoulder. A ray from the player keeps the camera
     // from pushing through walls: it moves in at once and eases back out.
     cam.getWorldDirection(this._camDir);
-    this._pivot.set(this.position.x, baseY + EYE + 0.15, this.position.z);
+    this._pivot.set(this.position.x, baseY + this.eye + 0.15, this.position.z);
     this._pivot.addScaledVector(this._right.set(Math.cos(cam.rotation.y), 0, -Math.sin(cam.rotation.y)), this.shoulder);
 
     const back = this._camDir.negate();

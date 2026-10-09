@@ -1,5 +1,10 @@
 # Session Notes — Voss Crew Quarter (Level 2)
 
+> **Superseded.** The `build_l2_voss.py` pipeline described below was replaced: the room is now
+> placed by hand in `Blender/l2-atrium.blend` (collection `Bedroom1`) and exported with
+> `Blender/scripts/export_l2_atrium.py`. See **`docs/voss-crew-quarter.md`** for the current
+> feature doc. The notes below are kept for history only.
+
 Status snapshot of the work on attaching the `Bedroom.blend` asset to the Level 2 atrium as
 Voss's crew quarter, plus the conventions and pitfalls discovered along the way.
 

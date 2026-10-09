@@ -10,8 +10,8 @@ world bounds at export time (floor, ceiling, N/S/E walls, and the open west face
 atrium door gap). They are NOT saved back into l2-atrium.blend.
 
 Two-file workflow: model/colour the room in bedroom.blend; place it in l2-atrium.blend. At export
-every Bedroom1 object takes its mesh + materials from the same-named object in bedroom.blend, so
-the placement and the content can be edited independently.
+every Bedroom1 object takes its vertex colours + materials from the same-named object in
+bedroom.blend (geometry stays as placed, since the two copies are baked differently).
 
   blender -b --factory-startup --python Blender/scripts/export_l2_atrium.py -- [out.glb]
 """
@@ -51,36 +51,54 @@ else:
             lc.exclude = False
             lc.hide_viewport = False
 
-    # l2-atrium.blend holds the room's PLACEMENT; bedroom.blend holds its meshes, vertex colours and
-    # materials (the appended copy predates the colouring). Swap each placed object's mesh for the
-    # same-named one in bedroom.blend so edits there show up without re-placing anything.
+    # l2-atrium.blend holds the room's PLACEMENT; bedroom.blend holds its vertex colours and
+    # materials (the appended copy predates the colouring). The two copies share topology but not
+    # baking (the placed one has rotation/scale applied into the mesh), so the geometry must stay as
+    # placed: only the colour attribute and material slots are copied across, per same-named object.
     # Append reuses a local ID of the same name instead of bringing in the fresh one, so the stale
-    # meshes/materials are renamed out of the way first.
+    # materials are renamed out of the way first.
     placed = [o for o in room.all_objects if o.type == 'MESH']
     names = [o.name for o in placed]          # bpy.data is restricted inside libraries.load
     for o in placed:
-        o.data.name = 'OLD_' + o.data.name
         for m in o.data.materials:
             if m and not m.name.startswith('OLD_'):
                 m.name = 'OLD_' + m.name
     with bpy.data.libraries.load(BEDROOM, link=False) as (src, dst):
-        avail = list(src.objects)
-        wanted = [n for n in names if n in avail]
-        dst.objects = wanted
-    print('bedroom.blend offers %d objects' % len(avail))
+        wanted = [n for n in names if n in src.objects]
+        dst.objects = list(wanted)   # a copy: Blender fills the list it is given in place
     # appended objects arrive renamed (.001) because of the clash, but in request order
     fresh = dict(zip(wanted, dst.objects))
-    swapped = 0
+    coloured, skipped = 0, []
     for o in placed:
         f = fresh.get(o.name)
-        if f is not None and f.type == 'MESH':
-            o.data = f.data
-            swapped += 1
+        if f is None or f.type != 'MESH':
+            skipped.append(o.name)
+            continue
+        me, src_me = o.data, f.data
+        if len(me.loops) != len(src_me.loops) or len(me.polygons) != len(src_me.polygons):
+            skipped.append('%s (topology differs)' % o.name)
+            continue
+        me.materials.clear()
+        for m in src_me.materials:
+            me.materials.append(m)
+        src_col = src_me.color_attributes.active_color or (src_me.color_attributes[0] if src_me.color_attributes else None)
+        if src_col is not None:
+            for a in list(me.color_attributes):
+                me.color_attributes.remove(a)
+            col = me.color_attributes.new(src_col.name, src_col.data_type, src_col.domain)
+            buf = [0.0] * (len(src_col.data) * 4)
+            src_col.data.foreach_get('color', buf)
+            col.data.foreach_set('color', buf)
+            me.color_attributes.active_color = col
+            me.color_attributes.render_color_index = me.color_attributes.find(col.name)
+        coloured += 1
     for f in fresh.values():
         if f is not None:
+            me = f.data
             D.objects.remove(f, do_unlink=True)
-    missing = [n for n in names if n not in fresh]
-    print('refreshed %d/%d meshes from bedroom.blend%s' % (swapped, len(placed), (' (not found: %s)' % missing) if missing else ''))
+            if me and me.users == 0:
+                D.meshes.remove(me)
+    print('coloured %d/%d meshes from bedroom.blend%s' % (coloured, len(placed), (' (skipped: %s)' % skipped) if skipped else ''))
 
     # the glTF exporter only carries vertex colours through a Color Attribute node feeding a
     # Principled Base Color; rebuild the authored Attribute -> Diffuse BSDF trees that way

@@ -20,9 +20,9 @@ from mathutils import Vector
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 HERE = os.path.dirname(os.path.abspath(__file__))
-SRC = os.path.join(HERE, '..', 'l2-atrium.blend')
-BEDROOM = os.path.join(HERE, '..', 'bedroom.blend')
-OUT_GLB = argv[0] if len(argv) > 0 else os.path.join(HERE, '..', '..', 'public', 'assets', 'models', 'l2-atrium.glb')
+SRC = os.path.normpath(os.path.join(HERE, '..', 'l2-atrium.blend'))
+BEDROOM = os.path.normpath(os.path.join(HERE, '..', 'bedroom.blend'))
+OUT_GLB = os.path.normpath(argv[0] if len(argv) > 0 else os.path.join(HERE, '..', '..', 'public', 'assets', 'models', 'l2-atrium.glb'))
 
 ROOM_COLL = 'Bedroom1'
 GAP_Y, GAP_Z1 = 2.07, 8.7     # atrium DOOR_VOSS gap: half-width in y, top in z (see build_l2_atrium.py GAPS)
@@ -57,24 +57,30 @@ else:
     # Append reuses a local ID of the same name instead of bringing in the fresh one, so the stale
     # meshes/materials are renamed out of the way first.
     placed = [o for o in room.all_objects if o.type == 'MESH']
+    names = [o.name for o in placed]          # bpy.data is restricted inside libraries.load
     for o in placed:
         o.data.name = 'OLD_' + o.data.name
         for m in o.data.materials:
             if m and not m.name.startswith('OLD_'):
                 m.name = 'OLD_' + m.name
     with bpy.data.libraries.load(BEDROOM, link=False) as (src, dst):
-        wanted = [o.name for o in placed if o.name in src.objects]
+        avail = list(src.objects)
+        wanted = [n for n in names if n in avail]
         dst.objects = wanted
+    print('bedroom.blend offers %d objects' % len(avail))
     # appended objects arrive renamed (.001) because of the clash, but in request order
     fresh = dict(zip(wanted, dst.objects))
+    swapped = 0
     for o in placed:
         f = fresh.get(o.name)
         if f is not None and f.type == 'MESH':
             o.data = f.data
+            swapped += 1
     for f in fresh.values():
         if f is not None:
             D.objects.remove(f, do_unlink=True)
-    print('refreshed %d meshes from bedroom.blend' % len(fresh))
+    missing = [n for n in names if n not in fresh]
+    print('refreshed %d/%d meshes from bedroom.blend%s' % (swapped, len(placed), (' (not found: %s)' % missing) if missing else ''))
 
     # the glTF exporter only carries vertex colours through a Color Attribute node feeding a
     # Principled Base Color; rebuild the authored Attribute -> Diffuse BSDF trees that way

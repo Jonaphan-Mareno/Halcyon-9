@@ -366,8 +366,30 @@ function makeTexture(paint, mode, seed, srgb) {
 // Shared by every hub shader so one update moves all the flowing light
 export const hubTime = { value: 0 };
 
+// The colour and height maps packed into one texture (colour in RGB, height in alpha), so the shader
+// reads one texture instead of two at every sample: measured as a real saving on integrated graphics.
+// Built from the raw pixels as a DataTexture, so the alpha never gets premultiplied into the colour.
+function pack(albedoTex, heightTex) {
+  const a = albedoTex.image.getContext('2d').getImageData(0, 0, SIZE, SIZE).data;
+  const h = heightTex.image.getContext('2d').getImageData(0, 0, SIZE, SIZE).data;
+  const data = new Uint8Array(SIZE * SIZE * 4);
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = a[i]; data[i + 1] = a[i + 1]; data[i + 2] = a[i + 2]; data[i + 3] = h[i];
+  }
+  const tex = new THREE.DataTexture(data, SIZE, SIZE, THREE.RGBAFormat);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 8;
+  tex.colorSpace = THREE.SRGBColorSpace;      // (applies to RGB only; the alpha height stays linear)
+  tex.flipY = true;                           // match the canvas textures' orientation
+  tex.needsUpdate = true;
+  return tex;
+}
+
 export function createHubTextures() {
-  return {
+  const sets = {
     plate: { albedo: makeTexture(paintPlate, 'albedo', 11, true), height: makeTexture(paintPlate, 'height', 11, false) },
     floor: { albedo: makeTexture(paintFloor, 'albedo', 23, true), height: makeTexture(paintFloor, 'height', 23, false) },
     paint: { albedo: makeTexture(paintPaint, 'albedo', 31, true), height: makeTexture(paintPaint, 'height', 31, false) },
@@ -378,6 +400,8 @@ export function createHubTextures() {
     brushed: { albedo: makeTexture(paintBrushed, 'albedo', 53, true), height: makeTexture(paintBrushed, 'height', 53, false) },
     wall: { albedo: makeTexture(paintWall, 'albedo', 59, true), height: makeTexture(paintWall, 'height', 59, false) }
   };
+  for (const set of Object.values(sets)) set.packed = pack(set.albedo, set.height);
+  return sets;
 }
 
 // Which texture each model material uses, and how big one tile is in metres
@@ -451,15 +475,13 @@ function texturedMaterial(source, spec, textures) {
   });
   const tex = textures[spec.kind];
   mat.onBeforeCompile = (shader) => {
-    shader.uniforms.uAlb = { value: tex.albedo };
-    shader.uniforms.uHgt = { value: tex.height };
+    shader.uniforms.uAlb = { value: tex.packed };
     shader.uniforms.uTile = { value: spec.tile };
     shader.uniforms.uBump = { value: spec.bump };
     addVertexPosition(shader);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>${POS_VARYING}
-        uniform sampler2D uAlb;
-        uniform sampler2D uHgt;
+        uniform sampler2D uAlb;            // colour in RGB, height in alpha
         uniform float uTile;
         uniform float uBump;
         vec4 triSample(sampler2D t, vec3 p, vec3 w) {
@@ -484,8 +506,9 @@ function texturedMaterial(source, spec, textures) {
         triW = max(triW - 0.02, 0.0);
         triW /= (triW.x + triW.y + triW.z);
         vec3 triP = vTriPos / uTile;
-        vec3 triAlb = triSample(uAlb, triP, triW).rgb;
-        float triH = triSample(uHgt, triP, triW).r;
+        vec4 triTex = triSample(uAlb, triP, triW);
+        vec3 triAlb = triTex.rgb;
+        float triH = triTex.a;
         diffuseColor.rgb *= triAlb * 1.45;`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         roughnessFactor = clamp(roughnessFactor * (1.55 - triH * 1.1), 0.12, 1.0);`)

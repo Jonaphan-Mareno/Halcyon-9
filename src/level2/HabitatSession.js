@@ -160,14 +160,14 @@ export class HabitatSession {
 
   async _load() {
     const scene = this.game.scene;
-    const [atrium, lab, voss] = await Promise.all([
+    // Voss's quarter is authored inside l2-atrium.blend (the Bedroom1 collection), so it ships
+    // in the atrium model rather than as a separate file
+    const [atrium, lab] = await Promise.all([
       this._loadModel('./assets/models/l2-atrium.glb'),
-      this._loadModel('./assets/models/l2-lab.glb'),
-      this._loadModel('./assets/models/l2-voss.glb')
+      this._loadModel('./assets/models/l2-lab.glb')
     ]);
     this.atrium = atrium;
     this.lab = lab;
-    this.voss = voss;
 
     // arrive in the lift, facing the hall (north)
     const spawn = atrium.getObjectByName('SPAWN_Lift').getWorldPosition(new THREE.Vector3());

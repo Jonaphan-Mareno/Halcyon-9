@@ -186,17 +186,17 @@ export class HabitatSession {
     this.labDoorCentre = new THREE.Vector3(0, 5.5, -17.25);
     this.labDoorOpen = 0;
 
-    // the quarter doors (Voss east, Kessler north-east): each slides up into the wall once you
-    // are at it, and stays open. The DOOR_ empties sit at the origin (their panels are
-    // world-placed children), so take the trigger point from the panels' bounds, 2.2 m out
-    // into the hall from them
+    // the quarter doors (Voss east, Kessler north-east): each slides up into the wall as you
+    // come near and back down as you leave. The DOOR_ empties sit at the origin (their panels
+    // are world-placed children), so take the trigger point from the panels' bounds, 2.2 m
+    // out into the hall from them
     this.quarterDoors = [];
     for (const name of ['DOOR_VOSS', 'DOOR_KESSLER']) {
       const node = atrium.getObjectByName(name);
       if (!node) continue;
       const centre = new THREE.Box3().setFromObject(node).getCenter(new THREE.Vector3());
       centre.add(new THREE.Vector3(-centre.x, -centre.y, 0).normalize().multiplyScalar(2.2));
-      this.quarterDoors.push({ node, centre, closedY: node.position.y, opened: false, open: 0 });
+      this.quarterDoors.push({ node, centre, closedY: node.position.y, solid: true, open: 0 });
     }
 
     this._addAriaScreens([atrium, lab]);
@@ -356,20 +356,23 @@ export class HabitatSession {
     this.labDoorOpen = THREE.MathUtils.clamp(this.labDoorOpen + (near ? dt : -dt) / 0.7, 0, 1);
     const ld = this.labDoorOpen * this.labDoorOpen * (3 - 2 * this.labDoorOpen);
     for (const d of this.labDoors) d.node.position.lerpVectors(d.closed, d.open, ld);
-    // the quarter doors: un-solid once, then slide up into the wall
+    // the quarter doors: slide up into the wall as you come near, back down as you leave.
+    // Solid only while fully closed, since that is where their collider is baked
     for (const d of this.quarterDoors) {
-      if (!d.opened && this.controls.position.distanceTo(d.centre) < 3.5) {
-        d.opened = true;
+      const near = this.controls.position.distanceTo(d.centre) < 4;
+      d.open = THREE.MathUtils.clamp(d.open + (near ? dt : -dt) / 1.2, 0, 1);
+      const t = d.open * d.open * (3 - 2 * d.open);
+      d.node.position.y = d.closedY + 3.4 * t;
+      if (d.open > 0 && d.solid) {
         const c = this.doorColliders[d.node.name];
         if (c) {
           this.physics.world.removeCollider(c, true);
           delete this.doorColliders[d.node.name];
         }
-      }
-      if (d.opened && d.open < 1) {
-        d.open = Math.min(1, d.open + dt / 1.2);
-        const t = d.open * d.open * (3 - 2 * d.open);
-        d.node.position.y = d.closedY + 3.4 * t;
+        d.solid = false;
+      } else if (d.open === 0 && !d.solid) {
+        this.doorColliders[d.node.name] = this.physics.addStaticObject(d.node);
+        d.solid = true;
       }
     }
     // the organism, its readings, the spills and the lab light all follow its surges

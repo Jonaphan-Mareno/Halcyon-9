@@ -500,7 +500,8 @@ for name, g in (('KESSLER', GAPS[5]), ('VOSS', GAPS[4])):
     arc(d, 'blue_glow', R + 0.05, R + 0.1, (g['a0'] + g['a1']) / 2 - 0.15, (g['a0'] + g['a1']) / 2 + 0.15, g['z0'] + 0.2, g['z1'] - 0.2, step=0.3)
     frame(g['a0'], g['a1'], g['z0'], g['z1'])
     empty('PT_Plate_' + name, P(R - 0.3, (g['a0'] + g['a1']) / 2, g['z1'] + 0.7))
-    rbox(A('Atrium_RoomBacks'), 'hull_mid', R + 2.6, (g['a0'] + g['a1']) / 2, g['z0'] + 1.7, 0.3, 6.0, 3.6)   # until the rooms are built
+    if name == 'KESSLER':   # Voss's quarter is a real room now (build_l2_voss.py, l2-voss.glb)
+        rbox(A('Atrium_RoomBacks'), 'hull_mid', R + 2.6, (g['a0'] + g['a1']) / 2, g['z0'] + 1.7, 0.3, 6.0, 3.6)   # until the room is built
 # the locked pod doors (ground floor, west) and the lift (south)
 pods = A('DOOR_PODS')
 arc(pods, 'hull_mid', R + 0.1, R + 0.4, 172, 188, 0, 3.4, step=1)

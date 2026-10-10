@@ -10,6 +10,7 @@ import { PlayerController } from '../player/PlayerController.js';
 import { createHubTextures, applyHubMaterials } from '../graphics/HubMaterials.js';
 import { DeepSeaWindow } from '../graphics/DeepSeaWindow.js';
 import { AriaManager } from '../entities/AriaManager.js';
+import { makeToonRamp, toonFrom } from '../entities/Player.js';
 import { Organism } from './Organism.js';
 import { LabScreens } from './LabScreens.js';
 import { HoloScreens } from './HoloScreens.js';
@@ -49,6 +50,7 @@ export class HabitatSession {
     this.ready = false;
     this.doorOpen = 0;
     this.doors = [];
+    this.doorColliders = {};   // DOOR_ nodes keep their collider here so it can be removed on open
     const camera = game.camera.instance;
     camera.far = 300;
     camera.updateProjectionMatrix();
@@ -119,7 +121,10 @@ export class HabitatSession {
     const model = gltf.scene;
     model.updateMatrixWorld(true);
     for (const node of [...model.children]) {
-      if (SOLID.some((p) => node.name.startsWith(p))) this.physics.addStaticObject(node);
+      if (SOLID.some((p) => node.name.startsWith(p))) {
+        const collider = this.physics.addStaticObject(node);
+        if (node.name.startsWith('DOOR_')) this.doorColliders[node.name] = collider;
+      }
       if (node.name.startsWith('COL_')) model.remove(node);
     }
     // glass and leaves: see-through glass, leaves cut out by their alpha
@@ -150,12 +155,55 @@ export class HabitatSession {
     });
     this.hubTextures = this.hubTextures || createHubTextures();
     applyHubMaterials(model, this.hubTextures);
+    // the bedrooms take the toon treatment the player wears: the cel banding and cyan rim
+    // of Shaders.js, under this level's own lights. Scoped by material name - VCol.* /
+    // Material.00* are the bedroom set the exporter writes, so the atrium's own materials
+    // are untouched. Their paint lives in vertex colours, so those are only enabled for
+    // meshes that actually carry a COLOR_0 attribute (the shells have none)
+    const ramp = makeToonRamp();
+    const isBedroom = (m) => m.name.startsWith('VCol.') || m.name.startsWith('Material.');
+    const toonCache = new Map();
+    const toon = (m, vertexColors) => {
+      const key = m.name + ':' + vertexColors;
+      if (!toonCache.has(key)) toonCache.set(key, toonFrom(m, ramp, { vertexColors }));
+      return toonCache.get(key);
+    };
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      const swap = (m) => (isBedroom(m) ? toon(m, !!o.geometry.attributes.color) : m);
+      o.material = Array.isArray(o.material) ? o.material.map(swap) : swap(o.material);
+    });
+    // the light panels glow but a glow lights nothing, and the toon look drops the
+    // environment fill the standard materials had - so the rooms need real lights. One
+    // warm point light per room at the centre of that room's panels; rooms are found by
+    // clustering the panels by proximity, so a future bedroom gets its light too
+    const litRooms = [];
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      if (!mats.some((m) => isBedroom(m) && m.emissive && m.emissive.r + m.emissive.g + m.emissive.b > 0)) return;
+      const c = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
+      const room = litRooms.find((k) => k.centre.distanceTo(c) < 8);
+      if (room) {
+        room.centre.multiplyScalar(room.n).add(c).divideScalar(room.n + 1);
+        room.n += 1;
+      } else {
+        litRooms.push({ centre: c, n: 1 });
+      }
+    });
+    for (const room of litRooms) {
+      const l = new THREE.PointLight(0xffeeda, 30, 10, 2);
+      l.position.copy(room.centre);
+      this.game.scene.add(l);
+    }
     this.game.scene.add(model);
     return model;
   }
 
   async _load() {
     const scene = this.game.scene;
+    // Voss's quarter is authored inside l2-atrium.blend (the Bedroom1 collection), so it ships
+    // in the atrium model rather than as a separate file
     const [atrium, lab] = await Promise.all([
       this._loadModel('./assets/models/l2-atrium.glb'),
       this._loadModel('./assets/models/l2-lab.glb')
@@ -179,6 +227,19 @@ export class HabitatSession {
     }
     this.labDoorCentre = new THREE.Vector3(0, 5.5, -17.25);
     this.labDoorOpen = 0;
+
+    // the quarter doors (Voss east, Kessler north-east): each slides up into the wall as you
+    // come near and back down as you leave. The DOOR_ empties sit at the origin (their panels
+    // are world-placed children), so take the trigger point from the panels' bounds, 2.2 m
+    // out into the hall from them
+    this.quarterDoors = [];
+    for (const name of ['DOOR_VOSS', 'DOOR_KESSLER']) {
+      const node = atrium.getObjectByName(name);
+      if (!node) continue;
+      const centre = new THREE.Box3().setFromObject(node).getCenter(new THREE.Vector3());
+      centre.add(new THREE.Vector3(-centre.x, -centre.y, 0).normalize().multiplyScalar(2.2));
+      this.quarterDoors.push({ node, centre, closedY: node.position.y, solid: true, open: 0 });
+    }
 
     this._addAriaScreens([atrium, lab]);
     this._setUpLab(lab);
@@ -337,6 +398,25 @@ export class HabitatSession {
     this.labDoorOpen = THREE.MathUtils.clamp(this.labDoorOpen + (near ? dt : -dt) / 0.7, 0, 1);
     const ld = this.labDoorOpen * this.labDoorOpen * (3 - 2 * this.labDoorOpen);
     for (const d of this.labDoors) d.node.position.lerpVectors(d.closed, d.open, ld);
+    // the quarter doors: slide up into the wall as you come near, back down as you leave.
+    // Solid only while fully closed, since that is where their collider is baked
+    for (const d of this.quarterDoors) {
+      const near = this.controls.position.distanceTo(d.centre) < 4;
+      d.open = THREE.MathUtils.clamp(d.open + (near ? dt : -dt) / 1.2, 0, 1);
+      const t = d.open * d.open * (3 - 2 * d.open);
+      d.node.position.y = d.closedY + 3.4 * t;
+      if (d.open > 0 && d.solid) {
+        const c = this.doorColliders[d.node.name];
+        if (c) {
+          this.physics.world.removeCollider(c, true);
+          delete this.doorColliders[d.node.name];
+        }
+        d.solid = false;
+      } else if (d.open === 0 && !d.solid) {
+        this.doorColliders[d.node.name] = this.physics.addStaticObject(d.node);
+        d.solid = true;
+      }
+    }
     // the organism, its readings, the spills and the lab light all follow its surges
     this.organism.update(dt);
     const surge = this.organism.surge;

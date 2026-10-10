@@ -163,6 +163,7 @@ export class Level1{
     this.onLeftCell = null;        // set by the Game (optional)
     this._brickVel = new THREE.Vector3();
     this._brickStart = new THREE.Vector3();
+    this._brickNudgeDir = null;    // the way the brick tips over, chosen once per flight
     this._doorCentre = new THREE.Vector3();
     this._doorwayCentre = new THREE.Vector3();
     this._doorOpenAngle = -Math.PI / 2;
@@ -1663,6 +1664,7 @@ onRingPuzzleComplete() {
     this.brickHeld = false;
     this.brickFlying = true;
     this._brickVel.set(0, 0, 0);
+    this._brickNudgeDir = null;
   }
 
   _throwBrick() {
@@ -1672,6 +1674,7 @@ onRingPuzzleComplete() {
     this._brickVel.copy(this._tmpA).multiplyScalar(BRICK_THROW_SPEED);
     this.brickHeld = false;
     this.brickFlying = true;
+    this._brickNudgeDir = null;
   }
 
   // Called by the Game for a click or E while something is in Voss's hands.
@@ -1808,7 +1811,11 @@ onRingPuzzleComplete() {
       }
 
       this._rc.set(prev, dir);
-      this._rc.far = length + 0.1;
+      // The ray sweeps exactly this frame's travel. It must not reach further:
+      // a bounce leaves the brick 0.1 off the surface, and a longer reach finds
+      // that same surface again next frame even when the brick is moving away,
+      // pinning it into a bounce loop that hangs in mid-air.
+      this._rc.far = length + 1e-3;
       const hit = this._rc.intersectObject(this.room, true)
         .find((h) => !this._isCellGlass(h.object.name.replace(/\./g, '')));
       if (hit) {
@@ -1817,11 +1824,34 @@ onRingPuzzleComplete() {
           : new THREE.Vector3(0, 1, 0);
         if (normal.dot(dir) > 0) normal.negate();
         brick.position.copy(hit.point).addScaledVector(normal, 0.1);
-        if (normal.y > 0.5 && this._brickVel.y <= 0) {
+        // Only floor-level surfaces are landing spots. The door has up-facing
+        // parts high above the floor — the handle, the top edge of the open
+        // leaf — and "landing" on one froze the brick in mid-air, where it
+        // stayed floating after the door swung on.
+        const atFloor = hit.point.y <= this._cellFloorY + 0.2;
+        if (normal.y > 0.5 && this._brickVel.y <= 0 && atFloor) {
           // Landed: rests on the floor and can be picked up again
           this._brickVel.set(0, 0, 0);
           this.brickFlying = false;
           brick.rotation.set(0, brick.rotation.y, 0);
+        } else if (normal.y > 0.5 && this._brickVel.y <= 0) {
+          // Up-facing but too high to stand on (a handle, a sill): bouncing
+          // would buzz on the spot forever, so slide off sideways instead and
+          // let gravity carry the brick down past the edge
+          this._brickVel.y = 0;
+          this._brickVel.x *= 0.6;
+          this._brickVel.z *= 0.6;
+          if (this._brickVel.lengthSq() < 0.05) {
+            // Dropped dead on top of it: tip over. The direction is chosen once
+            // per flight so the brick leaves in a straight line instead of
+            // wandering around on the surface.
+            if (!this._brickNudgeDir) {
+              this._brickNudgeDir = new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5);
+              if (this._brickNudgeDir.lengthSq() < 1e-4) this._brickNudgeDir.set(1, 0, 0);
+              this._brickNudgeDir.normalize();
+            }
+            this._brickVel.copy(this._brickNudgeDir).multiplyScalar(0.5);
+          }
         } else {
           this._brickVel.reflect(normal).multiplyScalar(0.35);
         }

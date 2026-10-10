@@ -160,7 +160,7 @@ export class Game {
     }
 
     // Load first level
-    this.currentLevel = new Level1(this.scene);
+    this.currentLevel = new Level1(this.scene, this.camera.instance);
 
     // Controls
     this.controls = new Controls(this.camera.instance, document.body, this.currentLevel);
@@ -310,6 +310,7 @@ export class Game {
     const level = this.currentLevel;
     this.intro = new IntroSequence(this.ui, level.ariaManager);
     level.onTalkToAria = () => this.startIntroDialogue();
+    level.onBrickPickedUp = () => this.ui.showToast('Click throws the brick. E drops it.', 5000);
     level.onTorchPickedUp = () => {
       this.inventory.add('torch');
       this.hud.setTorch(true, true);
@@ -652,7 +653,8 @@ export class Game {
     // Stage 0: Turn on Monitor, 1: talk to ARIA, 2: find the torch, 3: repair the circuit,
     // 4: align the relay rings, 5: open the lift with the keypad, 6: ride the lift down
     let stage;
-    if (!level.ringPuzzleSolved) stage = 0;
+    if (level.inCell) stage = 'cell';   // the starting cell: its objective changes within the stage
+    else if (!level.ringPuzzleSolved) stage = 0;
     else if (level.talkEnabled) stage = 1;
     else if (!level.hasTorch) stage = 2;
     else if (!level.cablesFixed) stage = 3;
@@ -660,7 +662,14 @@ export class Game {
     else if (!level.doorOpened) stage = 5;
     else stage = 6;
 
-    if (stage !== this._stage) {
+    if (stage === 'cell') {
+      const text = level.getCellObjective();
+      if (stage !== this._stage || text !== this._cellObjective) {
+        this._stage = stage;
+        this._cellObjective = text;
+        this.ui.setObjective(text);
+      }
+    } else if (stage !== this._stage) {
       this._stage = stage;
       this.ui.setObjective(OBJECTIVES[stage]);
     }
@@ -721,6 +730,8 @@ export class Game {
 
   // Interact with whatever is under the reticle (click or E)
   tryInteract(options = {}) {
+    // Something in Voss's hands (the cell's brick): click throws it, E drops it
+    if (this.currentLevel.handleHeldItem?.(options)) return;
     this.raycaster.setFromCamera(this.center, this.camera.instance);
     const targets = this.currentLevel.interactables || [];
     const hit = this.raycaster.intersectObjects(targets, true)[0];
@@ -792,7 +803,7 @@ export class Game {
     } else if (this.state === 'INVENTORY') {
       if (event.code === 'KeyI' || event.code === 'Escape') this.closeInventory();
     } else if (this.state === 'PLAYING') {
-      if (event.code === 'KeyE') this.tryInteract();
+      if (event.code === 'KeyE') this.tryInteract({ fromKey: true });
       else if (event.code === 'KeyF') this.toggleFlashlight();
       else if (event.code === 'KeyI') this.openInventory();
     }
@@ -951,7 +962,7 @@ export class Game {
     this.ui.setPrompt(null);
 
     this.currentLevel.dispose();
-    this.currentLevel = new Level1(this.scene);
+    this.currentLevel = new Level1(this.scene, this.camera.instance);
     this.controls.level = this.currentLevel;
     this._wireLevel();
     this.hud.setTorch(false, false);

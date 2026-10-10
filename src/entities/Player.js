@@ -49,12 +49,16 @@ export function makeToonRamp() {
 }
 
 // Toon material with the level shader's faint cyan rim. `overrides` lets other users of
-// the look carry extra settings (the bedrooms add their vertex colours)
+// the look carry extra settings (the bedrooms add their vertex colours). Emissive is
+// carried too, so glowing things (the bedroom light panels) keep their glow
 export function toonFrom(src, ramp, overrides = {}) {
   const mat = new THREE.MeshToonMaterial({
     map: src.map || null,
     color: src.color ? src.color.clone() : new THREE.Color(0xffffff),
     gradientMap: ramp,
+    emissive: src.emissive ? src.emissive.clone() : new THREE.Color(0x000000),
+    emissiveIntensity: src.emissiveIntensity || 1,
+    emissiveMap: src.emissiveMap || null,
     transparent: src.transparent,
     opacity: src.opacity,
     alphaTest: src.alphaTest,

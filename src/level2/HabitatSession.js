@@ -173,6 +173,29 @@ export class HabitatSession {
       const swap = (m) => (isBedroom(m) ? toon(m, !!o.geometry.attributes.color) : m);
       o.material = Array.isArray(o.material) ? o.material.map(swap) : swap(o.material);
     });
+    // the light panels glow but a glow lights nothing, and the toon look drops the
+    // environment fill the standard materials had - so the rooms need real lights. One
+    // warm point light per room at the centre of that room's panels; rooms are found by
+    // clustering the panels by proximity, so a future bedroom gets its light too
+    const litRooms = [];
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      if (!mats.some((m) => isBedroom(m) && m.emissive && m.emissive.r + m.emissive.g + m.emissive.b > 0)) return;
+      const c = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
+      const room = litRooms.find((k) => k.centre.distanceTo(c) < 8);
+      if (room) {
+        room.centre.multiplyScalar(room.n).add(c).divideScalar(room.n + 1);
+        room.n += 1;
+      } else {
+        litRooms.push({ centre: c, n: 1 });
+      }
+    });
+    for (const room of litRooms) {
+      const l = new THREE.PointLight(0xffeeda, 30, 10, 2);
+      l.position.copy(room.centre);
+      this.game.scene.add(l);
+    }
     this.game.scene.add(model);
     return model;
   }

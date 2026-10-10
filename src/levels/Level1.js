@@ -50,6 +50,7 @@ const BRICK_RANGE = 3;               // how close you must be to pick it up
 const BRICK_HOLD_DISTANCE = 1.4;
 const BRICK_THROW_SPEED = 15;
 const GRAVITY = 9.8;
+const HANDLE_RANGE = 2.5;            // reaching through the broken window to the far-side handle
 
 export class Level1{
 
@@ -152,6 +153,7 @@ export class Level1{
     this.inCell = true;            // false once Voss has left (or if the model has no cell)
     this.door = null;              // the door leaf (its handle is parented to the same pivot)
     this.doorPivot = null;
+    this.doorHandle = null;        // the handle on the far side, turned through the broken window
     this.doorOpening = false;
     this.doorOpen = false;
     this.window = null;            // { glass, source, shards, box, broken }
@@ -160,17 +162,21 @@ export class Level1{
     this.brickFlying = false;
     this.onBrickPickedUp = null;   // set by the Game (shows a hint)
     this.onWindowBroken = null;    // set by the Game (optional)
+    this.onHandleTurned = null;    // set by the Game (sound)
     this.onLeftCell = null;        // set by the Game (optional)
     this._brickVel = new THREE.Vector3();
     this._brickStart = new THREE.Vector3();
     this._brickNudgeDir = null;    // the way the brick tips over, chosen once per flight
     this._doorCentre = new THREE.Vector3();
     this._doorwayCentre = new THREE.Vector3();
+    this._handleCentre = new THREE.Vector3();
     this._doorOpenAngle = -Math.PI / 2;
     this._doorOpenAt = -1;
     this._cellFloorY = 0;
     this._shards = [];             // window pieces in flight
     this._glassMaterial = null;
+    this._blocker = null;          // invisible filler for the door's window hole
+    this._blockerMaterial = null;
     this._cellLightPos = new THREE.Vector3();
     this._cellLightLevel = 0;      // fades to 0 once Voss leaves, freeing its light slot
     this._cellLightTarget = 0;
@@ -695,6 +701,12 @@ onRingPuzzleComplete() {
       this._interactables.push(this.elevatorConsoleScreen);
     }
     if (this.brick && this.brick.visible) this._interactables.push(this.brick);
+    // The far-side handle: reachable only once the window is broken, and gone
+    // again as soon as the door is moving. Falls back to the door leaf itself
+    // if the model has no handle node.
+    if ((this.doorHandle || this.door) && this.window?.broken && !this.doorOpen && !this.doorOpening) {
+      this._interactables.push(this.doorHandle || this.door);
+    }
   }
 
 
@@ -725,6 +737,15 @@ onRingPuzzleComplete() {
     return false;
   }
 
+  _isHandlePart(object) {
+    const target = this.doorHandle || this.door;
+    if (!target) return false;
+    for (let o = object; o; o = o.parent) {
+      if (o === target) return true;
+    }
+    return false;
+  }
+
   // Free everything this level created (used when the game restarts). Removing a
   // mesh from the scene does not free its GPU memory: geometries and
   // materials have to be disposed explicitly.
@@ -738,6 +759,7 @@ onRingPuzzleComplete() {
     }
     for (const material of this.shaderMaterials) material.dispose();
     this._glassMaterial?.dispose();
+    this._blockerMaterial?.dispose();
     this._shards.length = 0;
     
     this.shaderMaterials.length = 0;
@@ -1346,6 +1368,9 @@ onRingPuzzleComplete() {
       if (this.brickHeld) return 'Click: throw   E: drop';
       return this.canInteract(object, distance) ? 'Click or press E to pick up the brick' : null;
     }
+    if (this._isHandlePart(object)) {
+      return this.canInteract(object, distance) ? 'Click or press E to turn the handle' : null;
+    }
     if (object === this.wallMonitor) {
   if (!this.ringPuzzleSolved) {
     return distance <= Level1.MONITOR_RANGE ? 'The monitor is dead. No power' : null;
@@ -1386,6 +1411,9 @@ onRingPuzzleComplete() {
     if (object === this.brick) {
       return !this.brickHeld && distance <= BRICK_RANGE && this._clearLineTo(object.position, distance);
     }
+    if (this._isHandlePart(object)) {
+      return this.window?.broken && !this.doorOpen && !this.doorOpening && distance <= HANDLE_RANGE;
+    }
     if (object === this.wallMonitor) {
       return this.talkEnabled && distance <= Level1.MONITOR_RANGE;
     }
@@ -1415,6 +1443,11 @@ onRingPuzzleComplete() {
     }
     if (object === this.brick) {
       this._pickUpBrick();
+      return;
+    }
+    if (this._isHandlePart(object)) {
+      this.onHandleTurned?.();
+      this.openDoor();
       return;
     }
     if (object === this.wallMonitor) {
@@ -1605,6 +1638,8 @@ onRingPuzzleComplete() {
     this._doorOpenAngle = Math.sign(freeX - hingeX) * (Math.PI / 2);
     this.door = door;
     this.doorPivot = pivot;
+    this.doorHandle = handle || null;
+    if (handle) new THREE.Box3().setFromObject(handle).getCenter(this._handleCentre);
 
     const doorway = frame ? new THREE.Box3().setFromObject(frame) : box;
     doorway.getCenter(this._doorwayCentre);
@@ -1638,6 +1673,29 @@ onRingPuzzleComplete() {
     if (source) source.visible = false;   // the duplicate the pieces were cut from
 
     const box = new THREE.Box3().setFromObject(glass);
+    // The pane's own bounds are the hole it leaves behind. Voss is a single walk
+    // ray at eye height (2.6) and the pane's top edge sits just above it, so once
+    // the glass is gone that ray slips through the hole and he walks straight
+    // through the closed door. An invisible filler in the opening keeps the leaf
+    // solid until the handle is turned. Raycasts hit invisible meshes (the hidden
+    // duplicate above had to be removed for exactly that reason), while the
+    // renderer skips them — so the hole still reads as a hole you can peek through.
+    // It hangs off the door pivot, so it swings away with the leaf on its own.
+    if (this.doorPivot) {
+      const size = box.getSize(new THREE.Vector3());
+      this._blockerMaterial = new THREE.MeshBasicMaterial({ visible: false });
+      this._blocker = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          Math.max(size.x + 0.06, 0.05),   // a little past the pane edges swallows the seams
+          Math.max(size.y + 0.06, 0.05),
+          Math.max(size.z + 0.04, 0.04)
+        ),
+        this._blockerMaterial
+      );
+      box.getCenter(this._blocker.position);
+      this._blocker.updateMatrix();
+      this.doorPivot.attach(this._blocker);
+    }
     box.expandByScalar(0.25);
     this.window = { glass, source, shards, box, broken: false };
   }
@@ -1686,9 +1744,9 @@ onRingPuzzleComplete() {
     return true;
   }
 
-  openDoor() {
+  openDoor(delay = 0.35) {
     if (!this.doorPivot || this.doorOpening || this.doorOpen || this._doorOpenAt >= 0) return;
-    this._doorOpenAt = this.time + 0.7;   // a beat after the glass goes, so it reads
+    this._doorOpenAt = this.time + delay;   // a beat after the handle turns, so it reads
   }
 
   shatterWindow(impactPoint) {
@@ -1722,7 +1780,8 @@ onRingPuzzleComplete() {
     }
 
     this.onWindowBroken?.();
-    this.openDoor();
+    // The broken window exposes the far-side handle; turning it opens the door
+    this._rebuildInteractables();
   }
 
   _updateCell(delta, playerPosition, camera) {
@@ -1732,10 +1791,11 @@ onRingPuzzleComplete() {
     this._updateBrick(delta);
     this._updateShards(delta);
 
-    // The door unlocks a beat after the glass breaks, then swings open
+    // The handle has been turned: a beat later the door swings open
     if (this._doorOpenAt >= 0 && this.time >= this._doorOpenAt) {
       this._doorOpenAt = -1;
       this.doorOpening = true;
+      this._rebuildInteractables();   // the handle is out of reach from here on
     }
     if (this.doorOpening && this.doorPivot) {
       const target = this._doorOpenAngle;
@@ -1890,7 +1950,7 @@ onRingPuzzleComplete() {
 
   getCellObjective() {
     if (this.doorOpen || this.doorOpening) return 'Leave through the door';
-    if (this.window?.broken) return 'The door is unlocking...';
+    if (this.window?.broken) return 'Reach through the window and turn the handle';
     if (this.brickHeld) return 'Throw the brick at the window';
     return 'Find a way out of the cell';
   }
@@ -1910,6 +1970,9 @@ onRingPuzzleComplete() {
       } else {
         return null;
       }
+    } else if (this.doorHandle && !this.doorOpen && !this.doorOpening) {
+      w.position.copy(this._handleCentre);
+      w.label = 'Handle';
     } else if (this.door) {
       w.position.copy(this._doorwayCentre);
       w.label = 'Door';

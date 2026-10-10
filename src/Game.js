@@ -311,6 +311,7 @@ export class Game {
     this.intro = new IntroSequence(this.ui, level.ariaManager);
     level.onTalkToAria = () => this.startIntroDialogue();
     level.onBrickPickedUp = () => this.ui.showToast('Click throws the brick. E drops it.', 5000);
+    level.onHandleTurned = () => this.audio.clunk();
     level.onTorchPickedUp = () => {
       this.inventory.add('torch');
       this.hud.setTorch(true, true);

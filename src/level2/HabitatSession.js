@@ -10,6 +10,7 @@ import { PlayerController } from '../player/PlayerController.js';
 import { createHubTextures, applyHubMaterials } from '../graphics/HubMaterials.js';
 import { DeepSeaWindow } from '../graphics/DeepSeaWindow.js';
 import { AriaManager } from '../entities/AriaManager.js';
+import { makeToonRamp, toonFrom } from '../entities/Player.js';
 import { Organism } from './Organism.js';
 import { LabScreens } from './LabScreens.js';
 import { HoloScreens } from './HoloScreens.js';
@@ -154,6 +155,24 @@ export class HabitatSession {
     });
     this.hubTextures = this.hubTextures || createHubTextures();
     applyHubMaterials(model, this.hubTextures);
+    // the bedrooms take the toon treatment the player wears: the cel banding and cyan rim
+    // of Shaders.js, under this level's own lights. Scoped by material name - VCol.* /
+    // Material.00* are the bedroom set the exporter writes, so the atrium's own materials
+    // are untouched. Their paint lives in vertex colours, so those are only enabled for
+    // meshes that actually carry a COLOR_0 attribute (the shells have none)
+    const ramp = makeToonRamp();
+    const isBedroom = (m) => m.name.startsWith('VCol.') || m.name.startsWith('Material.');
+    const toonCache = new Map();
+    const toon = (m, vertexColors) => {
+      const key = m.name + ':' + vertexColors;
+      if (!toonCache.has(key)) toonCache.set(key, toonFrom(m, ramp, { vertexColors }));
+      return toonCache.get(key);
+    };
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      const swap = (m) => (isBedroom(m) ? toon(m, !!o.geometry.attributes.color) : m);
+      o.material = Array.isArray(o.material) ? o.material.map(swap) : swap(o.material);
+    });
     this.game.scene.add(model);
     return model;
   }

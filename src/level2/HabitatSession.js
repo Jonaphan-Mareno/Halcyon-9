@@ -177,7 +177,7 @@ export class HabitatSession {
     this.hubTextures = this.hubTextures || createHubTextures();
     applyHubMaterials(model, this.hubTextures);
     // the bedrooms take the toon treatment the player wears: the cel banding and cyan rim
-    // of Shaders.js, under this level's own lights. Scoped by material name - VCol.* /
+    // (the team's toon look), under this level's own lights. Scoped by material name - VCol.* /
     // Material.00* are the bedroom set the exporter writes, so the atrium's own materials
     // are untouched. Their paint lives in vertex colours, so those are only enabled for
     // meshes that actually carry a COLOR_0 attribute (the shells have none)

@@ -45,7 +45,7 @@ const LOOK_SMOOTHING = 10;
 
 const FADE = 0.2;
 
-// Same banding as the level shader (Shaders.js): three hard steps of light
+// The team's toon banding (level 1's shader used it before the habitat restyle): three hard steps of light
 export function makeToonRamp() {
   const data = new Uint8Array([70, 70, 70, 110, 190, 255]);
   const tex = new THREE.DataTexture(data, data.length, 1, THREE.RedFormat);

@@ -5,7 +5,8 @@ export class Renderer {
     const container = document.getElementById('app');
     
     this.instance = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    this.instance.setPixelRatio(window.devicePixelRatio);
+    // Capped: on high-DPI laptop screens the full ratio costs far more than it shows
+    this.instance.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
     this.instance.setSize(window.innerWidth, window.innerHeight);
     this.instance.shadowMap.enabled = true;
     this.instance.shadowMap.type = THREE.PCFShadowMap;

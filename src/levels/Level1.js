@@ -4,14 +4,23 @@ import { Shaders } from "../graphics/Shaders";
 import { AriaManager } from "../entities/AriaManager.js";
 import { Sparks } from "../effects/Sparks.js";
 import { RingPuzzle } from "../entities/RingPuzzle.js";
+import { createHubTextures } from "../graphics/HubMaterials.js";
+import { surfaceFor, SURFACE } from "./level1Look.js";
 
 // Must match MAX_LIGHTS in Shaders.js (the room's 8 lights + the flashlight)
 const MAX_LIGHTS = 9;
 
 // Brightness of each room light at full power. Before the generator is fixed
 // the lights sit at DIM_LEVEL of this, except two emergency lights that stutter.
-const LIGHT_FULL = 5;
+const LIGHT_FULL = 6.5;
 const DIM_LEVEL = 0.04;
+
+// Ambient light (the habitat look): with the power out only a faint navy glow, at full power
+// the soft bright fill of level 2's atrium, from the ceiling above and the floor below
+const AMBIENT_DEAD = { sky: new THREE.Color(0x0b1220).multiplyScalar(0.5), ground: new THREE.Color(0x05070a).multiplyScalar(0.5) };
+const AMBIENT_LIT = { sky: new THREE.Color(0xdfe9f2).multiplyScalar(0.34), ground: new THREE.Color(0x8a8f96).multiplyScalar(0.3) };
+const ENV_DEAD = 0.05;
+const ENV_LIT = 0.6;
 
 // Flashlight: a spotlight that follows the camera once the torch is picked up
 const FLASH_INTENSITY = 26;
@@ -193,6 +202,12 @@ export class Level1{
     this.power = 0;
     this.powerTarget = 0;
 
+    // Shared by every level material: one update a frame changes them all
+    this._hemiSky = { value: AMBIENT_DEAD.sky.clone() };
+    this._hemiGround = { value: AMBIENT_DEAD.ground.clone() };
+    this._envStrength = { value: ENV_DEAD };
+    this._textures = createHubTextures();
+
     this.buildRoom();
     this.addLighting();
 
@@ -248,10 +263,16 @@ export class Level1{
 
   // The look shared by everything in the level: the team's toon shader, driven
   // by the level's lights. Carries over textures from the GLB material.
-  _makeLevelMaterial(originalMat, stackLayer = -1) {
-    const originalColor = originalMat.color
-      ? originalMat.color.clone()
-      : new THREE.Color(0xffffff);
+  //
+  // `surface` (from level1Look.js) gives it the habitat look: a colour, a world-mapped texture,
+  // roughness and gloss. Without one the GLB's own colour is kept.
+  _makeLevelMaterial(originalMat, stackLayer = -1, surface = null) {
+    const originalColor = surface
+      ? new THREE.Color(surface.color)
+      : originalMat.color
+        ? originalMat.color.clone()
+        : new THREE.Color(0xffffff);
+    const tex = surface && surface.kind ? this._textures[surface.kind].packed : null;
 
     // Carry the GLB material's textures into the custom shader so maps
     // baked in Blender show up without extra wiring
@@ -281,7 +302,22 @@ export class Level1{
         lightDirs: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3(0, -1, 0)) },
         lightCones: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector2(-2, -2)) },
         lightColors: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Color()) },
-        lightIntensities: { value: new Array(MAX_LIGHTS).fill(0) }
+        lightIntensities: { value: new Array(MAX_LIGHTS).fill(0) },
+        triTex: { value: tex },
+        hasTri: { value: tex ? 1 : 0 },
+        triTile: { value: surface?.tile ?? 1 },
+        triBump: { value: surface?.bump ?? 0 },
+        roughness: { value: surface?.rough ?? originalMat.roughness ?? 0.6 },
+        metalness: { value: surface?.metal ?? Math.min(originalMat.metalness ?? 0, 0.5) },
+        shellMode: { value: surface?.shell ? 1 : 0 },
+        floorTex: { value: this._textures.floor.packed },
+        floorColor: { value: new THREE.Color(surface?.floorColor ?? 0xffffff) },
+        lowWallColor: { value: new THREE.Color(surface?.lowWallColor ?? 0xffffff) },
+        stripeColor: { value: new THREE.Color(surface?.stripeColor ?? 0xffffff) },
+        ceilColor: { value: new THREE.Color(surface?.ceilColor ?? 0xffffff) },
+        hemiSky: this._hemiSky,
+        hemiGround: this._hemiGround,
+        envStrength: this._envStrength
       },
       // GLB materials are all double-sided; the default FrontSide would
       // cull wall/panel faces seen from behind and make them vanish
@@ -355,7 +391,7 @@ export class Level1{
           const stackMatch = cleanName.match(/^Plane0(6[6-9]|7[01])$/);
           const stackLayer = stackMatch ? Number(cleanName.slice(-2)) - 66 : -1;
 
-          child.material = this._makeLevelMaterial(child.material, stackLayer);
+          child.material = this._makeLevelMaterial(child.material, stackLayer, surfaceFor(cleanName, child.material));
 
           // The generator's glowing rings (Circle001-004: cyan, green, cyan and a
           // green base ring). Unlit by default, they glow in their own colour so
@@ -405,6 +441,7 @@ export class Level1{
       // lights and with ARIA's screen renamed. Both are repaired here rather
       // than in Blender so the level survives the next export.
       this._dedupeLights();
+      this._buildFixtures();
       this._setUpCell();
 
       // Collect monitor screens from the 3D model
@@ -571,6 +608,39 @@ export class Level1{
       console.warn(`Control room exported ${this.lights.length} lights; kept ${kept.length} after removing ${this.lights.length - unique.length} duplicate(s) and ${unique.length - kept.length} over the shader budget of ${budget}.`);
     }
     this.lights = kept;
+  }
+
+  // A glowing ceiling panel at each room light, so you can see the lights themselves: dead
+  // (or stuttering) while the power is out, then switching on one by one when it returns.
+  // Each is placed flush under the ceiling straight above its light; a light with no ceiling
+  // close above it (the far "Sun") gets none.
+  _buildFixtures() {
+    this._fixtures = [];
+    const up = new THREE.Vector3(0, 1, 0);
+    const frameGeo = new THREE.BoxGeometry(2.0, 0.08, 0.62);
+    const panelGeo = new THREE.BoxGeometry(1.8, 0.02, 0.44);
+    const frameMat = this._makeLevelMaterial({}, -1, SURFACE.softBlack);
+    const pos = new THREE.Vector3();
+    this.lights.forEach((light, i) => {
+      if (!light.isPointLight) return;
+      light.getWorldPosition(pos);
+      // (one panel per spot: two lights hang almost together by the lift)
+      if (this._fixtures.some((fx) => Math.hypot(fx.panel.position.x - pos.x, fx.panel.position.z - pos.z) < 1.5)) return;
+      // from a little below: some lights sit right at the ceiling
+      this._rc.set(this._tmpA.set(pos.x, pos.y - 0.6, pos.z), up);
+      this._rc.far = 1.4;
+      const hit = this._rc.intersectObject(this.room, true)[0];
+      if (!hit) return;
+      const y = hit.point.y;
+      const frame = new THREE.Mesh(frameGeo, frameMat);
+      frame.position.set(pos.x, y - 0.04, pos.z);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false });
+      const panel = new THREE.Mesh(panelGeo, mat);
+      panel.position.set(pos.x, y - 0.085, pos.z);
+      this.scene.add(frame, panel);
+      this._fixtures.push({ index: i, mat, frame, panel });
+    });
+    this._rc.far = Infinity;
   }
 
   // Where the glowing rings sit on the generator: sparks fly from around here
@@ -750,6 +820,15 @@ onRingPuzzleComplete() {
   // mesh from the scene does not free its GPU memory: geometries and
   // materials have to be disposed explicitly.
   dispose() {
+    for (const fx of this._fixtures || []) {
+      this.scene.remove(fx.frame, fx.panel);
+      fx.mat.dispose();
+    }
+    for (const set of Object.values(this._textures)) {
+      set.packed.dispose();
+      set.albedo.dispose();
+      set.height.dispose();
+    }
     this.ariaManager?.dispose();
     this.sparks.dispose();
     for (const object of [this.room, this.torch, this.brick, ...this._shards, this.relay?.root, this.ringPuzzle?.hub, this.keypad]) {
@@ -2013,10 +2092,10 @@ onRingPuzzleComplete() {
       m.uniforms.glowColor.value.set(glow);
       return m;
     };
-    const ringMaterial = plain(0x5b6773);
+    const ringMaterial = this._makeLevelMaterial({}, -1, SURFACE.steel);
     const ledMaterial = glowing(0x103040, 0x33e6ff);
     ledMaterial.uniforms.glowAmount.value = 0.55;
-    const boltMaterial = plain(0x2a3037);
+    const boltMaterial = this._makeLevelMaterial({}, -1, SURFACE.softBlack);
     const boltGeometry = new THREE.CylinderGeometry(0.06, 0.06, 0.42, 10);
     const ledGeometry = new THREE.SphereGeometry(0.055, 12, 10);
     const torusGeometry = new THREE.TorusGeometry(RELAY_RADIUS, 0.14, 14, 72);
@@ -2287,6 +2366,14 @@ onRingPuzzleComplete() {
     return factor;
   }
 
+  // The average brightness of the room lights (0 dark .. 1 fully lit)
+  _ambientFactor() {
+    let sum = 0;
+    for (let i = 0; i < this.lights.length; i++) sum += this._lightFactor(i);
+    const f = sum / this.lights.length;
+    return THREE.MathUtils.clamp((f - DIM_LEVEL) / (1 - DIM_LEVEL), 0, 1);
+  }
+
   update(delta, playerPosition, camera) {
     
     this.doorMixer?.update(delta);
@@ -2358,6 +2445,20 @@ onRingPuzzleComplete() {
       this._lightWorldIntensities[count] = FLASH_INTENSITY;
       count++;
     }
+
+    // The ceiling panels show their light's brightness
+    if (this._fixtures) {
+      for (const fx of this._fixtures) {
+        const k = this._lightFactor(fx.index);
+        fx.mat.color.setRGB(0.92, 0.97, 1.0).multiplyScalar(0.04 + 0.96 * Math.min(1, k * 1.15));
+      }
+    }
+
+    // The ambient fill comes up with the power (and drops out with the lights in a blackout)
+    const lit = this.lights.length ? this._ambientFactor() : 0;
+    this._hemiSky.value.copy(AMBIENT_DEAD.sky).lerp(AMBIENT_LIT.sky, lit);
+    this._hemiGround.value.copy(AMBIENT_DEAD.ground).lerp(AMBIENT_LIT.ground, lit);
+    this._envStrength.value = ENV_DEAD + (ENV_LIT - ENV_DEAD) * lit;
 
     for (const mat of this.shaderMaterials) {
       mat.uniforms.numLights.value = count;

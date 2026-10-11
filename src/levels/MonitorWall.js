@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SURFACE } from './level1Look.js';
+import { damagedScreenMaterial, GlitchTimer } from './DamagedScreens.js';
 
 // The monitor room off the control room (the raised platform behind ARIA's wall), dressed as
 // a sci-fi operations wall in the habitat colours: a glossy black media wall with light blue
@@ -9,6 +10,9 @@ import { SURFACE } from './level1Look.js';
 //
 // With the power out the screens are dark (the big one blinks POWER FAILURE) and the LEDs
 // barely glow. When the power comes back the screens boot one after another.
+//
+// The two monitors on the room's outer wall (facing the lift) are damaged: one glitches, the
+// other has smashed glass (DamagedScreens.js).
 //
 // Positions are measured from controlroom.glb: the wall's face is at x = -0.42 (the room is on
 // the -x side), the desk top at y = 1.91, the platform at y = 0.84, the ceiling at y = 6.53.
@@ -27,7 +31,8 @@ const SCREENS = [
   { name: 'Plane005_2', kind: 'power' },
   { name: 'Plane001_2', kind: 'crew' },
   { name: 'Plane003_2', kind: 'comms' },
-  { name: 'Plane002_2', kind: 'depth' }
+  { name: 'Plane004_2', kind: 'glitch' },
+  { name: 'Plane002_2', kind: 'broken' }
 ];
 
 export class MonitorWall {
@@ -43,6 +48,8 @@ export class MonitorWall {
     this.power = 0;
     this._onAt = null;           // level time the power came back
     this._next = 0;              // round-robin redraw
+    this.glitch = new GlitchTimer();
+    this.damaged = [];           // shader materials of the damaged screens
 
     this._buildWall();
     this._buildScreens(level.room);
@@ -140,7 +147,14 @@ export class MonitorWall {
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
     const geo = new THREE.PlaneGeometry(width, height);
-    const mat = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
+    const damaged = kind === 'glitch' || kind === 'broken';
+    const mat = damaged
+      ? damagedScreenMaterial(kind, tex, canvas.width, canvas.height)
+      : new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
+    if (damaged) {
+      this.damaged.push(mat);
+      if (mat.userData.cracks) this.disposables.push(mat.userData.cracks);
+    }
     this.disposables.push(tex, geo, mat);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.copy(centre).addScaledVector(normal, 0.004);
@@ -168,7 +182,13 @@ export class MonitorWall {
       const normal = new THREE.Vector3();
       normal[thin] = Math.sign(centre[thin] - bc[thin]) || -1;
       const width = (thin === 'x' ? size.z : size.x) * 0.97;
-      centre.addScaledVector(normal, size[thin] / 2);   // onto the front of the glass
+      // onto the front of the glass, or of the bezel where its lip stands proud of the glass
+      let front = centre[thin] + normal[thin] * size[thin] / 2;
+      if (bezel) {
+        const bb = new THREE.Box3().setFromObject(bezel);
+        front = normal[thin] > 0 ? Math.max(front, bb.max[thin]) : Math.min(front, bb.min[thin]);
+      }
+      centre[thin] = front;
       this._addScreen(kind, centre, normal, width, size.y * 0.95, kind === 'overview' ? 640 : 512);
     }
     // extra screens in the gaps, each in a slim black bezel, so the wall reads as one console
@@ -258,7 +278,8 @@ export class MonitorWall {
       case 'power': this._powerGrid(g, s, t); break;
       case 'crew': this._crew(g, s, t); break;
       case 'comms': this._comms(g, s, t); break;
-      case 'depth': this._depth(g, s, t); break;
+      case 'broken': this._depth(g, s, t); break;
+      case 'glitch': this._ariaFeed(g, s, t); break;
       case 'banner': this._banner(g, s, t); break;
       case 'generator': this._generator(g, s, t); break;
       case 'hex': this._hex(g, s, t); break;
@@ -378,6 +399,21 @@ export class MonitorWall {
     this._text(g, s, `RETRY ${String(Math.floor(t) % 60).padStart(2, '0')}s   FREQ 12.4 kHz`, 0.04, 0.84, 0.045, DIM);
   }
 
+  // the glitching screen's feed: ARIA's core link, struggling
+  _ariaFeed(g, s, t) {
+    this._frame(g, s, 'ARIA // CORE LINK');
+    const cx = s.w * 0.27, cy = s.h * 0.58, r = s.h * 0.24;
+    const pulse = 0.5 + 0.5 * Math.sin(t * 2.2);
+    g.strokeStyle = BLUE; g.lineWidth = s.h * 0.025;
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = `rgba(100,200,255,${0.25 + 0.5 * pulse})`;
+    g.beginPath(); g.arc(cx, cy, r * (0.35 + 0.15 * pulse), 0, Math.PI * 2); g.fill();
+    this._text(g, s, 'SIGNAL INTEGRITY', 0.52, 0.34, 0.05, DIM, true);
+    this._text(g, s, `${Math.round(18 + 9 * Math.abs(Math.sin(t * 0.7)))} %`, 0.52, 0.48, 0.11, ORANGE, true);
+    this._text(g, s, 'ERR 0x3F FRAME DESYNC', 0.52, 0.64, 0.045, RED);
+    this._text(g, s, 'RE-ESTABLISHING...', 0.52, 0.76, 0.045, WHITE);
+  }
+
   _depth(g, s, t) {
     this._frame(g, s, 'DESCENT');
     g.strokeStyle = ORANGE; g.lineWidth = 3;
@@ -493,6 +529,15 @@ export class MonitorWall {
       this.buttons.setColorAt(i, c);
     }
     this.buttons.instanceColor.needsUpdate = true;
+
+    // the damaged screens: random glitch bursts, and the panels light once the power is back
+    const burst = this.glitch.update(delta);
+    for (const m of this.damaged) {
+      m.uniforms.time.value = this.time;
+      m.uniforms.burst.value = burst;
+      m.uniforms.on.value = this._onAt === null ? 0 : 1;
+      m.uniforms.light.value = this.level.lights.length ? this.level._ambientFactor() : 0;
+    }
 
     // redraw one screen a frame (each about 6-10 times a second)
     if (this.screens.length) {

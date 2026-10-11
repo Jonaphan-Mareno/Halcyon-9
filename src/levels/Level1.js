@@ -27,11 +27,37 @@ const RELAY_STEPS = 8;
 // Where the torch lies: on the floor in front of ARIA's wall monitor
 const TORCH_XZ = new THREE.Vector2(1.2, -7.3);
 
+// Every name ARIA's wall screen has shipped under. controlroom.glb is exported
+// by hand from Blender/controlroom.blend, and the screen object has been renamed
+// between exports: the level-2-lab model calls it "Monitor_wall_01" while the
+// Keypad-combination/exit model calls it "Sphere.008" — and in the latter the
+// freed-up "Monitor_wall_01" name was reused for the bezel around it. Resolve
+// the screen by geometry across all of these instead of trusting one name.
+//
+// Spelled without dots: GLTFLoader's sanitizeNodeName strips them, so the loaded
+// object is "Sphere008". Compared against the same cleaned names buildRoom uses.
+const WALL_SCREEN_NAMES = ['Monitor_wall_01', 'Sphere008'];
+
+// The starting cell: Voss wakes up locked in a room attached to the control room. cell.glb
+// holds just the cell pieces from the same Blender scene, so everything lines up with
+// controlroom.glb and walking out of the door leads straight into the control room.
+const CELL_MODEL = './assets/models/cell.glb';
+const CELL_LIGHT_COLOR = 0xff4a30;   // the red emergency light (the cell's only light)
+const CELL_LIGHT_BASE = 1;          // its brightness and how far it pulses
+const CELL_LIGHT_PULSE = 2;
+const CELL_LIGHT_HEIGHT = 1;
+const BRICK_RANGE = 3;               // how close you must be to pick it up
+const BRICK_HOLD_DISTANCE = 1.4;
+const BRICK_THROW_SPEED = 15;
+const GRAVITY = 9.8;
+const HANDLE_RANGE = 2.5;            // reaching through the broken window to the far-side handle
+
 export class Level1{
 
-  constructor(scene){
+  constructor(scene, camera){
     this.name = 'Control Room';
     this.scene = scene;
+    this.camera = camera || null;   // the player's camera (used to place Voss in the cell)
 
     this.width = window.innerWidth;
     this.height = window.innerHeight;
@@ -42,6 +68,19 @@ export class Level1{
     this.shaderMaterials = []
     this.lights = [];
     this.LightsPuzzle = [];
+    //this.keypadInteractables = [];
+    this.keypad = null;
+    this.doorMixer = null;
+    this.doorActions = [];
+    this.doorOpened = false;
+    this.doorClosed = false;
+
+    // The lift out of the control room. Console_Screen is the call panel inside
+    // the cabin; clicking it shuts the doors and hands the game to level 2.
+    this.elevatorConsoleScreen = null;
+    this.elevatorRiding = false;
+    this._consoleCentre = new THREE.Vector3();
+    this.onElevatorDepart = null;   // set by the Game
 
     this.ringPuzzle = null;          // the wall panel puzzle (RingPuzzle)
     this.ringPuzzleSolved = false;   // ARIA stays off until this is true
@@ -56,6 +95,8 @@ export class Level1{
     this.onTalkToAria = null;      // set by the Game
     this.onInspectGenerator = null; // set by the Game: opens the cable puzzle
     this.onLockedHint = null;      // set by the Game: shows a "do this first" message
+    
+    this.onUseKeypad = null;
 
     // Torch and flashlight
     this.torch = null;             // group lying on the floor until picked up
@@ -107,6 +148,43 @@ export class Level1{
 
     // Which room lights keep working (stuttering) while the power is out
     this._flicker = new Set();
+
+    // The starting cell: break the window with the brick, the door unlocks, walk out
+    this.inCell = true;            // false once Voss has left (or if the model has no cell)
+    this.door = null;              // the door leaf (its handle is parented to the same pivot)
+    this.doorPivot = null;
+    this.doorHandle = null;        // the handle on the far side, turned through the broken window
+    this.doorOpening = false;
+    this.doorOpen = false;
+    this.window = null;            // { glass, source, shards, box, broken }
+    this.brick = null;
+    this.brickHeld = false;
+    this.brickFlying = false;
+    this.onBrickPickedUp = null;   // set by the Game (shows a hint)
+    this.onWindowBroken = null;    // set by the Game (optional)
+    this.onHandleTurned = null;    // set by the Game (sound)
+    this.onLeftCell = null;        // set by the Game (optional)
+    this._brickVel = new THREE.Vector3();
+    this._brickStart = new THREE.Vector3();
+    this._brickNudgeDir = null;    // the way the brick tips over, chosen once per flight
+    this._doorCentre = new THREE.Vector3();
+    this._doorwayCentre = new THREE.Vector3();
+    this._handleCentre = new THREE.Vector3();
+    this._doorOpenAngle = -Math.PI / 2;
+    this._doorOpenAt = -1;
+    this._cellFloorY = 0;
+    this._shards = [];             // window pieces in flight
+    this._glassMaterial = null;
+    this._blocker = null;          // invisible filler for the door's window hole
+    this._blockerMaterial = null;
+    this._cellLightPos = new THREE.Vector3();
+    this._cellLightLevel = 0;      // fades to 0 once Voss leaves, freeing its light slot
+    this._cellLightTarget = 0;
+    this._cam = this.camera;
+    this._rc = new THREE.Raycaster();
+    this._tmpA = new THREE.Vector3();
+    this._tmpB = new THREE.Vector3();
+    this._tmpC = new THREE.Vector3();
 
     this.time = 0;
 
@@ -224,8 +302,20 @@ export class Level1{
   async buildRoom(){
     try {
       const gltfLoader = new GLTFLoader();
-      const roomGlb = await gltfLoader.loadAsync('./assets/models/controlroom.glb');
+      const [roomGlb, cellGlb] = await Promise.all([
+        gltfLoader.loadAsync('./assets/models/controlroom.glb'),
+        new GLTFLoader().loadAsync(CELL_MODEL).catch((e) => {
+          console.error('Failed to load cell.glb; starting in the control room:', e);
+          return null;
+        })
+      ]);
       const ctrlRoom = roomGlb.scene;
+
+      // The cell becomes part of the room, so the walls, floor and door collide like
+      // everything else (and the bounds below include it)
+      if (cellGlb) {
+        for (const node of [...cellGlb.scene.children]) ctrlRoom.add(node);
+      }
 
       const box = new THREE.Box3().setFromObject(ctrlRoom);
       this.bounds = { minX: box.min.x, maxX: box.max.x,
@@ -234,12 +324,26 @@ export class Level1{
 
       this.room = ctrlRoom;
       this.room.position.set(0, 0, 0);
+      this.setupDoorAnimation(roomGlb.animations);
 
       ctrlRoom.traverse((child) => {
         // GLTFLoader strips dots from node names ("Plane.066" -> "Plane066")
         const cleanName = child.name.replace(/\./g, '');
 
-        if(child.isMesh){
+        if (child.isMesh) {
+          const worldPos = new THREE.Vector3();
+          child.getWorldPosition(worldPos);
+
+          console.log(
+            'ROOM MESH:',
+            child.name,
+            worldPos
+          );
+        }
+        if (child.isMesh && this._isCellGlass(cleanName)) {
+          // The cell window and its fracture pieces stay see-through
+          child.material = this._getGlassMaterial();
+        } else if(child.isMesh){
           child.castShadow = true;
           // NOTE: ShaderMaterial has no shadow chunks yet, so nothing actually
           // receives shadows; flags kept for when the shader supports it
@@ -264,9 +368,11 @@ export class Level1{
           }
         }
 
-        // (GLB has 7 point lights + 1 directional "Sun"; the shader treats
-        // every light as positional, so the far Sun contributes almost nothing.
-        // Brightness is set every frame in update(), from the power level.)
+        // (The export's punctual lights: point fixtures plus a directional
+        // "Sun"; the shader treats every light as positional, so the far Sun
+        // contributes almost nothing. Duplicates and overflow are trimmed by
+        // _dedupeLights() once the world matrices exist. Brightness is set
+        // every frame in update(), from the power level.)
         if(child.isLight){
           this.lights.push(child);
         }
@@ -281,25 +387,44 @@ export class Level1{
           this.generatorParts.push(child);
         }
 
+        // The lift's call panel, on the cabin's right-hand wall. Blender names
+        // the mesh data-block Cube.040 but the exported node — which is what
+        // GLTFLoader actually names the object — is Console_Screen, so match
+        // either: a re-export has renamed this object before.
+        if (child.isMesh && (cleanName === 'Console_Screen' || cleanName === 'Cube040')) {
+          this.elevatorConsoleScreen = child;
+        }
+
       });
 
-      if (this.lights.length > MAX_LIGHTS - 1) {
-        console.warn(`Control room has ${this.lights.length} lights but the shader has room for ${MAX_LIGHTS - 1} plus the flashlight; extra lights are ignored.`);
-      }
       this.scene.add(this.room);
+      this.buildKeypad();
       this.room.updateMatrixWorld(true);
+
+      // Re-exports of controlroom.glb have shipped this room with duplicate
+      // lights and with ARIA's screen renamed. Both are repaired here rather
+      // than in Blender so the level survives the next export.
+      this._dedupeLights();
+      this._setUpCell();
 
       // Collect monitor screens from the 3D model
       if (this.ariaManager) {
-        this.ariaManager.collectMonitors(this.room);
+        const { screen, frames } = this._resolveWallScreen();
+        if (screen) this._ensureMonitorUVs(screen);
+        this.ariaManager.collectMonitors(this.room, { screen, ignore: frames });
         // Voss wakes up with ARIA on the wall monitor in front of him;
         // call unpinMonitor() after the intro so she follows the player
-        this.ariaManager.pinMonitor('Monitor_wall_01');
+        if (screen) this.ariaManager.pinMonitor(screen);
         this.wallMonitor = this.ariaManager.pinnedMonitor;
       }
 
       this._measureGenerator();
       if (this.wallMonitor) new THREE.Box3().setFromObject(this.wallMonitor).getCenter(this._monitorCentre);
+      if (this.elevatorConsoleScreen) {
+        new THREE.Box3().setFromObject(this.elevatorConsoleScreen).getCenter(this._consoleCentre);
+      } else {
+        console.warn('Level1: no Console_Screen in controlroom.glb; the lift cannot be called.');
+      }
       this._pickFlickeringLights();
       try { this._buildRingPuzzle(); } catch (e) { console.error('Ring puzzle failed to build:', e); }
       this._rebuildInteractables();
@@ -313,9 +438,139 @@ export class Level1{
     } catch (error) {
         console.error('Failed to load controlroom.glb:', error);
         console.log('Stuck in purgatory')
+        this.inCell = false;
         this.defaultRoom();
     }
 
+  }
+
+  // ---------------------------------------------------------------------
+  // Repairs for hand-exported controlroom.glb revisions
+  // ---------------------------------------------------------------------
+
+  // Find ARIA's wall screen without trusting its object name.
+  //
+  // The screen and the bezel around it share one transform, and re-exports have
+  // swapped which of them carries the name "Monitor_wall_01". Every candidate
+  // name is collected and the innermost one wins: the glass always sits inside
+  // its own frame, so the bezel is the box that contains the others.
+  //
+  // Returns { screen, frames } — `frames` are the bezels, which must not be
+  // handed to AriaManager as monitors (it would repaint them as screens).
+  _resolveWallScreen() {
+    const clean = (name) => name.replace(/\./g, '');
+    const candidates = [];
+    this.room.traverse((child) => {
+      if (child.isMesh && WALL_SCREEN_NAMES.includes(clean(child.name))) candidates.push(child);
+    });
+    if (candidates.length === 0) {
+      console.warn(`Level1: none of [${WALL_SCREEN_NAMES.join(', ')}] found in controlroom.glb; ARIA has no wall screen.`);
+      return { screen: null, frames: [] };
+    }
+
+    let best = 0;
+    if (candidates.length > 1) {
+      const boxes = candidates.map((mesh) => new THREE.Box3().setFromObject(mesh));
+      const diagonal = (i) => boxes[i].getSize(new THREE.Vector3()).length();
+      const enclosedByOthers = (i) => boxes.every((box, j) => j === i || box.containsBox(boxes[i]));
+
+      // Prefer a candidate enclosed by all the others; if nothing nests cleanly
+      // (a future export drops the bezel, or they end up the same size) fall back
+      // to the whole list. Either way the smallest one is the glass, not the frame.
+      const eligible = candidates.map((mesh, i) => i).filter(enclosedByOthers);
+      const pool = eligible.length > 0 ? eligible : candidates.map((mesh, i) => i);
+      best = pool[0];
+      for (const i of pool) if (diagonal(i) < diagonal(best)) best = i;
+    }
+
+    const screen = candidates[best];
+    const frames = candidates.filter((mesh) => mesh !== screen);
+    console.log(`Level1: wall screen resolved to "${screen.name}"${frames.length ? ` (bezels: ${frames.map((m) => `"${m.name}"`).join(', ')})` : ''}.`);
+    return { screen, frames };
+  }
+
+  // Rebuild the screen's UVs as one clean 0..1 planar island.
+  //
+  // ARIA's hologram shader samples the whole face texture across vUv, so the
+  // screen needs a single unwrapped island. Exports have shipped it with no
+  // TEXCOORD_0 at all, and with Blender's Smart UV Project fragments — and both
+  // fail identically, because vUv collapses and the shader's luminance test
+  // discards every pixel under additive blending. Checking for a missing `uv`
+  // attribute is therefore not enough: overwrite it every time.
+  //
+  // Projection axes and orientation match the known-good level-2-lab export
+  // exactly (u = 1 - normalized local Y, v = normalized local Z on that model):
+  // project along the mesh's thinnest local axis, which is the one the glass
+  // faces away from.
+  _ensureMonitorUVs(mesh) {
+    const geometry = mesh.geometry;
+    const position = geometry.getAttribute('position');
+    if (!position) return;
+
+    geometry.computeBoundingBox();
+    const { min, max } = geometry.boundingBox;
+    const extents = [0, 1, 2].map((i) => max.getComponent(i) - min.getComponent(i));
+    const thin = extents.indexOf(Math.min(...extents));
+    const uAxis = (thin + 1) % 3;
+    const vAxis = (thin + 2) % 3;
+    const uMin = min.getComponent(uAxis);
+    const vMin = min.getComponent(vAxis);
+    const uSpan = extents[uAxis] || 1;
+    const vSpan = extents[vAxis] || 1;
+
+    const uv = new Float32Array(position.count * 2);
+    for (let i = 0; i < position.count; i++) {
+      // Mirrored in U so the face reads the right way round from the player side
+      uv[i * 2] = 1 - (position.getComponent(i, uAxis) - uMin) / uSpan;
+      uv[i * 2 + 1] = (position.getComponent(i, vAxis) - vMin) / vSpan;
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geometry.attributes.uv.needsUpdate = true;
+  }
+
+  // Collapse lights exported more than once, then trim to the shader's budget.
+  //
+  // Re-exports have shipped this room with the same fixtures duplicated
+  // (Point.007-.012 copying Point.001-.006, Sun.001 copying Sun), which pushes
+  // the count past MAX_LIGHTS - 1 so update() silently drops whichever lights
+  // land last. Directional lights are shed first once the budget is still
+  // exceeded: the shader treats every light as positional, so a distant Sun
+  // contributes almost nothing.
+  _dedupeLights() {
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const seen = new Set();
+    const unique = [];
+
+    for (const light of this.lights) {
+      light.getWorldPosition(pos);
+      light.getWorldQuaternion(quat);
+      const key = [
+        light.type,
+        pos.x.toFixed(3), pos.y.toFixed(3), pos.z.toFixed(3),
+        quat.x.toFixed(4), quat.y.toFixed(4), quat.z.toFixed(4), quat.w.toFixed(4),
+        light.color.getHexString(),
+        light.intensity.toFixed(3)
+      ].join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(light);
+    }
+
+    const budget = MAX_LIGHTS - 1;
+    let kept = unique;
+    if (unique.length > budget) {
+      kept = [
+        ...unique.filter((light) => !light.isDirectionalLight),
+        ...unique.filter((light) => light.isDirectionalLight)
+      ].slice(0, budget);
+    }
+
+    const dropped = this.lights.length - kept.length;
+    if (dropped > 0) {
+      console.warn(`Control room exported ${this.lights.length} lights; kept ${kept.length} after removing ${this.lights.length - unique.length} duplicate(s) and ${unique.length - kept.length} over the shader budget of ${budget}.`);
+    }
+    this.lights = kept;
   }
 
   // Where the glowing rings sit on the generator: sparks fly from around here
@@ -437,7 +692,23 @@ onRingPuzzleComplete() {
     if (this.relay) this._interactables.push(this.relay.root);
     if (this.torch && !this.hasTorch) this._interactables.push(this.torch);
     if (this.ringPuzzle) this._interactables.push(this.ringPuzzle.hub);
+    if (this.keypad) {
+      this._interactables.push(this.keypad);
+    }
+    // The lift's call panel only answers once the doors are open, and stops
+    // being clickable again as soon as the ride has started
+    if (this.elevatorConsoleScreen && this.doorOpened && !this.elevatorRiding) {
+      this._interactables.push(this.elevatorConsoleScreen);
+    }
+    if (this.brick && this.brick.visible) this._interactables.push(this.brick);
+    // The far-side handle: reachable only once the window is broken, and gone
+    // again as soon as the door is moving. Falls back to the door leaf itself
+    // if the model has no handle node.
+    if ((this.doorHandle || this.door) && this.window?.broken && !this.doorOpen && !this.doorOpening) {
+      this._interactables.push(this.doorHandle || this.door);
+    }
   }
+
 
   _isGeneratorPart(object) {
     return this.generatorParts.includes(object);
@@ -449,6 +720,31 @@ onRingPuzzleComplete() {
     }
     return false;
   }
+  _isKeypadPart(object) {
+    for (let o = object; o; o = o.parent) {
+      if (o === this.keypad) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  _isConsoleScreenPart(object) {
+    for (let o = object; o; o = o.parent) {
+      if (o === this.elevatorConsoleScreen) return true;
+    }
+    return false;
+  }
+
+  _isHandlePart(object) {
+    const target = this.doorHandle || this.door;
+    if (!target) return false;
+    for (let o = object; o; o = o.parent) {
+      if (o === target) return true;
+    }
+    return false;
+  }
 
   // Free everything this level created (used when the game restarts). Removing a
   // mesh from the scene does not free its GPU memory: geometries and
@@ -456,24 +752,591 @@ onRingPuzzleComplete() {
   dispose() {
     this.ariaManager?.dispose();
     this.sparks.dispose();
-    for (const object of [this.room, this.torch, this.relay?.root, this.ringPuzzle?.hub]) {
+    for (const object of [this.room, this.torch, this.brick, ...this._shards, this.relay?.root, this.ringPuzzle?.hub, this.keypad]) {
       if (!object) continue;
       object.traverse((o) => o.geometry?.dispose?.());
       this.scene.remove(object);
     }
     for (const material of this.shaderMaterials) material.dispose();
+    this._glassMaterial?.dispose();
+    this._blockerMaterial?.dispose();
+    this._shards.length = 0;
     
     this.shaderMaterials.length = 0;
     this.lights.length = 0;
     this._interactables.length = 0;
   }
+  _makeKeypadMaterial(
+    color,
+    {
+      glow = 0x000000,
+      glowAmount = 0
+    } = {}
+  ) {
+    const material = this._makeLevelMaterial({
+      color: new THREE.Color(color)
+    });
 
+    // Keep the casing quite dark even in the powered room.
+    material.uniforms.ambientColor.value.setScalar(0.015);
+
+    material.uniforms.glowColor.value.set(glow);
+    material.uniforms.glowAmount.value = glowAmount;
+
+    return material;
+  }
+
+  setupDoorAnimation(clips = []) {
+    this.doorMixer = new THREE.AnimationMixer(this.room);
+
+    this.doorActions = clips
+      .filter((clip) =>
+        clip.tracks.some((track) =>
+          track.name.includes('Door_Left') ||
+          track.name.includes('Door_Right')
+        )
+      )
+      .map((clip) => {
+        const action = this.doorMixer.clipAction(clip);
+
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+
+        return action;
+      });
+
+    console.log(
+      'Door animations:',
+      this.doorActions.length,
+      clips.map((clip) => clip.name)
+    );
+  }
+
+  openElevatorDoor() {
+    if (this.doorOpened) return;
+
+    if (!this.doorActions.length) {
+      console.warn('No elevator door animation found.');
+      return;
+    }
+
+    this.doorOpened = true;
+    this.doorClosed = false;
+
+    for (const action of this.doorActions) {
+      action.reset();
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+      action.timeScale = 1;
+      action.play();
+    }
+
+    // The call panel inside the cabin only becomes usable once the doors are open
+    this._rebuildInteractables();
+
+    console.log('Elevator door opening');
+  }
+
+  // controlroom.glb ships no "close" clip: each of the two actions runs its door
+  // from the rest (shut) position out to the open position, so shutting them is
+  // the same clips played backwards — negative timeScale, started at the end.
+  // Returns the seconds until they are shut, so the Game can time the hand-off.
+  closeElevatorDoor() {
+    if (this.doorClosed || !this.doorActions.length) return 0;
+
+    this.doorClosed = true;
+    this.doorOpened = false;
+
+    let duration = 0;
+    for (const action of this.doorActions) {
+      const clip = action.getClip();
+      duration = Math.max(duration, clip.duration);
+      action.reset();
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+      action.timeScale = -1;
+      action.time = clip.duration; // start fully open, run back to rest
+      action.play();
+    }
+
+    console.log(`Elevator door closing (${duration.toFixed(2)}s)`);
+    return duration;
+  }
+
+  // Voss pressed the lift's call panel: shut the doors, then let the Game take
+  // the level down to the habitat deck once they are closed.
+  rideElevator() {
+    if (this.elevatorRiding || !this.doorOpened) return;
+
+    this.elevatorRiding = true;
+    this._rebuildInteractables(); // the panel is no longer clickable mid-ride
+
+    const seconds = this.closeElevatorDoor();
+    this.onElevatorDepart?.(seconds);
+  }
+
+  buildKeypad() {
+    const keypad = new THREE.Group();
+    keypad.name = 'SecurityKeypad';
+    keypad.scale.setScalar(0.34);
+
+    /*
+    * TEMP position — move later when the double door is built.
+    */
+    const keypadHeight = 2.15;
+
+    keypad.position.set(
+      1.0,
+      keypadHeight,
+      1.80
+    );
+
+    keypad.rotation.y = Math.PI;
+
+    keypad.userData.interactionType = 'keypad';
+    keypad.userData.maxInteractionDistance = 3.25;
+    keypad.userData.focusDistance = 0.55;
+
+    // =========================================================
+    // Materials
+    // =========================================================
+    const mountMat =
+      this._makeKeypadMaterial(0x070a0c);
+
+    const housingMat =
+      this._makeKeypadMaterial(0x0c1115);
+
+    const bezelMat =
+      this._makeKeypadMaterial(0x030608);
+
+    const darkMetalMat =
+      this._makeKeypadMaterial(0x0a0f12);
+
+    const boltMat =
+      this._makeKeypadMaterial(0x283238);
+
+    const trimMat =
+      this._makeKeypadMaterial(
+        0x071317,
+        {
+          glow: 0x00a6b8,
+          glowAmount: 0.12
+        }
+      );
+
+    const screenGlassMat =
+      new THREE.MeshBasicMaterial({
+        color: 0x010507
+      });
+
+    const ledMat =
+      this._makeKeypadMaterial(
+        0x07171b,
+        {
+          glow: 0x22d5e5,
+          glowAmount: 0.65
+        }
+      );
+    // =========================================================
+    // Back mounting plate
+    // =========================================================
+    const mountPlate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.98, 1.56, 0.06),
+      mountMat
+    );
+    mountPlate.position.z = -0.015;
+    mountPlate.name = 'SecurityKeypadMountPlate';
+    keypad.add(mountPlate);
+
+    // =========================================================
+    // Main keypad housing
+    // =========================================================
+    const housing = new THREE.Mesh(
+      new THREE.BoxGeometry(0.82, 1.34, 0.18),
+      housingMat
+    );
+    housing.position.z = 0.055;
+    housing.name = 'SecurityKeypadHousing';
+    keypad.add(housing);
+
+    // Slightly inset inner face panel
+    const facePanel = new THREE.Mesh(
+      new THREE.BoxGeometry(0.74, 1.22, 0.04),
+      darkMetalMat
+    );
+    facePanel.position.z = 0.14;
+    facePanel.name = 'SecurityKeypadFacePanel';
+    keypad.add(facePanel);
+
+    // Thin emissive trim border
+    const trimTop = new THREE.Mesh(
+      new THREE.BoxGeometry(0.72, 0.01, 0.008),
+      trimMat
+    );
+    trimTop.position.set(0, 0.56, 0.163);
+
+    const trimBottom = trimTop.clone();
+    trimBottom.position.set(0, -0.56, 0.163);
+
+    const trimLeft = new THREE.Mesh(
+      new THREE.BoxGeometry(0.01, 1.12, 0.008),
+      trimMat
+    );
+    trimLeft.position.set(-0.36, 0, 0.163);
+
+    const trimRight = trimLeft.clone();
+    trimRight.position.set(0.36, 0, 0.163);
+
+    keypad.add(trimTop, trimBottom, trimLeft, trimRight);
+
+    // =========================================================
+    // Corner bolts
+    // =========================================================
+    const boltPositions = [
+      [-0.43,  0.67, 0.165],
+      [ 0.43,  0.67, 0.165],
+      [-0.43, -0.67, 0.165],
+      [ 0.43, -0.67, 0.165]
+    ];
+
+    boltPositions.forEach(([x, y, z]) => {
+      const bolt = this.createKeypadBolt(boltMat);
+      bolt.position.set(x, y, z);
+      keypad.add(bolt);
+    });
+
+    // =========================================================
+    // Screen bezel + glass
+    // =========================================================
+    const screenBezel = new THREE.Mesh(
+      new THREE.BoxGeometry(0.56, 0.26, 0.035),
+      bezelMat
+    );
+    screenBezel.position.set(0, 0.36, 0.16);
+    keypad.add(screenBezel);
+
+    const screenGlass = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.50, 0.20),
+      screenGlassMat
+    );
+    screenGlass.position.set(0, 0.36, 0.179);
+    keypad.add(screenGlass);
+
+    const screenTexture = this.createKeypadScreenTexture();
+    const screenUI = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.48, 0.18),
+      new THREE.MeshBasicMaterial({
+        map: screenTexture,
+        transparent: false
+      })
+    );
+    screenUI.position.set(0, 0.36, 0.1805);
+    screenUI.name = 'SecurityKeypadScreenUI';
+    keypad.add(screenUI);
+
+    // =========================================================
+    // Status light
+    // =========================================================
+    const ledHousing = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.032, 0.032, 0.02, 20),
+      bezelMat
+    );
+    ledHousing.rotation.x = Math.PI / 2;
+    ledHousing.position.set(0, 0.12, 0.17);
+    keypad.add(ledHousing);
+
+    const led = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.022, 0.022, 0.016, 20),
+      ledMat
+    );
+    led.rotation.x = Math.PI / 2;
+    led.position.set(0, 0.12, 0.182);
+    keypad.add(led);
+
+    // =========================================================
+    // Speaker grille
+    // =========================================================
+    const grilleBarMat =
+      this._makeKeypadMaterial(0x11191d);
+
+    for (let i = 0; i < 5; i++) {
+      const bar = new THREE.Mesh(
+        new THREE.BoxGeometry(0.18, 0.007, 0.008),
+        grilleBarMat
+      );
+      bar.position.set(0, -0.49 + i * 0.02, 0.171);
+      keypad.add(bar);
+    }
+
+    // =========================================================
+    // Physical raised buttons
+    // =========================================================
+    const labels = [
+      '1', '2', '3',
+      '4', '5', '6',
+      '7', '8', '9',
+      'CLR', '0', 'ENT'
+    ];
+
+    const startX = -0.19;
+    const startY = 0.0;
+    const gapX = 0.19;
+    const gapY = 0.16;
+
+    labels.forEach((label, index) => {
+      const col = index % 3;
+      const row = Math.floor(index / 3);
+
+      const isEnter = label === 'ENT';
+      const isClear = label === 'CLR';
+
+      const key = this.createKeypadButton(label, {
+        isEnter,
+        isClear
+      });
+
+      key.position.set(
+        startX + col * gapX,
+        startY - row * gapY,
+        0.175
+      );
+
+      keypad.add(key);
+    });
+
+    // =========================================================
+    // Small printed plate / serial text area
+    // =========================================================
+    const badgeTexture = this.createKeypadBadgeTexture();
+    const badge = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.28, 0.06),
+      new THREE.MeshBasicMaterial({
+        map: badgeTexture,
+        transparent: false
+      })
+    );
+    badge.position.set(0, -0.57, 0.181);
+    keypad.add(badge);
+
+    // Raycast should hit the group via parent traversal
+    keypad.traverse((child) => {
+      child.userData.interactionOwner = keypad;
+    });
+
+    console.log('ROOM BOUNDS:', this.bounds);
+    console.log('KEYPAD POSITION:', keypad.position);
+    this.scene.add(keypad);
+    this.keypad = keypad;
+    this._rebuildInteractables();
+  }
+
+  createKeypadBolt(material) {
+    const bolt = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.022, 0.022, 0.014, 20),
+      material
+    );
+
+    bolt.rotation.x = Math.PI / 2;
+
+    const slot = new THREE.Mesh(
+      new THREE.BoxGeometry(0.024, 0.004, 0.003),
+      this._makeKeypadMaterial(0x151c20)
+    );
+
+    slot.position.z = 0.0075;
+    bolt.add(slot);
+
+    return bolt;
+  }
+
+  createKeypadButton(label, { isEnter = false, isClear = false } = {}) {
+    const group = new THREE.Group();
+
+    const buttonMat =
+      isEnter
+        ? this._makeKeypadMaterial(
+            0x0b1714,
+            {
+              glow: 0x1a8063,
+              glowAmount: 0.12
+            }
+          )
+        : isClear
+          ? this._makeKeypadMaterial(
+              0x1c110d,
+              {
+                glow: 0x7a341c,
+                glowAmount: 0.08
+              }
+            )
+          : this._makeKeypadMaterial(
+              0x0b1114
+            );
+
+    const button = new THREE.Mesh(
+      new THREE.BoxGeometry(0.11, 0.105, 0.035),
+      buttonMat
+    );
+    group.add(button);
+
+    const labelTexture = this.createKeypadButtonLabelTexture(label, {
+      isEnter,
+      isClear
+    });
+
+    const labelMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.08, 0.042),
+      new THREE.MeshBasicMaterial({
+        map: labelTexture,
+        transparent: true
+      })
+    );
+
+    labelMesh.position.z = 0.0185;
+    group.add(labelMesh);
+
+    return group;
+  }
+
+  createKeypadScreenTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+
+    const ctx = canvas.getContext('2d');
+
+    // Background
+    const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bg.addColorStop(0, '#08171d');
+    bg.addColorStop(1, '#030a0d');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Inner border
+    ctx.strokeStyle = '#1ddff2';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+
+    // Subtle scanlines
+    for (let y = 0; y < canvas.height; y += 4) {
+      ctx.fillStyle = 'rgba(0, 229, 255, 0.03)';
+      ctx.fillRect(0, y, canvas.width, 1);
+    }
+
+    // Header line
+    ctx.fillStyle = '#58f4ff';
+    ctx.font = 'bold 25px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('SECURITY ACCESS', canvas.width / 2, 68);
+
+    // Status line
+    ctx.fillStyle = '#76a8b0';
+    ctx.font = '16px monospace';
+    ctx.fillText('AUTH // 6 DIGIT', canvas.width / 2, 95);
+
+    // Code slots
+    const slotY = 145;
+    const slotW = 40;
+    const slotH = 28;
+    const gap = 14;
+    const totalW = 6 * slotW + 5 * gap;
+    const startX = (canvas.width - totalW) / 2;
+
+    for (let i = 0; i < 6; i++) {
+      const x = startX + i * (slotW + gap);
+
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.65)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, slotY, slotW, slotH);
+
+      ctx.fillStyle = 'rgba(0, 229, 255, 0.04)';
+      ctx.fillRect(x, slotY, slotW, slotH);
+    }
+
+    // Locked status
+    ctx.fillStyle = '#f0a15d';
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText('STATUS: LOCKED', canvas.width / 2, 204);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+
+    return texture;
+  }
+
+  createKeypadButtonLabelTexture(label, { isEnter = false, isClear = false } = {}) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 64;
+
+    const ctx = canvas.getContext('2d');
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.font = label.length > 1
+      ? 'bold 24px monospace'
+      : 'bold 32px monospace';
+
+    ctx.fillStyle = isEnter
+      ? '#7affd8'
+      : isClear
+        ? '#ffb08a'
+        : '#d9fbff';
+
+    ctx.shadowColor = isEnter
+      ? 'rgba(122,255,216,0.35)'
+      : isClear
+        ? 'rgba(255,176,138,0.25)'
+        : 'rgba(0,229,255,0.18)';
+
+    ctx.shadowBlur = 8;
+    ctx.fillText(label, canvas.width / 2, canvas.height / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+
+    return texture;
+  }
+
+  createKeypadBadgeTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#0b1215';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = 'rgba(0, 229, 255, 0.25)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+
+    ctx.fillStyle = '#7eaab2';
+    ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('H9 ACCESS NODE // PRESSURE SAFE', canvas.width / 2, canvas.height / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+
+    return texture;
+  }
+  
   getBounds(){
     return this.bounds;
   }
 
   get interactables() {
-    return this._interactables;
+    return this._interactables;/*[
+      ...this.LightsPuzzle,
+      ...this.keypadInteractables
+    ];*/
   }
 
   // How close the player must be to use things (world units)
@@ -482,10 +1345,32 @@ onRingPuzzleComplete() {
   static GENERATOR_RANGE = 5.5;
   static RELAY_RANGE = 6.5;
   static RING_PANEL_RANGE = 5;
+  // The cabin is only ~3m across, so this stays short: from inside the lift the
+  // panel is about 1.3m away, and the doorway puts it just under 2m.
+  static CONSOLE_RANGE = 2.2;
 
   // Text for the on-screen prompt while looking at an object, or null for none.
   // The torch and the generator stay locked until the player has talked to ARIA.
   getInteractPrompt(object, distance) {
+    if (this._isKeypadPart(object)) {
+      if (distance > this.keypad.userData.maxInteractionDistance) {
+        return null;
+      }
+
+      return 'Click or press E to use keypad';
+    }
+    if (this._isConsoleScreenPart(object)) {
+      return this.canInteract(object, distance)
+        ? 'Click or press E to ride the lift down'
+        : null;
+    }
+    if (object === this.brick) {
+      if (this.brickHeld) return 'Click: throw   E: drop';
+      return this.canInteract(object, distance) ? 'Click or press E to pick up the brick' : null;
+    }
+    if (this._isHandlePart(object)) {
+      return this.canInteract(object, distance) ? 'Click or press E to turn the handle' : null;
+    }
     if (object === this.wallMonitor) {
   if (!this.ringPuzzleSolved) {
     return distance <= Level1.MONITOR_RANGE ? 'The monitor is dead. No power' : null;
@@ -517,6 +1402,18 @@ onRingPuzzleComplete() {
 
   // Range checks only: the "locked" messages are shown from onInteract
   canInteract(object, distance) {
+    if (this._isKeypadPart(object)) {
+      return distance <= this.keypad.userData.maxInteractionDistance;
+    }
+    if (this._isConsoleScreenPart(object)) {
+      return this.doorOpened && !this.elevatorRiding && distance <= Level1.CONSOLE_RANGE;
+    }
+    if (object === this.brick) {
+      return !this.brickHeld && distance <= BRICK_RANGE && this._clearLineTo(object.position, distance);
+    }
+    if (this._isHandlePart(object)) {
+      return this.window?.broken && !this.doorOpen && !this.doorOpening && distance <= HANDLE_RANGE;
+    }
     if (object === this.wallMonitor) {
       return this.talkEnabled && distance <= Level1.MONITOR_RANGE;
     }
@@ -536,6 +1433,23 @@ onRingPuzzleComplete() {
   }
 
   onInteract(object, options = {}) {
+    if (this._isKeypadPart(object)) {
+      this.onUseKeypad?.(this.keypad);
+      return;
+    }
+    if (this._isConsoleScreenPart(object)) {
+      this.rideElevator();
+      return;
+    }
+    if (object === this.brick) {
+      this._pickUpBrick();
+      return;
+    }
+    if (this._isHandlePart(object)) {
+      this.onHandleTurned?.();
+      this.openDoor();
+      return;
+    }
     if (object === this.wallMonitor) {
   if (!this.ringPuzzleSolved) {
     this.onLockedHint?.('The monitor is dead. Something on the wall panel controls its power.');
@@ -581,6 +1495,7 @@ onRingPuzzleComplete() {
 
   // What the on-screen waypoint should point at right now (or null)
   getWaypoint() {
+    if (this.inCell) return this._cellWaypoint();
     const w = this._waypoint;
     if (!this.ringPuzzleSolved && this.ringPuzzle) {
       w.position.copy(this.ringPuzzle.hub.position);
@@ -598,6 +1513,12 @@ onRingPuzzleComplete() {
     } else if (!this.relaySolved) {
       w.position.copy(this._generatorCentre);
       w.label = 'Relay rings';
+    } else if (!this.doorOpened && this.keypad) {
+      w.position.copy(this.keypad.position);
+      w.label = 'Keypad';
+    } else if (this.doorOpened && !this.elevatorRiding) {
+      w.position.copy(this._consoleCentre);
+      w.label = 'Lift';
     } else {
       return null;
     }
@@ -615,6 +1536,450 @@ onRingPuzzleComplete() {
 
   toggleFlashlight() {
     if (this.hasTorch) this.flashlightOn = !this.flashlightOn;
+  }
+
+
+  // ---------------------------------------------------------
+  // The starting cell
+  // ---------------------------------------------------------
+  _isCellGlass(cleanName) {
+    return cleanName.startsWith('window');
+  }
+
+  _getGlassMaterial() {
+    if (!this._glassMaterial) {
+      this._glassMaterial = new THREE.MeshBasicMaterial({
+        color: 0x9fd8ff, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false
+      });
+    }
+    return this._glassMaterial;
+  }
+
+  // Finds a node by name, ignoring the dots GLTFLoader strips ("window.001" -> "window001")
+  _findNode(name) {
+    let found = null;
+    this.room.traverse((c) => {
+      if (!found && c.name.replace(/\./g, '') === name) found = c;
+    });
+    return found;
+  }
+
+  // True when nothing solid (apart from the window glass) is between the camera and `point`
+  _clearLineTo(point, distance) {
+    const cam = this._cam;
+    if (!cam || !this.room) return true;
+    const dir = this._tmpA.copy(point).sub(cam.position).normalize();
+    this._rc.set(cam.position, dir);
+    this._rc.far = Math.max(0, distance - 0.05);
+    const blocker = this._rc.intersectObject(this.room, true)
+      .find((h) => !this._isCellGlass(h.object.name.replace(/\./g, '')));
+    return !blocker;
+  }
+
+  _setUpCell() {
+    const spawn = this._findNode('spawn');
+    if (!this._findNode('cell') || !spawn) {
+      this.inCell = false;   // no cell in the model: the game starts in the control room
+      return;
+    }
+    this._setUpDoor(this._findNode('door'), this._findNode('Vert'), this._findNode('frame'));
+    this._setUpWindow(this._findNode('window'), this._findNode('window001'));
+
+    // Under the spawn point: where the floor is (shards and the brick rest on it)
+    const spawnPos = spawn.getWorldPosition(new THREE.Vector3());
+    this._rc.set(new THREE.Vector3(spawnPos.x, spawnPos.y + 1, spawnPos.z), new THREE.Vector3(0, -1, 0));
+    this._rc.far = 6;
+    const floor = this._rc.intersectObject(this.room, true)[0];
+    this._cellFloorY = floor ? floor.point.y : 0;
+
+    this._buildBrick(spawnPos);
+
+    // The cell's single light, over the middle of the room
+    const cellBox = new THREE.Box3().setFromObject(this._findNode('cell'));
+    cellBox.getCenter(this._cellLightPos);
+    this._cellLightPos.y = Math.min(CELL_LIGHT_HEIGHT, cellBox.max.y - 0.5);
+    this._cellLightLevel = this._cellLightTarget = 1;
+
+    // Voss wakes up on the spawn point, facing the door
+    if (this.camera) {
+      this.camera.position.copy(spawnPos);
+      this.camera.lookAt(this._doorwayCentre.x, spawnPos.y, this._doorwayCentre.z);
+    }
+  }
+
+  // The door's geometry is baked around the world origin, so it is parented to a pivot on
+  // its hinge edge. The handle goes on the same pivot, so it swings with the door. The
+  // handle marks the latch side; the hinge is the opposite edge.
+  _setUpDoor(door, handle, frame) {
+    if (!door) {
+      console.warn('The cell door was not found in cell.glb');
+      return;
+    }
+    this.room.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(door);
+    box.getCenter(this._doorCentre);
+
+    const handleX = handle
+      ? new THREE.Box3().setFromObject(handle).getCenter(this._tmpA).x
+      : box.min.x;
+    const hingeAtMax = handleX < this._doorCentre.x;
+    const hingeX = hingeAtMax ? box.max.x : box.min.x;
+    const freeX = hingeAtMax ? box.min.x : box.max.x;
+
+    const pivot = new THREE.Object3D();
+    pivot.name = 'DoorPivot';
+    pivot.position.set(hingeX, 0, this._doorCentre.z);
+    this.room.add(pivot);
+    pivot.updateMatrixWorld(true);
+    pivot.attach(door);
+    if (handle) pivot.attach(handle);
+
+    // Swing away from the player: out of the cell (towards -z)
+    this._doorOpenAngle = Math.sign(freeX - hingeX) * (Math.PI / 2);
+    this.door = door;
+    this.doorPivot = pivot;
+    this.doorHandle = handle || null;
+    if (handle) new THREE.Box3().setFromObject(handle).getCenter(this._handleCentre);
+
+    const doorway = frame ? new THREE.Box3().setFromObject(frame) : box;
+    doorway.getCenter(this._doorwayCentre);
+    this._doorwayCentre.y = 1.5;
+  }
+
+  _setUpWindow(glass, source) {
+    const shards = [];
+    this.room.traverse((c) => {
+      if (c.isMesh && c.name.replace(/\./g, '').startsWith('window001_cell')) shards.push(c);
+    });
+    if (!glass || shards.length === 0) {
+      console.warn('The cell window or its fracture pieces were not found in cell.glb');
+      return;
+    }
+
+    // The pieces are modelled in place, but their origin may not be at their centre:
+    // re-centre each one so it tumbles around itself instead of around the world origin
+    const centre = new THREE.Vector3();
+    for (const shard of shards) {
+      shard.geometry.computeBoundingBox();
+      shard.geometry.boundingBox.getCenter(centre);
+      if (centre.lengthSq() > 1e-6) {
+        shard.updateMatrix();
+        const placed = centre.clone().applyMatrix4(shard.matrix);
+        shard.geometry.translate(-centre.x, -centre.y, -centre.z);
+        shard.position.copy(placed);
+      }
+      shard.visible = false;   // hidden until the glass breaks
+    }
+    if (source) source.visible = false;   // the duplicate the pieces were cut from
+
+    const box = new THREE.Box3().setFromObject(glass);
+    // The pane's own bounds are the hole it leaves behind. Voss is a single walk
+    // ray at eye height (2.6) and the pane's top edge sits just above it, so once
+    // the glass is gone that ray slips through the hole and he walks straight
+    // through the closed door. An invisible filler in the opening keeps the leaf
+    // solid until the handle is turned. Raycasts hit invisible meshes (the hidden
+    // duplicate above had to be removed for exactly that reason), while the
+    // renderer skips them — so the hole still reads as a hole you can peek through.
+    // It hangs off the door pivot, so it swings away with the leaf on its own.
+    if (this.doorPivot) {
+      const size = box.getSize(new THREE.Vector3());
+      this._blockerMaterial = new THREE.MeshBasicMaterial({ visible: false });
+      this._blocker = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          Math.max(size.x + 0.06, 0.05),   // a little past the pane edges swallows the seams
+          Math.max(size.y + 0.06, 0.05),
+          Math.max(size.z + 0.04, 0.04)
+        ),
+        this._blockerMaterial
+      );
+      box.getCenter(this._blocker.position);
+      this._blocker.updateMatrix();
+      this.doorPivot.attach(this._blocker);
+    }
+    box.expandByScalar(0.25);
+    this.window = { glass, source, shards, box, broken: false };
+  }
+
+  _buildBrick(spawnPos) {
+    const geo = new THREE.BoxGeometry(0.35, 0.2, 0.2);
+    this.brick = new THREE.Mesh(geo, this._makeLevelMaterial({ color: new THREE.Color(0x888888) }));
+    this.brick.name = 'Brick';
+    this.brick.castShadow = true;
+    this.scene.add(this.brick);   // not part of the room, so it never blocks the player
+
+    this.brick.position.set(spawnPos.x + 1, this._cellFloorY + 0.1, spawnPos.z - 1);
+    this._brickStart.copy(this.brick.position);
+  }
+
+  _pickUpBrick() {
+    if (!this.brick || this.brickHeld) return;
+    this.brickHeld = true;
+    this.brickFlying = false;
+    this.onBrickPickedUp?.();
+  }
+
+  _dropBrick() {
+    this.brickHeld = false;
+    this.brickFlying = true;
+    this._brickVel.set(0, 0, 0);
+    this._brickNudgeDir = null;
+  }
+
+  _throwBrick() {
+    const cam = this._cam;
+    if (!cam) return;
+    cam.getWorldDirection(this._tmpA);
+    this._brickVel.copy(this._tmpA).multiplyScalar(BRICK_THROW_SPEED);
+    this.brickHeld = false;
+    this.brickFlying = true;
+    this._brickNudgeDir = null;
+  }
+
+  // Called by the Game for a click or E while something is in Voss's hands.
+  // Click throws, E drops. Returns true when it handled the input.
+  handleHeldItem(options = {}) {
+    if (!this.brickHeld) return false;
+    if (options.fromKey) this._dropBrick();
+    else this._throwBrick();
+    return true;
+  }
+
+  openDoor(delay = 0.35) {
+    if (!this.doorPivot || this.doorOpening || this.doorOpen || this._doorOpenAt >= 0) return;
+    this._doorOpenAt = this.time + delay;   // a beat after the handle turns, so it reads
+  }
+
+  shatterWindow(impactPoint) {
+    const w = this.window;
+    if (!w || w.broken) return;
+    w.broken = true;
+
+    // Remove the glass (and the hidden duplicate): raycasts ignore `visible`, so left in
+    // the room they would block the doorway
+    w.glass.removeFromParent();
+    w.source?.removeFromParent();
+
+    const worldPos = new THREE.Vector3();
+    for (const shard of w.shards) {
+      shard.visible = true;
+      this.scene.attach(shard);   // frees the piece from the room, so it can fall
+      shard.getWorldPosition(worldPos);
+
+      const outward = worldPos.clone().sub(impactPoint);
+      if (outward.lengthSq() < 1e-4) outward.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
+      outward.normalize();
+
+      const velocity = outward.multiplyScalar(2 + Math.random() * 3);
+      velocity.y += 1 + Math.random() * 2;   // slight upward pop
+      shard.userData.velocity = velocity;
+      shard.userData.spin = new THREE.Vector3(
+        (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6
+      );
+      shard.userData.age = 0;
+      this._shards.push(shard);
+    }
+
+    this.onWindowBroken?.();
+    // The broken window exposes the far-side handle; turning it opens the door
+    this._rebuildInteractables();
+  }
+
+  _updateCell(delta, playerPosition, camera) {
+    if (camera) this._cam = camera;
+    if (!this.brick) return;
+
+    this._updateBrick(delta);
+    this._updateShards(delta);
+
+    // The handle has been turned: a beat later the door swings open
+    if (this._doorOpenAt >= 0 && this.time >= this._doorOpenAt) {
+      this._doorOpenAt = -1;
+      this.doorOpening = true;
+      this._rebuildInteractables();   // the handle is out of reach from here on
+    }
+    if (this.doorOpening && this.doorPivot) {
+      const target = this._doorOpenAngle;
+      this.doorPivot.rotation.y = THREE.MathUtils.lerp(this.doorPivot.rotation.y, target, Math.min(1, 4 * delta));
+      if (Math.abs(this.doorPivot.rotation.y - target) < 0.01) {
+        this.doorPivot.rotation.y = target;
+        this.doorOpening = false;
+        this.doorOpen = true;
+      }
+    }
+
+    // Through the door: the cell is behind Voss now, nothing to load, the control room is right there
+    if (this.inCell && (this.doorOpen || this.doorOpening) && playerPosition &&
+        playerPosition.z < this._doorCentre.z - 0.3 &&
+        Math.abs(playerPosition.x - this._doorCentre.x) < 1.5) {
+      this._leaveCell();
+    }
+
+    // The red light fades out once Voss has left, which frees its light slot
+    this._cellLightLevel += (this._cellLightTarget - this._cellLightLevel) * Math.min(1, delta * 1.5);
+    if (this._cellLightTarget === 0 && this._cellLightLevel < 0.01) this._cellLightLevel = 0;
+  }
+
+  _leaveCell() {
+    this.inCell = false;
+    this._cellLightTarget = 0;
+    // The brick stays behind in the cell
+    this.brickHeld = false;
+    this.brickFlying = false;
+    this.brick.visible = false;
+    this._rebuildInteractables();
+    this.onLeftCell?.();
+  }
+
+  _updateBrick(delta) {
+    const brick = this.brick;
+    const cam = this._cam;
+    if (!brick.visible) return;
+
+    if (this.brickHeld && cam) {
+      // Carried in front of Voss, a little below the crosshair
+      cam.getWorldDirection(this._tmpA);
+      brick.position.copy(cam.position).addScaledVector(this._tmpA, BRICK_HOLD_DISTANCE);
+      brick.position.y -= 0.3;
+      brick.quaternion.copy(cam.quaternion);
+      return;
+    }
+    if (!this.brickFlying) return;
+
+    // One continuous ray per frame from the old position to the new one, so a fast
+    // throw cannot skip through the window or a wall
+    const dt = Math.min(delta, 0.05);
+    this._brickVel.y -= GRAVITY * dt;
+    const step = this._tmpA.copy(this._brickVel).multiplyScalar(dt);
+    const length = step.length();
+    brick.rotation.x += dt * 5;
+    brick.rotation.z += dt * 3;
+
+    if (length > 1e-6) {
+      const dir = this._tmpB.copy(step).divideScalar(length);
+      const prev = brick.position;
+
+      const w = this.window;
+      if (w && !w.broken) {
+        this._rc.set(prev, dir);
+        const entry = this._rc.ray.intersectBox(w.box, this._tmpC);
+        const inside = w.box.containsPoint(prev);
+        if (inside || (entry && prev.distanceTo(entry) <= length)) {
+          this.shatterWindow(inside ? prev.clone() : entry.clone());
+          this._brickVel.multiplyScalar(0.2);   // the glass takes most of its speed
+          return;
+        }
+      }
+
+      this._rc.set(prev, dir);
+      // The ray sweeps exactly this frame's travel. It must not reach further:
+      // a bounce leaves the brick 0.1 off the surface, and a longer reach finds
+      // that same surface again next frame even when the brick is moving away,
+      // pinning it into a bounce loop that hangs in mid-air.
+      this._rc.far = length + 1e-3;
+      const hit = this._rc.intersectObject(this.room, true)
+        .find((h) => !this._isCellGlass(h.object.name.replace(/\./g, '')));
+      if (hit) {
+        const normal = hit.face
+          ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+          : new THREE.Vector3(0, 1, 0);
+        if (normal.dot(dir) > 0) normal.negate();
+        brick.position.copy(hit.point).addScaledVector(normal, 0.1);
+        // Only floor-level surfaces are landing spots. The door has up-facing
+        // parts high above the floor — the handle, the top edge of the open
+        // leaf — and "landing" on one froze the brick in mid-air, where it
+        // stayed floating after the door swung on.
+        const atFloor = hit.point.y <= this._cellFloorY + 0.2;
+        if (normal.y > 0.5 && this._brickVel.y <= 0 && atFloor) {
+          // Landed: rests on the floor and can be picked up again
+          this._brickVel.set(0, 0, 0);
+          this.brickFlying = false;
+          brick.rotation.set(0, brick.rotation.y, 0);
+        } else if (normal.y > 0.5 && this._brickVel.y <= 0) {
+          // Up-facing but too high to stand on (a handle, a sill): bouncing
+          // would buzz on the spot forever, so slide off sideways instead and
+          // let gravity carry the brick down past the edge
+          this._brickVel.y = 0;
+          this._brickVel.x *= 0.6;
+          this._brickVel.z *= 0.6;
+          if (this._brickVel.lengthSq() < 0.05) {
+            // Dropped dead on top of it: tip over. The direction is chosen once
+            // per flight so the brick leaves in a straight line instead of
+            // wandering around on the surface.
+            if (!this._brickNudgeDir) {
+              this._brickNudgeDir = new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5);
+              if (this._brickNudgeDir.lengthSq() < 1e-4) this._brickNudgeDir.set(1, 0, 0);
+              this._brickNudgeDir.normalize();
+            }
+            this._brickVel.copy(this._brickNudgeDir).multiplyScalar(0.5);
+          }
+        } else {
+          this._brickVel.reflect(normal).multiplyScalar(0.35);
+        }
+      } else {
+        brick.position.add(step);
+      }
+    }
+
+    // Fell out of the world: put it back where it started
+    if (brick.position.y < this._cellFloorY - 10) {
+      brick.position.copy(this._brickStart);
+      brick.rotation.set(0, 0, 0);
+      this._brickVel.set(0, 0, 0);
+      this.brickFlying = false;
+    }
+  }
+
+  // The window pieces fall to the cell floor and stay there
+  _updateShards(delta) {
+    const dt = Math.min(delta, 0.05);
+    for (const shard of this._shards) {
+      const u = shard.userData;
+      if (u.resting) continue;
+      u.age += dt;
+      shard.position.addScaledVector(u.velocity, dt);
+      u.velocity.y -= GRAVITY * dt;
+      shard.rotation.x += u.spin.x * dt;
+      shard.rotation.y += u.spin.y * dt;
+      shard.rotation.z += u.spin.z * dt;
+      if (shard.position.y <= this._cellFloorY + 0.02 || u.age > 6) {
+        shard.position.y = Math.max(shard.position.y, this._cellFloorY + 0.02);
+        u.resting = true;
+      }
+    }
+  }
+
+  getCellObjective() {
+    if (this.doorOpen || this.doorOpening) return 'Leave through the door';
+    if (this.window?.broken) return 'Reach through the window and turn the handle';
+    if (this.brickHeld) return 'Throw the brick at the window';
+    return 'Find a way out of the cell';
+  }
+
+  // The marker for the cell stage: the brick, then the window, then the door
+  _cellWaypoint() {
+    const w = this._waypoint;
+    if (this.window && !this.window.broken) {
+      if (this.brickHeld) {
+        // box centre, not getWorldPosition: the window's node origin sits at the world origin
+        this.window.box.getCenter(w.position);
+        w.label = 'Window';
+      } else if (this.brick) {
+        w.position.copy(this.brick.position);
+        w.position.y += 0.3;
+        w.label = 'Brick';
+      } else {
+        return null;
+      }
+    } else if (this.doorHandle && !this.doorOpen && !this.doorOpening) {
+      w.position.copy(this._handleCentre);
+      w.label = 'Handle';
+    } else if (this.door) {
+      w.position.copy(this._doorwayCentre);
+      w.label = 'Door';
+    } else {
+      return null;
+    }
+    return w;
   }
 
   addLighting(){
@@ -923,6 +2288,8 @@ onRingPuzzleComplete() {
   }
 
   update(delta, playerPosition, camera) {
+    
+    this.doorMixer?.update(delta);
     this.time += delta;
     this.power += (this.powerTarget - this.power) * Math.min(1, delta * 1.5);
     if (this.ariaManager) {
@@ -935,9 +2302,12 @@ onRingPuzzleComplete() {
     this._updateGenerator(delta);
     this._updateRelay(delta);
     this.ringPuzzle?.update(delta);
+    this._updateCell(delta, playerPosition, camera);
 
     const flash = this.flashlightOn && camera;
-    const roomCount = Math.min(this.lights.length, MAX_LIGHTS - 1);
+    // The cell's light takes a slot while it is on (the far "Sun" gives up its slot)
+    const cellLightOn = this._cellLightLevel > 0.01;
+    const roomCount = Math.min(this.lights.length, MAX_LIGHTS - 1 - (cellLightOn ? 1 : 0));
     let count = 0;
 
     // Gather light data once per frame instead of once per material
@@ -948,6 +2318,16 @@ onRingPuzzleComplete() {
       this._lightWorldColors[count].copy(light.color);
       this._lightWorldIntensities[count] = LIGHT_FULL * this._lightFactor(i);
       this._lightCones[count].set(-2, -2); // plain point light
+      count++;
+    }
+
+    if (cellLightOn) {
+      // The cell's red emergency light, pulsing
+      this._lightWorldPositions[count].copy(this._cellLightPos);
+      this._lightCones[count].set(-2, -2);
+      this._lightWorldColors[count].set(CELL_LIGHT_COLOR);
+      this._lightWorldIntensities[count] =
+        this._cellLightLevel * (CELL_LIGHT_BASE + Math.sin(this.time * 5) * CELL_LIGHT_PULSE);
       count++;
     }
 

@@ -46,7 +46,7 @@ const LOOK_SMOOTHING = 10;
 const FADE = 0.2;
 
 // Same banding as the level shader (Shaders.js): three hard steps of light
-function makeToonRamp() {
+export function makeToonRamp() {
   const data = new Uint8Array([70, 70, 70, 110, 190, 255]);
   const tex = new THREE.DataTexture(data, data.length, 1, THREE.RedFormat);
   tex.minFilter = tex.magFilter = THREE.NearestFilter;
@@ -55,17 +55,23 @@ function makeToonRamp() {
   return tex;
 }
 
-// Toon material with the level shader's faint cyan rim
-function toonFrom(src, ramp) {
+// Toon material with the level shader's faint cyan rim. `overrides` lets other users of
+// the look carry extra settings (the bedrooms add their vertex colours). Emissive is
+// carried too, so glowing things (the bedroom light panels) keep their glow
+export function toonFrom(src, ramp, overrides = {}) {
   const mat = new THREE.MeshToonMaterial({
     map: src.map || null,
     color: src.color ? src.color.clone() : new THREE.Color(0xffffff),
     gradientMap: ramp,
+    emissive: src.emissive ? src.emissive.clone() : new THREE.Color(0x000000),
+    emissiveIntensity: src.emissiveIntensity || 1,
+    emissiveMap: src.emissiveMap || null,
     transparent: src.transparent,
     opacity: src.opacity,
     alphaTest: src.alphaTest,
     side: THREE.DoubleSide,
-    depthWrite: !src.transparent
+    depthWrite: !src.transparent,
+    ...overrides
   });
   mat.name = src.name;
   // Hair cards are cut out (MASK in the glb); keep them out of the transparent pass

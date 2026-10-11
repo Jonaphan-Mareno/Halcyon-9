@@ -10,6 +10,7 @@ export class Controls {
     this.moveBackward = false;
     this.moveLeft = false;
     this.moveRight = false;
+    //this.inputEnabled = true;
 
     this.velocity = new THREE.Vector3();
     this.direction = new THREE.Vector3();
@@ -20,6 +21,14 @@ export class Controls {
     this.eyeHeight = 2.6;
     this.floorSmoothing = 15;
     this.maxRayDistance = 5;
+    // The floor probe starts this far above the camera so steps and ramps are
+    // still caught while descending. It must stay below the headroom of the
+    // tightest space in a level: once the probe starts above a ceiling, that
+    // ceiling reads as the floor (see updateFloorHeight).
+    this.floorProbeLift = 1.0;
+    // How far above his own feet Voss can be pulled in one go. He cannot jump
+    // in level 1, so anything taller than a step is not a floor he walked onto.
+    this.maxStepUp = 0.45;
 
     // Wall collision
     this.collisionRadius = 0.5; // how close the camera can get to a wall
@@ -27,6 +36,7 @@ export class Controls {
     this._raycaster = new THREE.Raycaster();
     this._downVec = new THREE.Vector3(0, -1, 0);
     this._rayOrigin = new THREE.Vector3();
+    this._hitNormal = new THREE.Vector3();
     this._matCol = new THREE.Vector3(); // local X column of camera matrix
     this._rightDir = new THREE.Vector3();
     this._forwardDir = new THREE.Vector3();
@@ -38,6 +48,23 @@ export class Controls {
   lock() {
     this.instance.lock();
   }
+  // setInputEnabled(enabled) {
+  //   this.inputEnabled = enabled;
+  //   this.instance.enabled = enabled;
+
+  //   if (!enabled) {
+  //     this.stopMovement();
+  //   }
+  // }
+
+// stopMovement() {
+//   this.moveForward = false;
+//   this.moveBackward = false;
+//   this.moveLeft = false;
+//   this.moveRight = false;
+
+//   this.velocity.set(0, 0, 0);
+// }
 
   // Freeze movement and mouse-look (used during dialogue)
   stop() {
@@ -47,6 +74,8 @@ export class Controls {
   }
 
   onKeyDown(event) {
+    //if (!this.inputEnabled) return;
+
     switch (event.code) {
       case 'ArrowUp': case 'KeyW': this.moveForward = true; break;
       case 'ArrowLeft': case 'KeyA': this.moveLeft = true; break;
@@ -69,15 +98,46 @@ export class Controls {
     if (!room) return;
 
     const pos = this.camera.position;
-    this._rayOrigin.set(pos.x, pos.y + 1.0, pos.z);
+    this._rayOrigin.set(pos.x, pos.y + this.floorProbeLift, pos.z);
     this._raycaster.set(this._rayOrigin, this._downVec);
     this._raycaster.far = this.maxRayDistance;
 
     const hits = this._raycaster.intersectObject(room, true);
-    if (hits.length === 0) return;
 
-    const targetY = hits[0].point.y + this.eyeHeight;
+    // hits[0] is not necessarily the floor. The probe is lifted above the
+    // camera, so in any space with less headroom than eyeHeight + that lift the
+    // probe starts *above* the ceiling — and because every level material is
+    // DoubleSide, the ray reports the ceiling's top face as the nearest hit.
+    // Trusting hits[0] there floors the player onto the roof, and it is
+    // self-sustaining: rising lifts the probe further above the ceiling, so the
+    // same surface keeps being picked. This is what launched Voss out of the
+    // lift cabin in controlroom.glb, whose ceiling tops out at y=3.50 against
+    // an interior height of only 3.35m.
+    //
+    // So snap to the ground instead of to whatever is nearest: the floor he is
+    // standing on is the highest upward-facing surface within one step of his
+    // feet. Descending stays unlimited, so drops and stairs still work, while
+    // ceilings and tall props are never mistaken for floors — which also ends
+    // the old "brush against a tank, get teleported on top of it" behaviour.
+    // Hits come back sorted by distance, and the ray points down, so find()
+    // yields the highest surface that passes.
+    const feet = pos.y - this.eyeHeight;
+    const floor = hits.find(
+      (hit) => hit.point.y <= feet + this.maxStepUp && this._facesUp(hit)
+    );
+    if (!floor) return;
+
+    const targetY = floor.point.y + this.eyeHeight;
     pos.y += (targetY - pos.y) * Math.min(1, this.floorSmoothing * delta);
+  }
+
+  // World-space upward normal for a raycast hit. Geometry normals are not
+  // flipped for backfaces, so under DoubleSide this cleanly separates the top
+  // of a slab (walkable) from its underside (not).
+  _facesUp(hit) {
+    if (!hit.face) return false;
+    this._hitNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+    return this._hitNormal.y > 0;
   }
 
   // Clamps an intended movement distance along `dir` so the camera stops

@@ -6,6 +6,7 @@ import { Level1 } from './levels/Level1.js';
 import { Level2Session } from './levels/Level2Session.js';
 import { HoseTestSession } from './level2/HoseTestSession.js';
 import { HabitatSession } from './level2/HabitatSession.js';
+import { KeypadUI } from './ui/KeypadUI.js';
 import { UIManager } from './ui/UIManager.js';
 import { HUD } from './ui/HUD.js';
 import { Inventory } from './ui/Inventory.js';
@@ -22,8 +23,12 @@ const OBJECTIVES = [
   'Find the torch on the floor',
   'Repair the generator circuit',
   'Turn the relay rings until every marker lines up with the rail',
-  'Power restored'
+  'Use the security keypad beside the lift doors',
+  'Step into the lift and press the call panel to go down'
 ];
+
+//TEMP access code
+const ELEVATOR_ACCESS_CODE = '123456';
 
 // Circuit puzzle timing: each failed attempt adds a little time, up to a cap,
 // so it never becomes frustrating
@@ -92,7 +97,7 @@ const formatTime = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor
 
 export class Game {
   constructor() {
-    // INIT, WAKING, PLAYING, DIALOGUE, TUTORIAL, PUZZLE, INVENTORY, DEAD, GAME_OVER
+    // INIT, WAKING, PLAYING, KEYPAD, RETURNING, DIALOGUE, TUTORIAL, PUZZLE, INVENTORY, DEAD, GAME_OVER, DEPARTING
     this.state = 'INIT';
     this.lastTime = performance.now();
     // ?level=2 in the address starts straight in level 2, at the elevator (for testing)
@@ -105,6 +110,22 @@ export class Game {
     this._wpVec = new THREE.Vector3();
     this._wpCam = new THREE.Vector3();
     this._wpInfo = { x: 0, y: 0, angle: 0, onScreen: true, label: '', distance: 0 };
+
+    this.interactionDistance = 4;
+    this.keypadTransitionDuration = 0.38;
+    this.keypadTransition = null;
+    this.keypadReturnPose = null;
+    this._keypadWorldPos =
+      new THREE.Vector3();
+    this._keypadNormal =
+      new THREE.Vector3();
+    this._keypadWorldQuat =
+      new THREE.Quaternion();
+    this._focusLookTarget =
+      new THREE.Vector3();
+    this._focusObject =
+      new THREE.Object3D();
+    
 
     this.player = new PlayerStats();
     this._resetProgress();
@@ -139,13 +160,19 @@ export class Game {
     }
 
     // Load first level
-    this.currentLevel = new Level1(this.scene);
+    this.currentLevel = new Level1(this.scene, this.camera.instance);
 
     // Controls
     this.controls = new Controls(this.camera.instance, document.body, this.currentLevel);
 
     // Overlay UI, sound, the opening conversation and the circuit puzzle
     const uiRoot = document.getElementById('ui-layer');
+    
+    this.keypadUI = new KeypadUI({
+      onSubmit: (code) => this.onKeypadSubmit(code),
+      onCancel: () => this.exitKeypadMode()
+    });
+
     this.ui = new UIManager();
     this.hud = new HUD(uiRoot, { onRestart: () => this.restart() });
     this.inventory = new Inventory(uiRoot);
@@ -170,13 +197,18 @@ export class Game {
     this.center = new THREE.Vector2(0, 0);
     this.reticle = document.getElementById('reticle');
 
-    document.addEventListener('click', (e) => this.onClick(e));
-    document.addEventListener('keydown', (e) => this.onKeyDown(e));
+    // Kept as named references so they can be taken back off again when level 1
+    // is torn down for level 2, which installs its own input handling.
+    this._onDocClick = (e) => this.onClick(e);
+    this._onDocKeyDown = (e) => this.onKeyDown(e);
+    document.addEventListener('click', this._onDocClick);
+    document.addEventListener('keydown', this._onDocKeyDown);
 
     this.mouse = new THREE.Vector2();
     this.camAnim = null;
     this.savedCam = null;
     this._leavingRingPuzzle = false;
+    this._departing = false;   // the lift doors are shutting on the way to level 2
     this._createRingPuzzleUI();
     window.addEventListener('mousemove', (e) => {
       this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
@@ -195,10 +227,78 @@ export class Game {
     // ?level=2: the NEW level 2, the habitat atrium (environment preview for now)
     // ?level=hose: the coolant hose test room
     // ?level=reactor: the old cargo atrium, kept to become Level 3's reactor room
-    const sessions = { '2': HabitatSession, hose: HoseTestSession, reactor: Level2Session };
-    this.level2 = new sessions[this.startLevel](this);
+    this._mountLevel2(this.startLevel);
     window.addEventListener('resize', () => this.onResize());
     this.startLoop();
+  }
+
+  // Build one level 2 session. Split out of _initLevel2 because the lift out of
+  // the control room reaches level 2 the same way: there the renderer, camera,
+  // UIManager and the animation loop all already exist and must not be made a
+  // second time (startLoop is a recursive rAF with no way to cancel it, and
+  // UIManager's constructor appends DOM).
+  _mountLevel2(kind) {
+    const sessions = { '2': HabitatSession, hose: HoseTestSession, reactor: Level2Session };
+    this.startLevel = kind;
+    this.level2 = new sessions[kind](this);
+  }
+
+  // ---------------------------------------------------------
+  // Leaving level 1: Voss pressed the lift's call panel
+  // ---------------------------------------------------------
+
+  // The doors are shutting. Hold level 1 in place for as long as they take,
+  // then swap the level out from under the running game.
+  onElevatorDepart(seconds = 0) {
+    if (this.level2Mode || this._departing) return;
+    this._departing = true;
+
+    this.controls.stop();
+    this.controls.instance.unlock();
+    this.state = 'DEPARTING';
+
+    this.reticle.classList.remove('visible');
+    this.ui.setPrompt(null);
+    this.ui.setWaypoint(null);
+    this.ui.setObjective(null);
+    this.hud.setVisible(false);
+    this.audio.stopHum(0.6);
+    this.ui.showToast('Descending to the habitat deck...', seconds * 1000 + 2500);
+
+    setTimeout(() => this._leaveForLevel2(), seconds * 1000 + 700);
+  }
+
+  _leaveForLevel2() {
+    if (!this._departing) return;
+
+    // Level 1's input would otherwise keep firing at a level that no longer
+    // exists; HabitatSession puts its own click-to-lock handler on instead.
+    document.removeEventListener('click', this._onDocClick);
+    document.removeEventListener('keydown', this._onDocKeyDown);
+
+    this.puzzle?.close?.();
+    this.inventory?.close?.();
+    this.ui.hideDialogue();
+    this.ui.hideToast();
+    this.currentLevel?.dispose?.();
+    this.currentLevel = null;
+    this.ringCloseBtn?.remove();
+    this.ringCloseBtn = null;
+
+    // Everything level 1 put on screen goes, except what was already in the HTML
+    // and the UIManager elements level 2 reuses.
+    const keep = [
+      document.getElementById('welcome-screen'),
+      this.reticle,
+      this.ui.blink, this.ui.prompt, this.ui.toast,
+      this.ui.objective, this.ui.waypoint, this.ui.overloadBanner, this.ui.dialogue
+    ].filter(Boolean);
+    document.getElementById('ui-layer').replaceChildren(...keep);
+
+    this.level2Mode = true;
+    this.state = 'PLAYING';
+    this._mountLevel2('2');
+    this._departing = false;
   }
 
   updateLevel2(delta) {
@@ -210,17 +310,23 @@ export class Game {
     const level = this.currentLevel;
     this.intro = new IntroSequence(this.ui, level.ariaManager);
     level.onTalkToAria = () => this.startIntroDialogue();
+    level.onBrickPickedUp = () => this.ui.showToast('Click throws the brick. E drops it.', 5000);
+    level.onHandleTurned = () => this.audio.clunk();
     level.onTorchPickedUp = () => {
       this.inventory.add('torch');
       this.hud.setTorch(true, true);
       this.ui.showToast('Torch picked up. F switches it on or off. I opens your inventory.');
     };
     level.onInspectGenerator = () => this.startPuzzle();
+    level.onUseKeypad = (keypad) => {
+      this.enterKeypadMode(keypad);
+    };
     level.onLockedHint = (text) => this.ui.showToast(text);
     level.onRingTurned = () => this.audio.clunk();
     level.onRelayAligned = () => this.onRelayAligned();
     level.onOpenRingPuzzle = () => this.enterRingPuzzle();
     level.onRingPuzzleSolved = () => this.onRingPuzzleSolved();
+    level.onElevatorDepart = (seconds) => this.onElevatorDepart(seconds);
   }
 
   onResize() {
@@ -244,6 +350,240 @@ export class Game {
     }
   }
 
+  resumePlayerControls() {
+    if (!this.controls) return;
+
+    this.controls.instance.enabled = true;
+    // if (!this.controls.instance.isLocked) {
+    //   this.controls.lock();
+    // }
+
+    this.state = 'PLAYING';
+    this.reticle.classList.add('visible');
+  }
+
+  enterKeypadMode(keypad) {
+    if (this.state !== 'PLAYING' || !keypad) return;
+
+    const cam = this.camera.instance;
+
+    this.controls.stop();
+    this.controls.instance.unlock();
+
+    this.state = 'KEYPAD';
+
+    this.reticle.classList.remove('visible');
+    this.ui.setPrompt(null);
+    this.ui.setWaypoint(null);
+
+    keypad.updateWorldMatrix(true, true);
+
+    // Save the exact camera pose so we can smoothly return to it.
+    this.keypadReturnPose = {
+      position: cam.position.clone(),
+      quaternion: cam.quaternion.clone()
+    };
+
+    /*
+    * Frame the actual keypad geometry rather than moving to a
+    * hard-coded distance from its object origin.
+    */
+    const box = new THREE.Box3().setFromObject(keypad);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+
+    /*
+    * Keypad face points along its local +Z.
+    * Convert that direction into world space.
+    */
+    const worldQuat = keypad.getWorldQuaternion(
+      new THREE.Quaternion()
+    );
+
+    const normal = new THREE.Vector3(0, 0, 1)
+      .applyQuaternion(worldQuat)
+      .normalize();
+
+    /*
+    * Same principle as the ring puzzle:
+    * calculate a camera distance from the object's physical size
+    * and the camera's FOV.
+    */
+    const verticalFov =
+      THREE.MathUtils.degToRad(cam.fov);
+
+    const horizontalFov =
+      2 * Math.atan(
+        Math.tan(verticalFov / 2) * cam.aspect
+      );
+
+    const verticalDistance =
+      size.y /
+      (2 * Math.tan(verticalFov / 2));
+
+    const horizontalDistance =
+      size.x /
+      (2 * Math.tan(horizontalFov / 2));
+
+    // Slight padding so the keypad does not fill the whole screen.
+    const distance =
+      Math.max(
+        verticalDistance,
+        horizontalDistance
+      ) * 1.35;
+
+    const toPos = center
+      .clone()
+      .addScaledVector(normal, distance);
+
+    /*
+    * Exactly the same look-at approach used by the ring puzzle.
+    */
+    const matrix = new THREE.Matrix4().lookAt(
+      toPos,
+      center,
+      new THREE.Vector3(0, 1, 0)
+    );
+
+    const toQuat =
+      new THREE.Quaternion()
+        .setFromRotationMatrix(matrix);
+
+    /*
+    * Use the ring puzzle camera animation instead of the
+    * separate keypadTransition system.
+    */
+    this._startCamAnim(
+      toPos,
+      toQuat,
+      () => {
+        if (this.state === 'KEYPAD') {
+          this.keypadUI.open();
+        }
+      }
+    );
+  }
+
+  exitKeypadMode() {
+    if (this.state !== 'KEYPAD') return;
+
+    this.keypadUI.close();
+
+    if (!this.keypadReturnPose) {
+      this.state = 'PLAYING';
+      this.controls.instance.enabled = true;
+      this.reticle.classList.add('visible');
+      return;
+    }
+
+    const returnPose = this.keypadReturnPose;
+
+    this.state = 'RETURNING';
+
+    this._startCamAnim(
+      returnPose.position,
+      returnPose.quaternion,
+      () => {
+        this.keypadReturnPose = null;
+
+        this.controls.instance.enabled = true;
+
+        this.state = 'PLAYING';
+
+        this.reticle.classList.add('visible');
+      }
+    );
+  }
+  
+  onKeypadSubmit(code) {
+    console.log(`Six-digit keypad input received: ${code}`);
+
+    if (code === ELEVATOR_ACCESS_CODE) {
+      console.log('ACCESS GRANTED');
+
+      this.currentLevel.openElevatorDoor?.();
+
+      this.ui.showToast('ACCESS GRANTED');
+    } else {
+      console.log('ACCESS DENIED');
+
+      this.ui.showToast('ACCESS DENIED');
+    }
+
+    this.exitKeypadMode();
+  }
+
+  updateCameraTransition(delta) {
+    if (!this.keypadTransition) return;
+
+    const camera = this.camera.instance;
+    const transition = this.keypadTransition;
+
+    transition.elapsed += delta;
+
+    const rawT = Math.min(
+      1,
+      transition.elapsed /
+        this.keypadTransitionDuration
+    );
+
+    /*
+    * Smoothstep:
+    * slow at the beginning,
+    * faster in the middle,
+    * slow at the end.
+    */
+    const t =
+      rawT *
+      rawT *
+      (3 - 2 * rawT);
+
+    // Position
+    camera.position.lerpVectors(
+      transition.fromPosition,
+      transition.toPosition,
+      t
+    );
+
+    // Rotation
+    camera.quaternion.slerpQuaternions(
+      transition.fromQuaternion,
+      transition.toQuaternion,
+      t
+    );
+
+    // Slight zoom
+    camera.fov = THREE.MathUtils.lerp(
+      transition.fromFov,
+      transition.toFov,
+      t
+    );
+
+    camera.updateProjectionMatrix();
+
+    if (rawT < 1) return;
+
+    /*
+    * Transition finished.
+    */
+    const mode = transition.mode;
+
+    this.keypadTransition = null;
+
+    if (mode === 'focus') {
+      /*
+      * Now that we've physically zoomed toward the
+      * keypad, display the large interactive UI.
+      */
+      this.keypadUI.open();
+    }
+    else if (mode === 'return') {
+      this.keypadReturnPose = null;
+
+      this.resumePlayerControls();
+    }
+  }
+
   startLoop() {
     const loop = (time) => {
       requestAnimationFrame(loop);
@@ -261,13 +601,19 @@ export class Game {
   }
 
   update(delta) {
-    const live = this.state === 'PLAYING' || this.state === 'WAKING' || this.state === 'DIALOGUE' ||
+    // Between disposing level 1 and mounting level 2 there is no level to update
+    if (!this.currentLevel) return;
+
+    const live = this.state === 'PLAYING' || this.state === 'WAKING' || this.state === 'KEYPAD' || 
+                 this.state === 'RETURNING' || this.state === 'DIALOGUE' ||
                  this.state === 'TUTORIAL' || this.state === 'PUZZLE' || this.state === 'INVENTORY' ||
-                 this.state === 'DEAD' || this.state === 'RING_PUZZLE';
+                 this.state === 'DEAD' || this.state === 'RING_PUZZLE' ||
+                 this.state === 'DEPARTING';
 
     if (this.state === 'PLAYING') {
       this.controls.update(delta);
     }
+  
     if (live && this.currentLevel) {
       this.currentLevel.update(delta, this.camera.instance.position, this.camera.instance);
     }
@@ -276,7 +622,8 @@ export class Game {
     }
 
     // The status display appears once the intro conversation is over
-    this.hud.setVisible(!this.currentLevel.talkEnabled && this.state !== 'GAME_OVER' && this.state !== 'INIT');
+    this.hud.setVisible(!this.currentLevel.talkEnabled && this.state !== 'GAME_OVER' &&
+                        this.state !== 'INIT' && this.state !== 'DEPARTING');
     this.hud.update(this.player);
 
     // The torch in the corner slot (and on the inventory screen) is a live 3D model
@@ -305,16 +652,25 @@ export class Game {
     const level = this.currentLevel;
 
     // Stage 0: Turn on Monitor, 1: talk to ARIA, 2: find the torch, 3: repair the circuit,
-    // 4: align the relay rings, 5: done
+    // 4: align the relay rings, 5: open the lift with the keypad, 6: ride the lift down
     let stage;
-    if (!level.ringPuzzleSolved) stage = 0;
+    if (level.inCell) stage = 'cell';   // the starting cell: its objective changes within the stage
+    else if (!level.ringPuzzleSolved) stage = 0;
     else if (level.talkEnabled) stage = 1;
     else if (!level.hasTorch) stage = 2;
     else if (!level.cablesFixed) stage = 3;
     else if (!level.relaySolved) stage = 4;
-    else stage = 5;
+    else if (!level.doorOpened) stage = 5;
+    else stage = 6;
 
-    if (stage !== this._stage) {
+    if (stage === 'cell') {
+      const text = level.getCellObjective();
+      if (stage !== this._stage || text !== this._cellObjective) {
+        this._stage = stage;
+        this._cellObjective = text;
+        this.ui.setObjective(text);
+      }
+    } else if (stage !== this._stage) {
       this._stage = stage;
       this.ui.setObjective(OBJECTIVES[stage]);
     }
@@ -375,6 +731,8 @@ export class Game {
 
   // Interact with whatever is under the reticle (click or E)
   tryInteract(options = {}) {
+    // Something in Voss's hands (the cell's brick): click throws it, E drops it
+    if (this.currentLevel.handleHeldItem?.(options)) return;
     this.raycaster.setFromCamera(this.center, this.camera.instance);
     const targets = this.currentLevel.interactables || [];
     const hit = this.raycaster.intersectObjects(targets, true)[0];
@@ -411,6 +769,14 @@ export class Game {
   onKeyDown(event) {
     const confirm = event.code === 'Space' || event.code === 'Enter' || event.code === 'KeyE';
 
+    if (this.state === 'KEYPAD') {
+      if (event.code === 'Escape') {
+        event.preventDefault();
+        this.exitKeypadMode();
+      }
+
+      return;
+    }
     // Space or Enter skips whatever ARIA is saying, from almost anywhere
     if ((event.code === 'Space' || event.code === 'Enter') && this.ui.isAriaLine() &&
         (this.state === 'PLAYING' || this.state === 'PUZZLE' || this.state === 'INVENTORY')) {
@@ -438,7 +804,7 @@ export class Game {
     } else if (this.state === 'INVENTORY') {
       if (event.code === 'KeyI' || event.code === 'Escape') this.closeInventory();
     } else if (this.state === 'PLAYING') {
-      if (event.code === 'KeyE') this.tryInteract();
+      if (event.code === 'KeyE') this.tryInteract({ fromKey: true });
       else if (event.code === 'KeyF') this.toggleFlashlight();
       else if (event.code === 'KeyI') this.openInventory();
     }
@@ -597,7 +963,7 @@ export class Game {
     this.ui.setPrompt(null);
 
     this.currentLevel.dispose();
-    this.currentLevel = new Level1(this.scene);
+    this.currentLevel = new Level1(this.scene, this.camera.instance);
     this.controls.level = this.currentLevel;
     this._wireLevel();
     this.hud.setTorch(false, false);

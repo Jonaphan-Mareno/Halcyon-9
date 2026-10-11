@@ -69,13 +69,28 @@ uniform float triBump;
 uniform float roughness;
 uniform float metalness;
 
-// The room shell (one mesh for floor, walls and ceiling): coloured by which way each face points
+// A room shell (one mesh for floor, walls and ceiling): coloured by which way each face points.
+// "bands" adds the navy lower wall and orange stripe. With "hasOuter" the faces seen from
+// outside the shell (pointing away from shellCentre) take the outer look instead: the cell is
+// bare concrete inside but has the control room's walls on the outside.
 uniform float shellMode;
+uniform float bands;
 uniform sampler2D floorTex;
+uniform float floorTile;
+uniform float floorRough;
 uniform vec3 floorColor;
-uniform vec3 lowWallColor;
-uniform vec3 stripeColor;
 uniform vec3 ceilColor;
+uniform float hasOuter;
+uniform vec3 shellCentre;
+uniform sampler2D outerTex;
+uniform vec3 outerColor;
+// A zone of the shell drawn differently: the control room's wall that is also the cell's door
+// wall is concrete where it faces into the cell
+uniform float hasZone;
+uniform vec3 zoneMin;
+uniform vec3 zoneMax;
+uniform sampler2D zoneTex;
+uniform vec3 zoneColor;
 
 // Ambient light from above and below (rises with the power) and its reflection in glossy things
 uniform vec3 hemiSky;
@@ -160,6 +175,14 @@ void main()
   vec3 WN = normalize(vWorldNrm);
   if (!gl_FrontFacing) { N = -N; WN = -WN; }
 
+  // Room shells are simple boxes, sometimes exported with corners shared and normals averaged
+  // into diagonals: use the true flat facing of each face instead (turned towards the camera)
+  if (shellMode > 0.5) {
+    WN = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
+    if (dot(WN, cameraPosition - vWorldPos) < 0.0) WN = -WN;
+    N = normalize((viewMatrix * vec4(WN, 0.0)).xyz);
+  }
+
   if (hasNormalMap > 0.5) {
     vec3 mapN = texture2D(normalMap, vUv).xyz * 2.0 - 1.0;
     mapN.xy *= normalScale;
@@ -182,17 +205,24 @@ void main()
       // Floor, lower wall, stripe, upper wall, ceiling
       float up = WN.y;
       float h = vWorldPos.y;
-      if (up > 0.6) {
-        t = triSample(floorTex, vWorldPos / 4.0, w);
-        albedo = floorColor; rough = 0.3; metal = 0.05;
-      } else if (up < -0.6) {
+      bool outer = hasOuter > 0.5 && dot(WN, shellCentre - vWorldPos) < 0.0;
+      if (!outer && up > 0.6) {
+        t = triSample(floorTex, vWorldPos / floorTile, w);
+        albedo = floorColor; rough = floorRough; metal = 0.05;
+      } else if (!outer && up < -0.6) {
         t = triSample(triTex, p, w);
-        albedo = ceilColor; rough = 0.5; metal = 0.3;
+        albedo = ceilColor;
       } else {
-        t = triSample(triTex, p, w);
-        if (h < 0.12) { albedo = ceilColor; rough = 0.3; }                   // skirting
-        else if (h < 1.15) { albedo = lowWallColor; rough = 0.45; }          // navy lower wall
-        else if (h < 1.22) { albedo = stripeColor; rough = 0.35; }           // orange stripe
+        bool zone = hasZone > 0.5 && all(greaterThan(vWorldPos, zoneMin)) && all(lessThan(vWorldPos, zoneMax))
+          && dot(WN, (zoneMin + zoneMax) * 0.5 - vWorldPos) > 0.0;
+        if (outer) { t = triSample(outerTex, vWorldPos / 2.2, w); albedo = outerColor; rough = 0.5; metal = 0.0; }
+        else if (zone) { t = triSample(zoneTex, vWorldPos / 2.4, w); albedo = zoneColor; rough = 0.85; metal = 0.0; }
+        else t = triSample(triTex, p, w);
+        if ((bands > 0.5 || outer) && !zone) {
+          if (h < 0.12) { albedo = vec3(0.006, 0.007, 0.009); rough = 0.3; }   // skirting
+          else if (h < 1.15) { albedo = vec3(0.008, 0.017, 0.042); rough = 0.45; }   // navy lower wall
+          else if (h < 1.22) { albedo = vec3(0.87, 0.19, 0.007); rough = 0.35; }    // orange stripe
+        }
       }
     } else {
       t = triSample(triTex, p, w);

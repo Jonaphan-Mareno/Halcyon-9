@@ -6,6 +6,9 @@ import { Sparks } from "../effects/Sparks.js";
 import { RingPuzzle } from "../entities/RingPuzzle.js";
 import { createHubTextures } from "../graphics/HubMaterials.js";
 import { surfaceFor, SURFACE } from "./level1Look.js";
+import { createBrickMaps } from "./brickTexture.js";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { MonitorWall } from "./MonitorWall.js";
 
 // Must match MAX_LIGHTS in Shaders.js (the room's 8 lights + the flashlight)
 const MAX_LIGHTS = 9;
@@ -56,6 +59,7 @@ const CELL_LIGHT_BASE = 1;          // its brightness and how far it pulses
 const CELL_LIGHT_PULSE = 2;
 const CELL_LIGHT_HEIGHT = 1;
 const BRICK_RANGE = 3;               // how close you must be to pick it up
+const BRICK_SIZE = [0.25, 0.085, 0.12];   // a real house brick (a touch larger, so it is easy to spot)
 const BRICK_HOLD_DISTANCE = 1.4;
 const BRICK_THROW_SPEED = 15;
 const GRAVITY = 9.8;
@@ -169,6 +173,7 @@ export class Level1{
     this.brick = null;
     this.brickHeld = false;
     this.brickFlying = false;
+    this.brickDone = false;        // true once Voss has left the cell: the brick stays put
     this.onBrickPickedUp = null;   // set by the Game (shows a hint)
     this.onWindowBroken = null;    // set by the Game (optional)
     this.onHandleTurned = null;    // set by the Game (sound)
@@ -310,11 +315,21 @@ export class Level1{
         roughness: { value: surface?.rough ?? originalMat.roughness ?? 0.6 },
         metalness: { value: surface?.metal ?? Math.min(originalMat.metalness ?? 0, 0.5) },
         shellMode: { value: surface?.shell ? 1 : 0 },
-        floorTex: { value: this._textures.floor.packed },
+        bands: { value: surface?.bands ? 1 : 0 },
+        floorTex: { value: this._textures[surface?.floorKind ?? 'floor'].packed },
+        floorTile: { value: surface?.floorTile ?? 4 },
+        floorRough: { value: surface?.floorRough ?? 0.3 },
         floorColor: { value: new THREE.Color(surface?.floorColor ?? 0xffffff) },
-        lowWallColor: { value: new THREE.Color(surface?.lowWallColor ?? 0xffffff) },
-        stripeColor: { value: new THREE.Color(surface?.stripeColor ?? 0xffffff) },
         ceilColor: { value: new THREE.Color(surface?.ceilColor ?? 0xffffff) },
+        hasOuter: { value: surface?.outerKind ? 1 : 0 },
+        shellCentre: { value: new THREE.Vector3() },
+        outerTex: { value: this._textures[surface?.outerKind ?? 'wall'].packed },
+        outerColor: { value: new THREE.Color(surface?.outerColor ?? 0xffffff) },
+        hasZone: { value: 0 },
+        zoneMin: { value: new THREE.Vector3() },
+        zoneMax: { value: new THREE.Vector3() },
+        zoneTex: { value: this._textures.concrete.packed },
+        zoneColor: { value: new THREE.Color(0xffffff) },
         hemiSky: this._hemiSky,
         hemiGround: this._hemiGround,
         envStrength: this._envStrength
@@ -442,6 +457,7 @@ export class Level1{
       // than in Blender so the level survives the next export.
       this._dedupeLights();
       this._buildFixtures();
+      try { this.monitorWall = new MonitorWall(this); } catch (e) { console.error('Monitor wall failed to build:', e); }
       this._setUpCell();
 
       // Collect monitor screens from the 3D model
@@ -770,7 +786,7 @@ onRingPuzzleComplete() {
     if (this.elevatorConsoleScreen && this.doorOpened && !this.elevatorRiding) {
       this._interactables.push(this.elevatorConsoleScreen);
     }
-    if (this.brick && this.brick.visible) this._interactables.push(this.brick);
+    if (this.brick && this.brick.visible && !this.brickDone) this._interactables.push(this.brick);
     // The far-side handle: reachable only once the window is broken, and gone
     // again as soon as the door is moving. Falls back to the door leaf itself
     // if the model has no handle node.
@@ -824,6 +840,9 @@ onRingPuzzleComplete() {
       this.scene.remove(fx.frame, fx.panel);
       fx.mat.dispose();
     }
+    this.monitorWall?.dispose();
+    if (this._drain) this.scene.remove(this._drain);
+    if (this._brickMaps) { this._brickMaps.map.dispose(); this._brickMaps.normalMap.dispose(); }
     for (const set of Object.values(this._textures)) {
       set.packed.dispose();
       set.albedo.dispose();
@@ -1673,6 +1692,26 @@ onRingPuzzleComplete() {
 
     this._buildBrick(spawnPos);
 
+    // The cell's walls are concrete inside and control-room white outside: the shader tells
+    // the two apart by which side of the cell's centre a face looks towards
+    const cellMesh = this._findNode('cell');
+    if (cellMesh?.material?.uniforms?.shellCentre) {
+      const cellBounds = new THREE.Box3().setFromObject(cellMesh);
+      cellBounds.getCenter(cellMesh.material.uniforms.shellCentre.value);
+      // The door wall is the control room's own wall (the cell box is open on that side):
+      // where it faces into the cell it is concrete too
+      const shell = this._findNode('Cube');
+      const u = shell?.material?.uniforms;
+      if (u?.hasZone) {
+        cellBounds.expandByScalar(0.25);
+        u.hasZone.value = 1;
+        u.zoneMin.value.copy(cellBounds.min);
+        u.zoneMax.value.copy(cellBounds.max);
+        u.zoneColor.value.copy(cellMesh.material.uniforms.baseColor.value);
+      }
+    }
+    this._buildDrain(spawnPos);
+
     // The cell's single light, over the middle of the room
     const cellBox = new THREE.Box3().setFromObject(this._findNode('cell'));
     cellBox.getCenter(this._cellLightPos);
@@ -1779,15 +1818,41 @@ onRingPuzzleComplete() {
     this.window = { glass, source, shards, box, broken: false };
   }
 
+  // A fired clay brick with chipped, rounded edges (see brickTexture.js)
   _buildBrick(spawnPos) {
-    const geo = new THREE.BoxGeometry(0.35, 0.2, 0.2);
-    this.brick = new THREE.Mesh(geo, this._makeLevelMaterial({ color: new THREE.Color(0x888888) }));
+    const geo = new RoundedBoxGeometry(...BRICK_SIZE, 2, 0.01);
+    this._brickMaps = createBrickMaps();
+    this.brick = new THREE.Mesh(geo, this._makeLevelMaterial({
+      color: new THREE.Color(0xffffff), roughness: 0.92, metalness: 0,
+      map: this._brickMaps.map, normalMap: this._brickMaps.normalMap
+    }));
     this.brick.name = 'Brick';
     this.brick.castShadow = true;
     this.scene.add(this.brick);   // not part of the room, so it never blocks the player
 
-    this.brick.position.set(spawnPos.x + 1, this._cellFloorY + 0.1, spawnPos.z - 1);
+    this.brick.position.set(spawnPos.x + 1, this._cellFloorY + BRICK_SIZE[1] / 2, spawnPos.z - 1);
+    this.brick.rotation.y = 0.6;
     this._brickStart.copy(this.brick.position);
+  }
+
+  // A floor drain in the middle of the cell: the only thing in it
+  _buildDrain(spawnPos) {
+    const cellBox = new THREE.Box3().setFromObject(this._findNode('cell'));
+    const centre = cellBox.getCenter(new THREE.Vector3());
+    const steel = this._makeLevelMaterial({}, -1, SURFACE.steel);
+    const dark = this._makeLevelMaterial({ color: new THREE.Color(0x020304), roughness: 0.9 });
+    const drain = new THREE.Group();
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.21, 0.016, 32), steel);
+    const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.018, 32), dark);
+    drain.add(rim, hole);
+    for (let i = -3; i <= 3; i++) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.02, Math.sqrt(0.17 * 0.17 - (i * 0.045) ** 2) * 2), steel);
+      bar.position.x = i * 0.045;
+      drain.add(bar);
+    }
+    drain.position.set(centre.x - 0.6, this._cellFloorY + 0.008, (centre.z + spawnPos.z) / 2 - 0.4);
+    this.scene.add(drain);
+    this._drain = drain;
   }
 
   _pickUpBrick() {
@@ -1901,10 +1966,10 @@ onRingPuzzleComplete() {
   _leaveCell() {
     this.inCell = false;
     this._cellLightTarget = 0;
-    // The brick stays behind in the cell
-    this.brickHeld = false;
-    this.brickFlying = false;
-    this.brick.visible = false;
+    // The brick stays where it lies (dropped if Voss was still carrying it), but can no
+    // longer be picked up
+    if (this.brickHeld) this._dropBrick();
+    this.brickDone = true;
     this._rebuildInteractables();
     this.onLeftCell?.();
   }
@@ -1973,6 +2038,7 @@ onRingPuzzleComplete() {
           this._brickVel.set(0, 0, 0);
           this.brickFlying = false;
           brick.rotation.set(0, brick.rotation.y, 0);
+          brick.position.y = hit.point.y + BRICK_SIZE[1] / 2;
         } else if (normal.y > 0.5 && this._brickVel.y <= 0) {
           // Up-facing but too high to stand on (a handle, a sill): bouncing
           // would buzz on the spot forever, so slide off sideways instead and
@@ -2445,6 +2511,8 @@ onRingPuzzleComplete() {
       this._lightWorldIntensities[count] = FLASH_INTENSITY;
       count++;
     }
+
+    this.monitorWall?.update(delta, this.power, this.time);
 
     // The ceiling panels show their light's brightness
     if (this._fixtures) {

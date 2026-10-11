@@ -26,19 +26,39 @@ const S = {
 };
 
 // The room shell: floor, walls and ceiling are one mesh, split by facing in the shader
+// (tiled floor, navy lower wall with an orange stripe, white walls, dark ceiling)
 const SHELL = {
   ...S.wallWhite,
   shell: true,
+  bands: true,
   floorColor: 0xc4c9ce,
-  lowWallColor: 0x16233a,
-  stripeColor: 0xf07a14,
   ceilColor: 0x101216
 };
+
+// The monitor room's raised platform and walls: tiled floor, plain grey walls
+const NOOK = { ...S.wallGrey, shell: true, floorColor: 0xc4c9ce, ceilColor: 0x101216 };
+
+// The cell: cold, bare cast concrete inside (tie holes, damp streaks, a stained floor), the
+// control room's white walls outside
+const CELL = {
+  kind: 'concrete', tile: 2.4, bump: 0.9, color: 0x9ba3aa, rough: 0.85, metal: 0.0,
+  shell: true,
+  floorKind: 'concreteFloor', floorTile: 3.0, floorRough: 0.62, floorColor: 0x7f878e,
+  ceilColor: 0x6c737a,
+  outerKind: 'wall', outerColor: 0xd9dde2
+};
+const CELL_DOOR = { kind: 'paint', tile: 0.6, bump: 0.6, color: 0x4a525b, rough: 0.6, metal: 0.35 };
+const CELL_FRAME = { kind: 'paint', tile: 0.6, bump: 0.4, color: 0x22262b, rough: 0.5, metal: 0.4 };
 
 // Known objects (names as GLTFLoader gives them: dots stripped)
 const BY_NAME = [
   [/^Cube$/, SHELL],
-  [/^Cube00[12]$|^Cube014$|^wall_hp_base/, S.wallGrey],
+  [/^Cube002$/, NOOK],
+  [/^cell$/, CELL],
+  [/^door$/, CELL_DOOR],
+  [/^frame$/, CELL_FRAME],
+  [/^Vert$/, S.steel],
+  [/^Cube001$|^Cube014$|^wall_hp_base/, S.wallGrey],
   [/^wall_hp_panel01/, S.white],
   [/^wall_hp_panel02/, S.navy],
   [/^Cube0(04|09|13)$/, S.navy],                    // the desks along the walls

@@ -340,6 +340,83 @@ function paintWall(ctx, mode, seed) {
   fineScratches(ctx, rand, 8, albedo ? 'rgba(0,0,0,0.05)' : 'rgba(60,60,60,0.2)', 40);
 }
 
+// cast concrete wall (one tile = 2.4 m): mottled grey, pores, faint damp streaks, the seams of
+// the formwork panels and the rows of tie holes they leave behind
+function paintConcrete(ctx, mode, seed) {
+  const rand = rng(seed), albedo = mode === 'albedo';
+  ctx.fillStyle = gray(albedo ? 0.66 : 0.5);
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  softBlobs(ctx, rand, 26, 30, 140, albedo ? 'rgba(0,0,0,0.07)' : 'rgba(0,0,0,0.05)');
+  softBlobs(ctx, rand, 18, 30, 120, albedo ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.05)');
+  // damp streaks running down from the seams
+  if (albedo) {
+    for (let i = 0; i < 9; i++) {
+      const x = rand() * SIZE, w = 6 + rand() * 18, len = 80 + rand() * 260, y = rand() * SIZE;
+      wrapped(ctx, (ox, oy) => {
+        const g = ctx.createLinearGradient(0, y + oy, 0, y + oy + len);
+        g.addColorStop(0, 'rgba(20,24,28,0)');
+        g.addColorStop(0.3, 'rgba(20,24,28,0.08)');
+        g.addColorStop(1, 'rgba(20,24,28,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(x + ox - w / 2, y + oy, w, len);
+      });
+    }
+  }
+  paintNoise(ctx, albedo ? 0.07 : 0.25, rand);
+  // pores: tiny air bubbles in the surface
+  for (let i = 0; i < 1600; i++) {
+    const x = rand() * SIZE, y = rand() * SIZE, r = 0.5 + rand() * 1.4;
+    ctx.fillStyle = albedo ? 'rgba(30,32,36,0.45)' : gray(0.2, 0.8);
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  // formwork seams: two panels across, one down
+  ctx.fillStyle = albedo ? 'rgba(25,28,32,0.35)' : gray(0.32);
+  for (const x of [0, SIZE / 2]) { ctx.fillRect(x - 1.5, 0, 3, SIZE); }
+  ctx.fillRect(0, -1.5, SIZE, 3);
+  ctx.fillRect(0, SIZE - 1.5, SIZE, 3);
+  // tie holes: a 4 x 4 grid, every 0.6 m
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      const x = (i + 0.5) * SIZE / 4, y = (j + 0.5) * SIZE / 4;
+      ctx.fillStyle = albedo ? 'rgba(255,255,255,0.10)' : gray(0.46);
+      ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = albedo ? 'rgba(18,20,24,0.85)' : gray(0.08);
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+// troweled concrete floor (one tile = 3 m): smoother, scuffed, stained, a saw-cut joint and a
+// few hairline cracks
+function paintConcreteFloor(ctx, mode, seed) {
+  const rand = rng(seed), albedo = mode === 'albedo';
+  ctx.fillStyle = gray(albedo ? 0.64 : 0.5);
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  softBlobs(ctx, rand, 20, 40, 170, albedo ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.03)');
+  softBlobs(ctx, rand, 14, 30, 140, albedo ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.03)');
+  softBlobs(ctx, rand, 5, 20, 60, albedo ? 'rgba(10,12,14,0.14)' : 'rgba(0,0,0,0.02)');   // stains
+  paintNoise(ctx, albedo ? 0.05 : 0.14, rand);
+  for (let i = 0; i < 500; i++) {
+    const x = rand() * SIZE, y = rand() * SIZE;
+    ctx.fillStyle = albedo ? 'rgba(30,32,36,0.35)' : gray(0.3, 0.7);
+    ctx.fillRect(x, y, 1.2, 1.2);
+  }
+  fineScratches(ctx, rand, 30, albedo ? 'rgba(255,255,255,0.07)' : 'rgba(70,70,70,0.4)', 50);
+  // hairline cracks: short wandering lines
+  ctx.strokeStyle = albedo ? 'rgba(20,22,26,0.55)' : gray(0.2);
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    let x = rand() * SIZE, y = rand() * SIZE, a = rand() * Math.PI * 2;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    for (let k = 0; k < 14; k++) { a += (rand() - 0.5) * 1.1; x += Math.cos(a) * 8; y += Math.sin(a) * 8; ctx.lineTo(x, y); }
+    ctx.stroke();
+  }
+  // saw-cut joints along the tile edges
+  ctx.fillStyle = albedo ? 'rgba(20,22,26,0.6)' : gray(0.18);
+  ctx.fillRect(0, 0, SIZE, 2);
+  ctx.fillRect(0, 0, 2, SIZE);
+}
+
 function makeTexture(paint, mode, seed, srgb) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = SIZE;
@@ -398,7 +475,9 @@ export function createHubTextures() {
     paper: { albedo: makeTexture(paintPaper, 'albedo', 43, true), height: makeTexture(paintPaper, 'height', 43, false) },
     label: { albedo: makeTexture(paintLabel, 'albedo', 47, true), height: makeTexture(paintLabel, 'height', 47, false) },
     brushed: { albedo: makeTexture(paintBrushed, 'albedo', 53, true), height: makeTexture(paintBrushed, 'height', 53, false) },
-    wall: { albedo: makeTexture(paintWall, 'albedo', 59, true), height: makeTexture(paintWall, 'height', 59, false) }
+    wall: { albedo: makeTexture(paintWall, 'albedo', 59, true), height: makeTexture(paintWall, 'height', 59, false) },
+    concrete: { albedo: makeTexture(paintConcrete, 'albedo', 61, true), height: makeTexture(paintConcrete, 'height', 61, false) },
+    concreteFloor: { albedo: makeTexture(paintConcreteFloor, 'albedo', 67, true), height: makeTexture(paintConcreteFloor, 'height', 67, false) }
   };
   for (const set of Object.values(sets)) set.packed = pack(set.albedo, set.height);
   return sets;

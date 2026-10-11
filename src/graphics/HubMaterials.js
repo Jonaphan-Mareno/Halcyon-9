@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PARALLAX_GLSL } from './parallax.js';
 
 // Textures and shaders for the level 2 hub.
 //
@@ -149,22 +150,24 @@ function paintFloor(ctx, mode, seed) {
   const T = 128;
   for (let ty = 0; ty < SIZE / T; ty++) {
     for (let tx = 0; tx < SIZE / T; tx++) {
-      const v = albedo ? 0.46 + rand() * 0.08 : 0.5;
+      // (the random number is drawn in both maps, so their hatches land on the same tiles)
+      const shade = rand();
+      const v = albedo ? 0.46 + shade * 0.08 : 0.5;
       ctx.fillStyle = gray(v);
       ctx.fillRect(tx * T + 2, ty * T + 2, T - 4, T - 4);
       if (rand() < 0.12) {
         const cx = tx * T + T / 2, cy = ty * T + T / 2;
-        ctx.strokeStyle = albedo ? gray(0.22) : gray(0.3);
+        ctx.strokeStyle = albedo ? gray(0.22) : gray(0.08);
         ctx.lineWidth = 5;
         ctx.beginPath(); ctx.arc(cx, cy, T * 0.28, 0, Math.PI * 2); ctx.stroke();
-        ctx.fillStyle = albedo ? gray(0.34) : gray(0.42);
+        ctx.fillStyle = albedo ? gray(0.34) : gray(0.36);
         ctx.beginPath(); ctx.arc(cx, cy, T * 0.2, 0, Math.PI * 2); ctx.fill();
       }
     }
   }
   for (let c = 0; c <= SIZE; c += T) {
-    ctx.strokeStyle = albedo ? gray(0.16) : gray(0.2);
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = albedo ? gray(0.16) : gray(0.05);
+    ctx.lineWidth = albedo ? 3 : 4;
     wrapped(ctx, (ox, oy) => {
       ctx.beginPath(); ctx.moveTo(c + ox, oy); ctx.lineTo(c + ox, SIZE + oy); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(ox, c + oy); ctx.lineTo(SIZE + ox, c + oy); ctx.stroke();
@@ -492,7 +495,7 @@ const SURFACES = {
   rust: { kind: 'plate', tile: 3.0, bump: 1.6 },
   pipe_black: { kind: 'plate', tile: 1.2, bump: 0.8 },
   accent: { kind: 'plate', tile: 2.0, bump: 0.6 },
-  floor_dark: { kind: 'floor', tile: 4.0, bump: 1.2 },
+  floor_dark: { kind: 'floor', tile: 4.0, bump: 1.2, depth: 0.04 },   // depth: parallax-mapped grooves (m)
   cont_red: { kind: 'plate', tile: 3.0, bump: 1.4 },
   cont_blue: { kind: 'plate', tile: 3.0, bump: 1.4 },
   cont_mustard: { kind: 'plate', tile: 3.0, bump: 1.4 },
@@ -557,12 +560,15 @@ function texturedMaterial(source, spec, textures) {
     shader.uniforms.uAlb = { value: tex.packed };
     shader.uniforms.uTile = { value: spec.tile };
     shader.uniforms.uBump = { value: spec.bump };
+    shader.uniforms.uDepth = { value: spec.depth || 0 };
     addVertexPosition(shader);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>${POS_VARYING}
         uniform sampler2D uAlb;            // colour in RGB, height in alpha
         uniform float uTile;
         uniform float uBump;
+        uniform float uDepth;
+        ${PARALLAX_GLSL}
         vec4 triSample(sampler2D t, vec3 p, vec3 w) {
           vec4 c = vec4(0.0);
           if (w.x > 0.02) c += texture2D(t, p.zy) * w.x;
@@ -585,7 +591,16 @@ function texturedMaterial(source, spec, textures) {
         triW = max(triW - 0.02, 0.0);
         triW /= (triW.x + triW.y + triW.z);
         vec3 triP = vTriPos / uTile;
-        vec4 triTex = triSample(uAlb, triP, triW);
+        vec4 triTex;
+        if (uDepth > 0.0 && triW.y > 0.9 && vTriNrm.y > 0.0) {
+          // a floor: parallax depth in the grooves, which are darker too
+          vec3 toEye = cameraPosition - vTriPos;
+          float eyeDist = length(toEye);
+          triTex = texture2D(uAlb, parallaxFloor(uAlb, triP.xz, toEye / eyeDist, uDepth / uTile, eyeDist));
+          diffuseColor.rgb *= 1.0 - 0.5 * pomDepth(triTex);
+        } else {
+          triTex = triSample(uAlb, triP, triW);
+        }
         vec3 triAlb = triTex.rgb;
         float triH = triTex.a;
         diffuseColor.rgb *= triAlb * 1.45;`)

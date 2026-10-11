@@ -319,6 +319,7 @@ export class Level1{
         floorTex: { value: this._textures[surface?.floorKind ?? 'floor'].packed },
         floorTile: { value: surface?.floorTile ?? 4 },
         floorRough: { value: surface?.floorRough ?? 0.3 },
+        floorDepth: { value: surface?.floorDepth ?? 0.04 },
         floorColor: { value: new THREE.Color(surface?.floorColor ?? 0xffffff) },
         ceilColor: { value: new THREE.Color(surface?.ceilColor ?? 0xffffff) },
         hasOuter: { value: surface?.outerKind ? 1 : 0 },

@@ -43,7 +43,7 @@ const NOOK = { ...S.wallGrey, shell: true, floorColor: 0xc4c9ce, ceilColor: 0x10
 const CELL = {
   kind: 'concrete', tile: 2.4, bump: 0.9, color: 0x9ba3aa, rough: 0.85, metal: 0.0,
   shell: true,
-  floorKind: 'concreteFloor', floorTile: 3.0, floorRough: 0.62, floorColor: 0x7f878e,
+  floorKind: 'concreteFloor', floorTile: 3.0, floorRough: 0.62, floorDepth: 0.008, floorColor: 0x7f878e,
   ceilColor: 0x6c737a,
   outerKind: 'wall', outerColor: 0xd9dde2
 };

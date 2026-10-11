@@ -8,6 +8,8 @@
 // world position, so nothing needs UVs. The room's one-mesh shell is split by facing: floor
 // tiles below, a navy lower wall with an orange stripe, white walls above, a dark ceiling.
 
+import { PARALLAX_GLSL } from './parallax.js';
+
 const vertexShader =
 `
 #define MAX_LIGHTS 9
@@ -79,6 +81,7 @@ uniform sampler2D floorTex;
 uniform float floorTile;
 uniform float floorRough;
 uniform vec3 floorColor;
+uniform float floorDepth;   // how deep the floor's grooves look, in metres (parallax mapping)
 uniform vec3 ceilColor;
 uniform float hasOuter;
 uniform vec3 shellCentre;
@@ -163,6 +166,8 @@ vec3 filmic(vec3 x)
   return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
 }
 
+${PARALLAX_GLSL}
+
 vec3 toSRGB(vec3 c)
 {
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
@@ -193,6 +198,7 @@ void main()
   if (hasMap > 0.5) albedo *= texture2D(map, vUv).rgb;
   float rough = roughness;
   float metal = metalness;
+  float bumpScale = triBump;
 
   // World-mapped surface texture
   if (hasTri > 0.5) {
@@ -207,8 +213,14 @@ void main()
       float h = vWorldPos.y;
       bool outer = hasOuter > 0.5 && dot(WN, shellCentre - vWorldPos) < 0.0;
       if (!outer && up > 0.6) {
-        t = triSample(floorTex, vWorldPos / floorTile, w);
-        albedo = floorColor; rough = floorRough; metal = 0.05;
+        // the floor faces straight up: one projection, with parallax depth in the grooves,
+        // which are also darker (less light reaches down into them)
+        vec3 toEye = cameraPosition - vWorldPos;
+        float eyeDist = length(toEye);
+        vec2 fuv = parallaxFloor(floorTex, vWorldPos.xz / floorTile, toEye / eyeDist, floorDepth / floorTile, eyeDist);
+        t = texture2D(floorTex, fuv);
+        albedo = floorColor * (1.0 - 0.5 * pomDepth(t)); rough = floorRough; metal = 0.05;
+        bumpScale = 1.2;
       } else if (!outer && up < -0.6) {
         t = triSample(triTex, p, w);
         albedo = ceilColor;
@@ -229,7 +241,7 @@ void main()
     }
     albedo *= t.rgb * 1.45;
     rough = clamp(rough * (1.55 - t.a * 1.1), 0.12, 1.0);
-    N = bumpNormal(fPosition, N, vec2(dFdx(t.a), dFdy(t.a)) * triBump);
+    N = bumpNormal(fPosition, N, vec2(dFdx(t.a), dFdy(t.a)) * bumpScale);
   }
 
   vec3 V = normalize(-fPosition);

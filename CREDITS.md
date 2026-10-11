@@ -24,10 +24,11 @@ credit the artists anyway. The models are downloaded by `Blender/scripts/fetch_p
 
 | Texture | Author(s) | Used for | Link |
 |---|---|---|---|
+| Farm Soil (colour + displacement, packed into `public/assets/textures/soil_farm.webp`) | Amal Kumar | the soil in every planter, garden bed and pot in the atrium (colour, and the displacement drives the parallax depth) | https://polyhaven.com/a/farm_soil |
 | Blue Metal Plate (roughness map, cropped clear of the plate seams) | Rob Tuytel | smudges, scratches and grime on the glass of level 1's glitching and broken monitors (`public/assets/textures/screen_wear.jpg`) | https://polyhaven.com/a/blue_metal_plate |
 
 Suggested credits-screen line: *"Plant and food models and textures from Poly Haven (polyhaven.com,
-CC0) by Rob Tuytel, Rico Cilliers, James Ray Cock, Oliver Harries, Kuutti Siitonen and Jan Martens."*
+CC0) by Rob Tuytel, Rico Cilliers, James Ray Cock, Oliver Harries, Kuutti Siitonen, Jan Martens and Amal Kumar."*
 
 ## Generated video
 

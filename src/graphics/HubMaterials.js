@@ -468,6 +468,19 @@ function pack(albedoTex, heightTex) {
   return tex;
 }
 
+// Real soil for every planter, bed and pot: Poly Haven's Farm Soil (Amal Kumar, CC0, a 2 m
+// scan). Packed offline the same way as the drawn textures: colour in RGB, the scan's
+// displacement in alpha (contrast stretched, then scaled so the clods' tops sit at 0.52, the
+// level parallaxFloor treats as the surface). Loaded only when a model has soil (level 1 has
+// none), in the background: the planters show plain soil colour for the moment before it arrives.
+function loadSoil() {
+  const tex = new THREE.TextureLoader().load('./assets/textures/soil_farm.webp');
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;   // (RGB only; the alpha depth stays linear)
+  tex.anisotropy = 8;
+  return { albedo: tex, height: tex, packed: tex };
+}
+
 export function createHubTextures() {
   const sets = {
     plate: { albedo: makeTexture(paintPlate, 'albedo', 11, true), height: makeTexture(paintPlate, 'height', 11, false) },
@@ -518,7 +531,9 @@ const SURFACES = {
   paper: { kind: 'paper', tile: 0.3, bump: 0 },
   label: { kind: 'label', tile: 0.16, bump: 0 },
   steel: { kind: 'brushed', tile: 0.3, bump: 0.4 },
-  lab_wall: { kind: 'wall', tile: 2.2, bump: 0.25 }
+  lab_wall: { kind: 'wall', tile: 2.2, bump: 0.25 },
+  // the photo carries the soil's colour, so the material colour is lifted to show it as is
+  soil: { kind: 'soil', tile: 1.2, bump: 1.6, depth: 0.03, color: 0xd2ccc6 }
 };
 
 // How the light flows in each glowing material (GLSL expression giving a multiplier)
@@ -550,11 +565,12 @@ function addVertexPosition(shader) {
 // Turn one of the model's materials into its textured, bump-mapped version
 function texturedMaterial(source, spec, textures) {
   const mat = new THREE.MeshStandardMaterial({
-    color: source.color.clone(),
+    color: spec.color !== undefined ? new THREE.Color(spec.color) : source.color.clone(),
     roughness: source.roughness,
     metalness: source.metalness,
     name: source.name
   });
+  if (spec.kind === 'soil' && !textures.soil) textures.soil = loadSoil();
   const tex = textures[spec.kind];
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uAlb = { value: tex.packed };

@@ -255,8 +255,10 @@ arc(sofa, 'accent', 2.68, 2.75, 0, 360, -0.585, -0.582, step=6)
 # Meerschaum Digital and "Carrot Collection" by Adam.White.
 #
 # There are a few hundred plants, so they are not separate objects (one draw call each in the
-# game): every planting of a crop is copied into ONE mesh per crop, which draws in one call. The
-# models are thinned first (decimated) to keep the triangle count down. Rotten plants use the
+# game): the plantings are merged into one mesh per crop per AREA of the hall (a 30-degree slice,
+# inner or outer ring), so a bed you are not looking at is skipped by the game (frustum culling)
+# while the whole garden still draws in a few dozen calls. The models are thinned first
+# (decimated) to keep the triangle count down. Rotten plants use the
 # plain brown/yellow materials instead of the texture (the glTF exporter cannot tint a texture).
 kit.mat('veg_leaf', (0.08, 0.26, 0.06), 0.75, 0.0)
 kit.mat('veg_leaf_light', (0.15, 0.36, 0.09), 0.75, 0.0)
@@ -435,10 +437,10 @@ class Batch:
 
 
 VEG = {
-    'lettuce': load_veg('lettuce'),                  # 476 triangles: already light
+    'lettuce': load_veg('lettuce', 0.5),             # 476 triangles, halved
     'tomato': load_veg('tomato', 0.25),
     'cabbage': load_veg('cabbage', 0.15),
-    'carrot_src': load_veg('carrot', 0.2),
+    'carrot_src': load_veg('carrot', 0.1),          # only a few centimetres of it show
 }
 if VEG['lettuce']:
     stand_up(VEG['lettuce'], 0.3)
@@ -450,14 +452,21 @@ VEG['carrot'], VEG['carrot_top'] = carrot_templates(VEG['carrot_src']) if VEG['c
 BATCH = {}
 
 
+def area(p):
+    """Which area of the hall a point is in: a 30-degree slice, inner ring or outer ring."""
+    p = Vector(p)
+    a = math.degrees(math.atan2(p.y, p.x)) % 360
+    return '%02d%s' % (int(a // 30), 'i' if p.xy.length < 12.5 else 'o')
+
+
 def put(kind, p, yaw, scale=1.0, tilt=0.0, squash=1.0, rot_mat=None):
     """One more copy of a vegetable model in its crop's mesh (rot_mat: rotten, flat colour)."""
     tpl = VEG.get(kind)
     if tpl is None:
         return False
-    key = (kind, rot_mat)
+    key = (kind, rot_mat, area(p))
     if key not in BATCH:
-        BATCH[key] = Batch('PLANT_Veg_%s%s' % (kind, '_' + rot_mat if rot_mat else ''), rot_mat)
+        BATCH[key] = Batch('PLANT_Veg_%s%s__%s' % (kind, '_' + rot_mat if rot_mat else '', key[2]), rot_mat)
     mx = (Matrix.Translation(Vector(p)) @ Matrix.Rotation(rad(yaw), 4, 'Z') @ Matrix.Rotation(tilt, 4, 'X')
           @ Matrix.Diagonal((scale, scale, scale * squash, 1.0)))
     BATCH[key].add(tpl, mx)
@@ -465,7 +474,7 @@ def put(kind, p, yaw, scale=1.0, tilt=0.0, squash=1.0, rot_mat=None):
 
 
 def flush_veg():
-    for (kind, rot_mat), b in BATCH.items():
+    for (kind, rot_mat, _), b in BATCH.items():
         b.flush(VEG[kind])
     names = {tpl.name for tpl in VEG.values() if tpl is not None}    # (the whole carrot is its source object)
     for n in names:
@@ -488,8 +497,8 @@ def carrot(acc, p, rot=False):
     """The real carrot's shoulder showing above the soil, with feathery leaves."""
     if not put('carrot_top', p + Vector((0, 0, -0.012)), random.uniform(0, 360), random.uniform(0.85, 1.15)):
         cyl(acc, 'carrot', (p.x, p.y, p.z + 0.02), 0.028, 0.05, 6)
-    for k in range(7):
-        ang = k / 7 * math.tau + random.uniform(-0.3, 0.3)
+    for k in range(5):
+        ang = k / 5 * math.tau + random.uniform(-0.3, 0.3)
         lift = 0.35 if rot else 1.0                                             # a rotten one's leaves flop over
         d = Vector((math.cos(ang) * 0.3, math.sin(ang) * 0.3, lift)).normalized()
         leaf_blade(acc, 'veg_dead' if rot else 'veg_leaf_light', p + Vector((0, 0, 0.04)), d,
@@ -532,10 +541,10 @@ def plant_or_not(fn, p):
     roll = random.random()
     if roll < 0.22:
         return
-    fn(veg, p, roll < 0.42)
+    fn(A('PLANT_Vegetables__' + area(p)), p, roll < 0.42)      # the leaves and stakes, per area too
 
 
-CROPS = {'carrot': (carrot, 0.24), 'lettuce': (lettuce, 0.42), 'cabbage': (cabbage, 0.45), 'tomato': (tomato, 0.6)}
+CROPS = {'carrot': (carrot, 0.3), 'lettuce': (lettuce, 0.42), 'cabbage': (cabbage, 0.45), 'tomato': (tomato, 0.6)}
 
 
 def jitter():
@@ -1128,9 +1137,9 @@ def pulled_carrot(p, yaw):
     lying = (Matrix.Translation(Vector(p) + Vector((0, 0, 0.02))) @ Matrix.Rotation(rad(yaw), 4, 'Z')
              @ Matrix.Rotation(rad(-90), 4, 'Y') @ Matrix.Translation((0, 0, -0.2)))
     if VEG.get('carrot'):
-        key = ('carrot', None)
+        key = ('carrot', None, area(p))
         if key not in BATCH:
-            BATCH[key] = Batch('PLANT_Veg_carrot')
+            BATCH[key] = Batch('PLANT_Veg_carrot__' + key[2])
         BATCH[key].add(VEG['carrot'], lying)
     else:
         verts = bmesh.ops.create_cone(chaos.bm, cap_ends=True, cap_tris=False, segments=8, radius1=0.028, radius2=0.004, depth=0.17)['verts']

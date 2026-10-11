@@ -62,7 +62,7 @@ for coll_name, prefix, gap in ROOMS:
         continue
     # the GUI may have left the collection hidden; the export only takes visible objects
     room.hide_viewport = room.hide_render = False
-    for o in room.all_objects:
+    for o in list(room.all_objects):     # (a copy: unhiding while iterating can leave stale entries)
         o.hide_viewport = False
         o.hide_render = False
         o.hide_set(False)

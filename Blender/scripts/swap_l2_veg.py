@@ -61,7 +61,7 @@ for o in added:
 # The models' own materials get names of their own ('Material.016' would be taken by the game for
 # bedroom furniture and drawn as toon). 'veg_' also gives them the game's cheaper plant lighting.
 for o in added:
-    kind = o.name.split('.')[0][len('PLANT_Veg_'):]
+    kind = o.name.split('.')[0][len('PLANT_Veg_'):].split('__')[0]     # (__<area> suffix)
     if not kind or kind.endswith(('_veg_dead', '_veg_yellow')) or o.name.startswith('PLANT_Vegetables'):
         continue
     for slot in o.material_slots:

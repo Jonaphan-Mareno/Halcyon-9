@@ -30,6 +30,26 @@ credit the artists anyway. The models are downloaded by `Blender/scripts/fetch_p
 Suggested credits-screen line: *"Plant and food models and textures from Poly Haven (polyhaven.com,
 CC0) by Rob Tuytel, Rico Cilliers, James Ray Cock, Oliver Harries, Kuutti Siitonen, Jan Martens and Amal Kumar."*
 
+## Sketchfab (CC BY 4.0: the authors must be credited)
+
+The vegetables in the atrium's garden beds (Level 2). Downloaded by hand into
+`Blender/assets/veg/<name>/` (not in git: download them from these links to rebuild), then
+thinned, given 512 px textures and merged per crop by `Blender/scripts/build_l2_atrium.py`, and
+swapped into `Blender/l2-atrium.blend` by `Blender/scripts/swap_l2_veg.py`.
+
+| Model | Author | Used for | Link |
+|---|---|---|---|
+| Lettuce | SirWyrm | lettuces (healthy and wilted) | https://sketchfab.com/3d-models/lettuce-1dfd949d61ae4d378d7c65571746f693 |
+| Tomato Plant | zvanstone | staked tomato plants (healthy and dying) | https://sketchfab.com/3d-models/tomato-plant-e0b559690e384fc0a9f3a05913f609c4 |
+| Cabbage | Meerschaum Digital | the cabbage bed | https://sketchfab.com/3d-models/cabbage-654306fc3ae344c7b9e7a9a40faca45b |
+| Carrot Collection | Adam.White | carrots in the beds (just the tops showing) and pulled-up carrots on the floor | https://sketchfab.com/3d-models/carrot-collection-5edfb3471cf4400e99ace18446f924b3 |
+
+Required credit lines (CC BY 4.0, http://creativecommons.org/licenses/by/4.0/):
+- *"Lettuce" by SirWyrm (https://sketchfab.com/SirWyrm), licensed under CC-BY-4.0. Modified (decimated, merged).*
+- *"Tomato Plant" by zvanstone (https://sketchfab.com/zvanstone), licensed under CC-BY-4.0. Modified (decimated, merged).*
+- *"Cabbage" by Meerschaum Digital (https://sketchfab.com/meerschaumdigital), licensed under CC-BY-4.0. Modified (decimated, merged).*
+- *"Carrot Collection" by Adam.White (https://sketchfab.com/Adam.White), licensed under CC-BY-4.0. Modified (one carrot kept, cut, decimated, merged).*
+
 ## Generated video
 
 | Asset | Source | Used for |
@@ -38,5 +58,5 @@ CC0) by Rob Tuytel, Rico Cilliers, James Ray Cock, Oliver Harries, Kuutti Siiton
 
 ## To add when used
 
-- Sketchfab models (vegetable plants, sea creatures) for the final submission: record the model
-  name, author, licence and link here when they are added.
+- Sketchfab sea creatures for the final submission: record the model name, author, licence and
+  link here when they are added.

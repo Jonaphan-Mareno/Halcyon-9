@@ -127,7 +127,7 @@ export class Level2Session {
       await this._precompile();
       this.ready = true;
       this.loadingEl.classList.remove('visible');
-      this.game.ui.showToast('WASD move · Shift run · SPACE jump · V camera · F torch · I inventory · E use', 9000);
+      this.game.ui.showToast('WASD move · double-tap W run · Shift crouch · SPACE jump · V camera · F torch · I inventory · E use', 9000);
     }).catch((e) => console.error('Level 2 failed to load.', e));
   }
 

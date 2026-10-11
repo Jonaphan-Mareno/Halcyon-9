@@ -97,8 +97,14 @@ def ccyl(acc, m, c, r, h, seg=24, col=False):
 
 
 # ------------------------------------------------------------------ openings in the outer wall
+# The sea window is exactly 16:9, the shape of the sea video shown behind it: 4.2 m tall, so
+# 7.47 m wide along the inside of the wall (no dividers, so the fish can cross the whole window).
+WIN_H = 4.2
+WIN_W = WIN_H * 16 / 9
+WIN_HALF = math.degrees(WIN_W / R) / 2          # half the window's angle (about 12.6 degrees)
+WIN_A0, WIN_A1 = 90 - WIN_HALF, 90 + WIN_HALF
 GAPS = [
-    dict(name='window', a0=62, a1=118, z0=0.8, z1=5.0),
+    dict(name='window', a0=WIN_A0, a1=WIN_A1, z0=0.8, z1=0.8 + WIN_H),
     dict(name='lab', a0=84, a1=96, z0=ZG, z1=ZG + 3.4),        # across the hall from the lift, above the window
     dict(name='pods', a0=172, a1=188, z0=0.0, z1=3.4),
     dict(name='lift', a0=263, a1=277, z0=0.0, z1=3.6),
@@ -467,11 +473,12 @@ for k in range(8):
 
 # ------------------------------------------------------------------ the window wall onto the sea
 win = A('Atrium_Window')
-for a in (76, 90, 104):
-    arc(win, 'hull_dark', R - 0.2, R + T, a - 0.6, a + 0.6, 0.8, 5.0, step=1)
-arc(win, 'accent', R - 0.25, R + T, 62, 118, 0.6, 0.8, step=2)
-arc(win, 'accent', R - 0.25, R + T, 62, 118, 5.0, 5.2, step=2)
-arc(win, 'glass', R + 0.3, R + 0.34, 62, 118, 0.8, 5.0, step=2)
+WZ1 = 0.8 + WIN_H
+for a0, a1 in ((WIN_A0 - 0.9, WIN_A0), (WIN_A1, WIN_A1 + 0.9)):                 # black side frames
+    arc(win, 'hull_dark', R - 0.2, R + T, a0, a1, 0.6, WZ1 + 0.2, step=0.5)
+arc(win, 'accent', R - 0.25, R + T, WIN_A0 - 0.9, WIN_A1 + 0.9, 0.6, 0.8, step=1)
+arc(win, 'accent', R - 0.25, R + T, WIN_A0 - 0.9, WIN_A1 + 0.9, WZ1, WZ1 + 0.2, step=1)
+arc(win, 'glass', R + 0.3, R + 0.34, WIN_A0, WIN_A1, 0.8, WZ1, step=1)
 empty('PT_Window', P(R + 2, 90, 2.9))
 
 # ------------------------------------------------------------------ doors

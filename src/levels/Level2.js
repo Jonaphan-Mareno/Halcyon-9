@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createGLTFLoader } from '../core/loaders.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { createHubTextures, applyHubMaterials, hubTime } from '../graphics/HubMaterials.js';
 import { createHubDecals, disposeHubDecals } from '../graphics/HubDecals.js';
@@ -51,7 +51,7 @@ export class Level2 {
 
   async load(physics, renderer) {
     this.physics = physics;
-    const gltf = await new GLTFLoader().loadAsync('./assets/models/level2-hub.glb');
+    const gltf = await createGLTFLoader().loadAsync('./assets/models/level2-hub.glb');
     const hub = gltf.scene;
     hub.updateMatrixWorld(true);
 
@@ -83,7 +83,7 @@ export class Level2 {
     // The wings (their own models), handled exactly like the hub
     this.gates = {};
     for (const url of WINGS) {
-      const wing = (await new GLTFLoader().loadAsync(url)).scene;
+      const wing = (await createGLTFLoader().loadAsync(url)).scene;
       wing.updateMatrixWorld(true);
       for (const node of [...wing.children]) {
         if (startsWithAny(node.name, SOLID_PREFIXES)) {

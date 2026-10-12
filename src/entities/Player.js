@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createGLTFLoader } from '../core/loaders.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 // Voss, the scientist (human_scientist.glb, built in Blender from cvg.blend).
@@ -185,7 +185,7 @@ export class Player {
   }
 
   async load() {
-    const gltf = await new GLTFLoader().loadAsync(MODEL);
+    const gltf = await createGLTFLoader().loadAsync(MODEL);
     const ramp = makeToonRamp();
     const materials = new Map();
     const toon = (m) => {

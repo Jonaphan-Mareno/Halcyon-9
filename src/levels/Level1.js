@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { createGLTFLoader } from '../core/loaders.js';
 import { Shaders } from "../graphics/Shaders";
 import { AriaManager } from "../entities/AriaManager.js";
 import { Sparks } from "../effects/Sparks.js";
@@ -23,6 +23,12 @@ const DIM_LEVEL = 0.04;
 const AMBIENT_DEAD = { sky: new THREE.Color(0x0b1220).multiplyScalar(0.5), ground: new THREE.Color(0x05070a).multiplyScalar(0.5) };
 const AMBIENT_LIT = { sky: new THREE.Color(0xdfe9f2).multiplyScalar(0.34), ground: new THREE.Color(0x8a8f96).multiplyScalar(0.3) };
 const ENV_DEAD = 0.05;
+// Only the room lights nearest the camera are shaded per pixel: that loop is most of the
+// shader's cost on integrated graphics. The ceiling lights hang 6.5 m up and fall off softly,
+// so the others are an even wash over what is in view: added to the ambient light instead,
+// at about what one gives at a typical distance.
+const ROOM_PIXEL_LIGHTS = 4;
+const DROPPED_LIGHT_AMBIENT = 0.03;
 const ENV_LIT = 0.6;
 
 // Flashlight: a spotlight that follows the camera once the torch is picked up
@@ -208,6 +214,16 @@ export class Level1{
     this.powerTarget = 0;
 
     // Shared by every level material: one update a frame changes them all
+    this._shared = {
+      uPower: { value: 0 },
+      uTime: { value: 0 },
+      numLights: { value: 0 },
+      lightViewPositions: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3()) },
+      lightViewDirs: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3(0, -1, 0)) },
+      lightCones: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector2(-2, -2)) },
+      lightColors: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Color()) },
+      lightIntensities: { value: new Array(MAX_LIGHTS).fill(0) }
+    };
     this._hemiSky = { value: AMBIENT_DEAD.sky.clone() };
     this._hemiGround = { value: AMBIENT_DEAD.ground.clone() };
     this._envStrength = { value: ENV_DEAD };
@@ -215,6 +231,7 @@ export class Level1{
 
     this.buildRoom();
     this.addLighting();
+    this.scene.onBeforeRender = (renderer, scene, camera) => this._lightsToView(camera);
 
     // Initialize ARIA System globally for this level
     this.ariaManager = new AriaManager(this.scene);
@@ -300,14 +317,8 @@ export class Level1{
         uvRepeat: { value: new THREE.Vector2(1, 1) },
         glowColor: { value: new THREE.Color(0, 0, 0) },
         glowAmount: { value: 0 },
-        uPower: { value: this.power },
-        uTime: { value: 0 },
-        numLights: { value: 0 },
-        lightPositions: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3()) },
-        lightDirs: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3(0, -1, 0)) },
-        lightCones: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector2(-2, -2)) },
-        lightColors: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Color()) },
-        lightIntensities: { value: new Array(MAX_LIGHTS).fill(0) },
+        // the lights, power and time are the same for every material: shared, set once a frame
+        ...this._shared,
         triTex: { value: tex },
         hasTri: { value: tex ? 1 : 0 },
         triTile: { value: surface?.tile ?? 1 },
@@ -335,6 +346,16 @@ export class Level1{
         hemiGround: this._hemiGround,
         envStrength: this._envStrength
       },
+      // Only the features this material uses are compiled in (see Shaders.js)
+      defines: {
+        ...(tex ? { USE_TRI: '' } : {}),
+        ...(surface?.shell ? { SHELL: '' } : {}),
+        ...(surface?.outerKind ? { SHELL_OUTER: '' } : {}),
+        ...(surface?.shell && (surface?.floorDepth ?? 0.04) > 0 ? { PARALLAX: '' } : {}),
+        ...(map ? { HAS_MAP: '' } : {}),
+        ...(normalMap ? { HAS_NORMALMAP: '' } : {}),
+        ...(emissiveMap ? { HAS_EMISSIVEMAP: '' } : {})
+      },
       // GLB materials are all double-sided; the default FrontSide would
       // cull wall/panel faces seen from behind and make them vanish
       side: THREE.DoubleSide,
@@ -353,10 +374,10 @@ export class Level1{
 
   async buildRoom(){
     try {
-      const gltfLoader = new GLTFLoader();
+      const gltfLoader = createGLTFLoader();
       const [roomGlb, cellGlb] = await Promise.all([
         gltfLoader.loadAsync('./assets/models/controlroom.glb'),
-        new GLTFLoader().loadAsync(CELL_MODEL).catch((e) => {
+        createGLTFLoader().loadAsync(CELL_MODEL).catch((e) => {
           console.error('Failed to load cell.glb; starting in the control room:', e);
           return null;
         })
@@ -407,7 +428,19 @@ export class Level1{
           const stackMatch = cleanName.match(/^Plane0(6[6-9]|7[01])$/);
           const stackLayer = stackMatch ? Number(cleanName.slice(-2)) - 66 : -1;
 
-          child.material = this._makeLevelMaterial(child.material, stackLayer, surfaceFor(cleanName, child.material));
+          // Static furniture with the same surface shares one material: about 200 near-identical
+          // materials made the renderer re-send every uniform for each mesh (CPU time per frame).
+          // Meshes keeping their own colours (glowing rings, screens, the puzzle pad...) still get
+          // their own, as their materials are changed while playing.
+          const surface = surfaceFor(cleanName, child.material);
+          const plain = surface && stackLayer < 0 && !child.material.map && !child.material.normalMap && !child.material.emissiveMap;
+          if (plain) {
+            this._surfaceMats = this._surfaceMats || new Map();
+            if (!this._surfaceMats.has(surface)) this._surfaceMats.set(surface, this._makeLevelMaterial(child.material, -1, surface));
+            child.material = this._surfaceMats.get(surface);
+          } else {
+            child.material = this._makeLevelMaterial(child.material, stackLayer, surface);
+          }
 
           // The generator's glowing rings (Circle001-004: cyan, green, cyan and a
           // green base ring). Unlit by default, they glow in their own colour so
@@ -484,6 +517,7 @@ export class Level1{
       this._rebuildInteractables();
       this._loadTorch();
       this._buildRelay();
+      if (this._quality) this.setQuality(this._quality);
 
       // Populate the light uniforms right away: update() only runs while
       // PLAYING, so otherwise the room pops from ambient-only to lit on start
@@ -698,7 +732,7 @@ export class Level1{
   // The torch, modelled in Blender, lying on the floor near ARIA
   async _loadTorch() {
     try {
-      const glb = await new GLTFLoader().loadAsync('./assets/models/torch.glb');
+      const glb = await createGLTFLoader().loadAsync('./assets/models/torch.glb');
       const model = glb.scene;
       model.traverse((child) => {
         if (child.isMesh) child.material = this._makeLevelMaterial(child.material);
@@ -837,6 +871,7 @@ onRingPuzzleComplete() {
   // mesh from the scene does not free its GPU memory: geometries and
   // materials have to be disposed explicitly.
   dispose() {
+    this.scene.onBeforeRender = () => {};
     for (const fx of this._fixtures || []) {
       this.scene.remove(fx.frame, fx.panel);
       fx.mat.dispose();
@@ -1706,6 +1741,8 @@ onRingPuzzleComplete() {
       if (u?.hasZone) {
         cellBounds.expandByScalar(0.25);
         u.hasZone.value = 1;
+        shell.material.defines.SHELL_ZONE = '';
+        shell.material.needsUpdate = true;
         u.zoneMin.value.copy(cellBounds.min);
         u.zoneMax.value.copy(cellBounds.max);
         u.zoneColor.value.copy(cellMesh.material.uniforms.baseColor.value);
@@ -2433,6 +2470,20 @@ onRingPuzzleComplete() {
     return factor;
   }
 
+  // Cheaper shading for slow machines (PerfMonitor steps through these before lowering the
+  // resolution far): fewer room lights shaded per pixel (the rest go into the ambient), and the
+  // floor's parallax depth off
+  setQuality({ lights = ROOM_PIXEL_LIGHTS, parallax = true } = {}) {
+    this._quality = { lights, parallax };   // (re-applied once the room has loaded)
+    this._pixelLights = lights;
+    for (const mat of this.shaderMaterials) {
+      const u = mat.uniforms.floorDepth;
+      if (!u) continue;
+      if (mat.userData.floorDepth === undefined) mat.userData.floorDepth = u.value;
+      u.value = parallax ? mat.userData.floorDepth : 0;
+    }
+  }
+
   // The average brightness of the room lights (0 dark .. 1 fully lit)
   _ambientFactor() {
     let sum = 0;
@@ -2464,15 +2515,39 @@ onRingPuzzleComplete() {
     const roomCount = Math.min(this.lights.length, MAX_LIGHTS - 1 - (cellLightOn ? 1 : 0));
     let count = 0;
 
-    // Gather light data once per frame instead of once per material
-    for (let i = 0; i < roomCount; i++) {
+    // Gather light data once per frame: the nearest room lights per pixel (the stuttering
+    // emergency lights always, so their flicker shows), the rest into the ambient
+    const eye = camera ? camera.position : (playerPosition || this._tmpC.set(0, 0, 0));
+    // (rebuilt whenever the number of lights changes: the first frames run before the room has loaded)
+    if (!this._lightOrder || this._lightOrder.length !== this.lights.length) {
+      this._lightOrder = this.lights.map(() => ({ key: 0, i: 0 }));
+    }
+    const order = this._lightOrder;
+    for (let i = 0; i < this.lights.length; i++) {
+      this.lights[i].getWorldPosition(this._lightWorldPos);
+      order[i].i = i;
+      order[i].key = this._flicker.has(i) && this.power < 0.99 ? -1 : this._lightWorldPos.distanceToSquared(eye);
+    }
+    order.sort((a, b) => a.key - b.key);
+    const pixelLights = Math.min(roomCount, this._pixelLights ?? ROOM_PIXEL_LIGHTS);
+    const dropped = this._droppedAmbient || (this._droppedAmbient = new THREE.Color());
+    dropped.setRGB(0, 0, 0);
+    for (let k = 0; k < order.length; k++) {
+      const i = order[k].i;
       const light = this.lights[i];
-      light.getWorldPosition(this._lightWorldPos);
-      this._lightWorldPositions[count].copy(this._lightWorldPos);
-      this._lightWorldColors[count].copy(light.color);
-      this._lightWorldIntensities[count] = LIGHT_FULL * this._lightFactor(i);
-      this._lightCones[count].set(-2, -2); // plain point light
-      count++;
+      const intensity = LIGHT_FULL * this._lightFactor(i);
+      if (k < pixelLights) {
+        light.getWorldPosition(this._lightWorldPos);
+        this._lightWorldPositions[count].copy(this._lightWorldPos);
+        this._lightWorldColors[count].copy(light.color);
+        this._lightWorldIntensities[count] = intensity;
+        this._lightCones[count].set(-2, -2); // plain point light
+        count++;
+      } else {
+        dropped.r += light.color.r * intensity * DROPPED_LIGHT_AMBIENT;
+        dropped.g += light.color.g * intensity * DROPPED_LIGHT_AMBIENT;
+        dropped.b += light.color.b * intensity * DROPPED_LIGHT_AMBIENT;
+      }
     }
 
     if (cellLightOn) {
@@ -2527,19 +2602,37 @@ onRingPuzzleComplete() {
     const lit = this.lights.length ? this._ambientFactor() : 0;
     this._hemiSky.value.copy(AMBIENT_DEAD.sky).lerp(AMBIENT_LIT.sky, lit);
     this._hemiGround.value.copy(AMBIENT_DEAD.ground).lerp(AMBIENT_LIT.ground, lit);
+    if (this._droppedAmbient) {
+      this._hemiSky.value.add(this._droppedAmbient);
+      this._hemiGround.value.r += this._droppedAmbient.r * 0.5;
+      this._hemiGround.value.g += this._droppedAmbient.g * 0.5;
+      this._hemiGround.value.b += this._droppedAmbient.b * 0.5;
+    }
     this._envStrength.value = ENV_DEAD + (ENV_LIT - ENV_DEAD) * lit;
 
-    for (const mat of this.shaderMaterials) {
-      mat.uniforms.numLights.value = count;
-      mat.uniforms.uPower.value = this.power;
-      mat.uniforms.uTime.value = this.time;
-      for (let i = 0; i < count; i++) {
-        mat.uniforms.lightPositions.value[i].copy(this._lightWorldPositions[i]);
-        mat.uniforms.lightDirs.value[i].copy(this._lightWorldDirs[i]);
-        mat.uniforms.lightCones.value[i].copy(this._lightCones[i]);
-        mat.uniforms.lightColors.value[i].copy(this._lightWorldColors[i]);
-        mat.uniforms.lightIntensities.value[i] = this._lightWorldIntensities[i];
-      }
+    // One set of uniforms for every material (positions go to view space as the scene is drawn,
+    // in _lightsToView)
+    const u = this._shared;
+    u.numLights.value = count;
+    u.uPower.value = this.power;
+    u.uTime.value = this.time;
+    for (let i = 0; i < count; i++) {
+      u.lightCones.value[i].copy(this._lightCones[i]);
+      u.lightColors.value[i].copy(this._lightWorldColors[i]);
+      u.lightIntensities.value[i] = this._lightWorldIntensities[i];
+    }
+  }
+
+  // Light positions and spotlight directions into view space, once per frame for the camera the
+  // scene is being drawn from (the shader would otherwise do it for every pixel). Runs just before
+  // each render, so the camera is exactly where it will be drawn from.
+  _lightsToView(camera) {
+    const u = this._shared;
+    camera.updateMatrixWorld();
+    const view = camera.matrixWorldInverse;
+    for (let i = 0; i < u.numLights.value; i++) {
+      u.lightViewPositions.value[i].copy(this._lightWorldPositions[i]).applyMatrix4(view);
+      u.lightViewDirs.value[i].copy(this._lightWorldDirs[i]).transformDirection(view);
     }
   }
 

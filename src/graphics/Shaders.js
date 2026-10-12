@@ -46,8 +46,10 @@ uniform vec3 baseColor;
 uniform vec3 ambientColor;
 uniform int numLights;
 
-uniform vec3 lightPositions[MAX_LIGHTS]; // world space
-uniform vec3 lightDirs[MAX_LIGHTS];      // world space, used by spotlights
+// Light positions and spotlight directions arrive in VIEW space, worked out once a frame on the
+// CPU (doing it here would be a matrix multiply per light for every pixel)
+uniform vec3 lightViewPositions[MAX_LIGHTS];
+uniform vec3 lightViewDirs[MAX_LIGHTS];     // used by spotlights
 uniform vec2 lightCones[MAX_LIGHTS];     // (outer cos, inner cos); x < -1.5 means a plain point light
 uniform vec3 lightColors[MAX_LIGHTS];
 uniform float lightIntensities[MAX_LIGHTS];
@@ -148,6 +150,16 @@ vec4 triSample(sampler2D t, vec3 p, vec3 w)
   return c;
 }
 
+// The same with explicit gradients, safe inside branches (see the shell code)
+vec4 triSampleGrad(sampler2D t, vec3 p, vec3 w, vec3 gx, vec3 gy)
+{
+  vec4 c = vec4(0.0);
+  if (w.x > 0.02) c += textureGrad(t, p.zy, gx.zy, gy.zy) * w.x;
+  if (w.y > 0.02) c += textureGrad(t, p.xz, gx.xz, gy.xz) * w.y;
+  if (w.z > 0.02) c += textureGrad(t, p.xy, gx.xy, gy.xy) * w.z;
+  return c;
+}
+
 // Bends the normal by the slope of the height map (as three.js's own bump mapping does)
 vec3 bumpNormal(vec3 surfPos, vec3 surfNorm, vec2 dHdxy)
 {
@@ -160,7 +172,7 @@ vec3 bumpNormal(vec3 surfPos, vec3 surfNorm, vec2 dHdxy)
   return normalize(abs(det) * surfNorm - grad);
 }
 
-// Filmic curve (ACES fit) and the sRGB curve: the same final grading as level 2
+// Filmic curve (ACES fit): the same final grading as level 2
 vec3 filmic(vec3 x)
 {
   return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
@@ -168,10 +180,6 @@ vec3 filmic(vec3 x)
 
 ${PARALLAX_GLSL}
 
-vec3 toSRGB(vec3 c)
-{
-  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
-}
 
 void main()
 {
@@ -182,67 +190,88 @@ void main()
 
   // Room shells are simple boxes, sometimes exported with corners shared and normals averaged
   // into diagonals: use the true flat facing of each face instead (turned towards the camera)
-  if (shellMode > 0.5) {
-    WN = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
-    if (dot(WN, cameraPosition - vWorldPos) < 0.0) WN = -WN;
-    N = normalize((viewMatrix * vec4(WN, 0.0)).xyz);
-  }
+#ifdef SHELL
+  WN = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
+  if (dot(WN, cameraPosition - vWorldPos) < 0.0) WN = -WN;
+  N = normalize((viewMatrix * vec4(WN, 0.0)).xyz);
+#endif
 
-  if (hasNormalMap > 0.5) {
-    vec3 mapN = texture2D(normalMap, vUv).xyz * 2.0 - 1.0;
-    mapN.xy *= normalScale;
-    N = perturbNormal(fPosition, N, mapN);
-  }
+#ifdef HAS_NORMALMAP
+  vec3 mapN = texture2D(normalMap, vUv).xyz * 2.0 - 1.0;
+  mapN.xy *= normalScale;
+  N = perturbNormal(fPosition, N, mapN);
+#endif
 
   vec3 albedo = baseColor;
-  if (hasMap > 0.5) albedo *= texture2D(map, vUv).rgb;
+#ifdef HAS_MAP
+  albedo *= texture2D(map, vUv).rgb;
+#endif
   float rough = roughness;
   float metal = metalness;
   float bumpScale = triBump;
 
-  // World-mapped surface texture
-  if (hasTri > 0.5) {
-    vec3 w = pow(abs(WN), vec3(6.0));
-    w = max(w - 0.02, 0.0);
-    w /= (w.x + w.y + w.z);
-    vec3 p = vWorldPos / triTile;
-    vec4 t;
-    if (shellMode > 0.5) {
-      // Floor, lower wall, stripe, upper wall, ceiling
-      float up = WN.y;
-      float h = vWorldPos.y;
-      bool outer = hasOuter > 0.5 && dot(WN, shellCentre - vWorldPos) < 0.0;
-      if (!outer && up > 0.6) {
-        // the floor faces straight up: one projection, with parallax depth in the grooves,
-        // which are also darker (less light reaches down into them)
-        vec3 toEye = cameraPosition - vWorldPos;
-        float eyeDist = length(toEye);
-        vec2 fuv = parallaxFloor(floorTex, vWorldPos.xz / floorTile, toEye / eyeDist, floorDepth / floorTile, eyeDist);
-        t = texture2D(floorTex, fuv);
-        albedo = floorColor * (1.0 - 0.5 * pomDepth(t)); rough = floorRough; metal = 0.05;
-        bumpScale = 1.2;
-      } else if (!outer && up < -0.6) {
-        t = triSample(triTex, p, w);
-        albedo = ceilColor;
-      } else {
-        bool zone = hasZone > 0.5 && all(greaterThan(vWorldPos, zoneMin)) && all(lessThan(vWorldPos, zoneMax))
-          && dot(WN, (zoneMin + zoneMax) * 0.5 - vWorldPos) > 0.0;
-        if (outer) { t = triSample(outerTex, vWorldPos / 2.2, w); albedo = outerColor; rough = 0.5; metal = 0.0; }
-        else if (zone) { t = triSample(zoneTex, vWorldPos / 2.4, w); albedo = zoneColor; rough = 0.85; metal = 0.0; }
-        else t = triSample(triTex, p, w);
-        if ((bands > 0.5 || outer) && !zone) {
-          if (h < 0.12) { albedo = vec3(0.006, 0.007, 0.009); rough = 0.3; }   // skirting
-          else if (h < 1.15) { albedo = vec3(0.008, 0.017, 0.042); rough = 0.45; }   // navy lower wall
-          else if (h < 1.22) { albedo = vec3(0.87, 0.19, 0.007); rough = 0.35; }    // orange stripe
-        }
-      }
+  // World-mapped surface texture. Each feature is compiled in only where a material uses it
+  // (#defines): left as run-time branches, the Windows shader compiler ran every branch for every
+  // pixel (texture reads inside branches), which made this shader several times slower.
+#ifdef USE_TRI
+  vec3 w = pow(abs(WN), vec3(6.0));
+  w = max(w - 0.02, 0.0);
+  w /= (w.x + w.y + w.z);
+  vec3 p = vWorldPos / triTile;
+  vec4 t;
+#ifdef SHELL
+  // Floor, lower wall, stripe, upper wall, ceiling. The texture reads here take explicit gradients
+  // (taken before the branches), so the compiler can really skip the branches not taken.
+  vec3 gpx = dFdx(vWorldPos), gpy = dFdy(vWorldPos);
+  float up = WN.y;
+  float h = vWorldPos.y;
+  bool outer = false;
+#ifdef SHELL_OUTER
+  outer = dot(WN, shellCentre - vWorldPos) < 0.0;
+#endif
+  if (!outer && up > 0.6) {
+    // the floor faces straight up: one projection, with parallax depth in the grooves,
+    // which are also darker (less light reaches down into them)
+    vec2 fuv = vWorldPos.xz / floorTile;
+#ifdef PARALLAX
+    vec3 toEye = cameraPosition - vWorldPos;
+    float eyeDist = length(toEye);
+    fuv = parallaxFloor(floorTex, fuv, toEye / eyeDist, floorDepth / floorTile, eyeDist);
+#endif
+    t = textureGrad(floorTex, fuv, gpx.xz / floorTile, gpy.xz / floorTile);
+    albedo = floorColor * (1.0 - 0.5 * pomDepth(t)); rough = floorRough; metal = 0.05;
+    bumpScale = 1.2;
+  } else if (!outer && up < -0.6) {
+    t = triSampleGrad(triTex, p, w, gpx / triTile, gpy / triTile);
+    albedo = ceilColor;
+  } else {
+    bool zone = false;
+#ifdef SHELL_ZONE
+    zone = all(greaterThan(vWorldPos, zoneMin)) && all(lessThan(vWorldPos, zoneMax))
+      && dot(WN, (zoneMin + zoneMax) * 0.5 - vWorldPos) > 0.0;
+#endif
+    if (outer) {
+      t = triSampleGrad(outerTex, vWorldPos / 2.2, w, gpx / 2.2, gpy / 2.2);
+      albedo = outerColor; rough = 0.5; metal = 0.0;
+    } else if (zone) {
+      t = triSampleGrad(zoneTex, vWorldPos / 2.4, w, gpx / 2.4, gpy / 2.4);
+      albedo = zoneColor; rough = 0.85; metal = 0.0;
     } else {
-      t = triSample(triTex, p, w);
+      t = triSampleGrad(triTex, p, w, gpx / triTile, gpy / triTile);
     }
-    albedo *= t.rgb * 1.45;
-    rough = clamp(rough * (1.55 - t.a * 1.1), 0.12, 1.0);
-    N = bumpNormal(fPosition, N, vec2(dFdx(t.a), dFdy(t.a)) * bumpScale);
+    if ((bands > 0.5 || outer) && !zone) {
+      if (h < 0.12) { albedo = vec3(0.006, 0.007, 0.009); rough = 0.3; }   // skirting
+      else if (h < 1.15) { albedo = vec3(0.008, 0.017, 0.042); rough = 0.45; }   // navy lower wall
+      else if (h < 1.22) { albedo = vec3(0.87, 0.19, 0.007); rough = 0.35; }    // orange stripe
+    }
   }
+#else
+  t = triSampleGrad(triTex, p, w, dFdx(p), dFdy(p));
+#endif
+  albedo *= t.rgb * 1.45;
+  rough = clamp(rough * (1.55 - t.a * 1.1), 0.12, 1.0);
+  N = bumpNormal(fPosition, N, vec2(dFdx(t.a), dFdy(t.a)) * bumpScale);
+#endif
 
   vec3 V = normalize(-fPosition);
   float NdV = clamp(dot(N, V), 0.0, 1.0);
@@ -257,30 +286,33 @@ void main()
   float occl = (0.55 + 0.45 * smoothstep(0.0, 1.8, vWorldPos.y)) * (1.0 - 0.35 * smoothstep(4.5, 6.6, vWorldPos.y));
   vec3 color = diffuseAlbedo * (ambientColor + hemi * occl);
 
+  // The lights: most of the shader's cost. The loop has a fixed count and no break or continue,
+  // so the compiler can unroll it and read the light arrays at fixed positions (on Windows,
+  // reading them at a run-time index made each light several times slower). Lights past
+  // numLights are skipped by the if, and the highlight is left out on matte surfaces.
+  bool glossy = rough < 0.6;
   for (int i = 0; i < MAX_LIGHTS; i++) {
-    if (i >= numLights) break;
-
-    // Uniform arrays can be indexed dynamically; varying arrays cannot on D3D
-    vec3 lightViewPos = (viewMatrix * vec4(lightPositions[i], 1.0)).xyz;
-    vec3 toLight = lightViewPos - fPosition;
-    float dist = length(toLight);
-    vec3 L = dist > 0.0001 ? normalize(toLight) : vec3(0.0, 1.0, 0.0);
-
-    float attenuation = lightIntensities[i] / (1.0 + 1.0 * dist + 0.5 * dist * dist);
-
-    // Spotlight (the flashlight): fade out between the inner and outer cone
-    if (lightCones[i].x > -1.5) {
-      vec3 spotDir = normalize((viewMatrix * vec4(lightDirs[i], 0.0)).xyz);
-      attenuation *= smoothstep(lightCones[i].x, lightCones[i].y, dot(-L, spotDir));
+    if (i < numLights) {
+      vec3 toLight = lightViewPositions[i] - fPosition;
+      float dist2 = dot(toLight, toLight);
+      float dist = sqrt(dist2);
+      vec3 L = toLight / max(dist, 0.0001);
+      float attenuation = lightIntensities[i] / (1.0 + dist + 0.5 * dist2);
+      // Spotlight (the flashlight): fade out between the inner and outer cone
+      if (lightCones[i].x > -1.5) {
+        attenuation *= smoothstep(lightCones[i].x, lightCones[i].y, dot(-L, lightViewDirs[i]));
+      }
+      float diff = max(dot(N, L), 0.0);
+      vec3 lit = diffuseAlbedo;
+      if (glossy) {
+        vec3 H = normalize(L + V);
+        float NdH = max(dot(N, H), 0.0);
+        float lh = 1.0 - max(dot(L, H), 0.0);
+        float lh2 = lh * lh;
+        lit += (F0 + (1.0 - F0) * (lh2 * lh2 * lh)) * pow(NdH, shininess) * specNorm;
+      }
+      color += lit * (diff * attenuation) * lightColors[i];
     }
-    float diff = clamp(dot(N, L), 0.0, 1.0);
-
-    vec3 H = normalize(L + V);
-    float NdH = clamp(dot(N, H), 0.0, 1.0);
-    vec3 fres = F0 + (1.0 - F0) * pow(1.0 - clamp(dot(L, H), 0.0, 1.0), 5.0);
-    vec3 spec = fres * pow(NdH, shininess) * specNorm;
-
-    color += (diffuseAlbedo + spec) * diff * lightColors[i] * attenuation;
   }
 
   // Glossy surfaces reflect the bright room around them (strongest at grazing angles)
@@ -296,17 +328,22 @@ void main()
 
   // Emissive LED strips. Unpowered: only ~20% of cells are alive and they
   // stutter on/off. Powered: every cell is steady. uPower blends between.
-  if (hasEmissiveMap > 0.5) {
+#ifdef HAS_EMISSIVEMAP
+  {
     vec2 cell = floor(vUv * 6.0);
     float alive = step(0.8, hash(cell));
     float stutter = step(0.45, hash(vec2(cell.x + floor(uTime * 12.0), cell.y)));
     float strip = mix(alive * stutter, 1.0, uPower);
     color += emissiveColor * texture2D(emissiveMap, vUv).rgb * strip;
   }
+#endif
 
   color += glowColor * glowAmount;
 
-  gl_FragColor = vec4(toSRGB(filmic(color)), 1.0);
+  // (the colour space conversion is three.js's own: sRGB on screen, linear into the
+  // post-processing target, where the output pass converts it)
+  gl_FragColor = vec4(filmic(color), 1.0);
+  #include <colorspace_fragment>
 }
 `
 ;

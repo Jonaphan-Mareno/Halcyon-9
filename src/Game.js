@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { Renderer } from './core/Renderer.js';
+import { PerfMonitor } from './core/PerfMonitor.js';
+import { Physics } from './core/Physics.js';
 import { Camera } from './core/Camera.js';
 import { Controls } from './core/Controls.js';
 import { Level1 } from './levels/Level1.js';
@@ -93,6 +95,18 @@ const ARIA_GAME_OVER_TEXT = "Backup... corrupted. I am so sorry, Voss. I really 
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Level 1's automatic quality steps, best first (see PerfMonitor): effects go before resolution
+// drops far, as a blurry picture is worse than slightly simpler lighting
+const LEVEL1_QUALITY = [
+  { scale: 1, lights: 4, parallax: true },
+  { scale: 0.9, lights: 4, parallax: true },
+  { scale: 0.9, lights: 3, parallax: false },
+  { scale: 0.8, lights: 3, parallax: false },
+  { scale: 0.75, lights: 2, parallax: false },
+  { scale: 0.65, lights: 2, parallax: false },
+  { scale: 0.55, lights: 2, parallax: false }
+];
+
 const formatTime = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 
 export class Game {
@@ -153,6 +167,9 @@ export class Game {
     this.camera = new Camera(this.width / this.height);
     this.camera.instance.position.set(0, 3, 0); // adjust ctor args to match your Camera class
     this.renderer = new Renderer();
+    // The physics engine (Rapier) is a separate download: start it now, alongside the level's
+    // models, so it is ready for whichever level needs it
+    Physics.preload();
 
     if (this.startLevel === '2' || this.startLevel === 'hose' || this.startLevel === 'reactor') {
       this._initLevel2();
@@ -161,6 +178,15 @@ export class Game {
 
     // Load first level
     this.currentLevel = new Level1(this.scene, this.camera.instance);
+    // FXAA instead of MSAA, and a resolution that adapts to the machine (F3 shows the frame rate)
+    this.renderer.usePost(this.scene, this.camera.instance);
+    this.perf = new PerfMonitor({
+      steps: LEVEL1_QUALITY,
+      onStep: (q) => {
+        this.renderer.setScale(q.scale);
+        this.currentLevel?.setQuality?.(q);
+      }
+    });
 
     // Controls
     this.controls = new Controls(this.camera.instance, document.body, this.currentLevel);
@@ -194,6 +220,8 @@ export class Game {
     window.addEventListener('resize', () => this.onResize());
 
     this.raycaster = new THREE.Raycaster();
+    this.raycaster.far = 8;        // nothing is used from further away (cheaper: far objects are skipped)
+    this._reticleTick = 0;
     this.center = new THREE.Vector2(0, 0);
     this.reticle = document.getElementById('reticle');
 
@@ -294,6 +322,11 @@ export class Game {
       this.ui.objective, this.ui.waypoint, this.ui.overloadBanner, this.ui.dialogue
     ].filter(Boolean);
     document.getElementById('ui-layer').replaceChildren(...keep);
+
+    // level 2 brings its own post-processing and frame counter
+    this.perf?.dispose();
+    this.perf = null;
+    this.renderer.disposePost();
 
     this.level2Mode = true;
     this.state = 'PLAYING';
@@ -594,6 +627,7 @@ export class Game {
       } else {
         this.update(delta);
         this.currentLevel?.ariaManager?.renderHead(this.renderer.instance);
+        this.perf?.update(delta, this.state === 'PLAYING');
       }
       this.renderer.render(this.scene, this.camera.instance);
     };
@@ -722,6 +756,10 @@ export class Game {
   }
 
   updateReticle() {
+    // Testing the ray against everything clickable was the most expensive thing the game did on
+    // the CPU each frame (~10 ms on a UHD 620 laptop): every third frame is plenty for a prompt
+    this._reticleTick = (this._reticleTick + 1) % 3;
+    if (this._reticleTick !== 0) return;
     this.raycaster.setFromCamera(this.center, this.camera.instance);
     const targets = this.currentLevel.interactables || [];
     const hit = this.raycaster.intersectObjects(targets, true)[0];
@@ -964,6 +1002,7 @@ export class Game {
 
     this.currentLevel.dispose();
     this.currentLevel = new Level1(this.scene, this.camera.instance);
+    if (this.perf) this.currentLevel.setQuality(this.perf.current);   // keep the quality the machine settled on
     this.controls.level = this.currentLevel;
     this._wireLevel();
     this.hud.setTorch(false, false);

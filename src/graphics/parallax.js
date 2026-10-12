@@ -24,16 +24,16 @@ vec2 parallaxFloor(sampler2D tex, vec2 uv, vec3 toEye, float depth, float dist) 
   // explicit gradients (taken before any branch): an early-exit loop breaks the automatic mip
   // selection, which shows as sparkles
   vec2 gx = dFdx(uv), gy = dFdy(uv);
-  float fade = 1.0 - smoothstep(6.0, 11.0, dist);
+  float fade = 1.0 - smoothstep(4.0, 8.0, dist);
   if (fade <= 0.0 || depth <= 0.0) return uv;
   float up = max(toEye.y, 0.12);
-  float steps = mix(16.0, 6.0, up);
+  float steps = mix(10.0, 4.0, up);
   float layer = 1.0 / steps;
   vec2 dUV = (toEye.xz / up) * depth * fade * layer;
   float cur = 0.0;
   vec2 p = uv;
   float d = pomDepth(textureGrad(tex, p, gx, gy));
-  for (int i = 0; i < 16; i++) {
+  for (int i = 0; i < 10; i++) {
     if (float(i) >= steps || cur >= d) break;
     p -= dUV;
     d = pomDepth(textureGrad(tex, p, gx, gy));

@@ -1,13 +1,29 @@
 import * as THREE from 'three';
-import RAPIER from '@dimforge/rapier3d-compat';
+
+// Rapier (about 4 MB, most of the game's code) is only needed in level 2, so it is loaded on
+// demand instead of with the rest of the game: level 1 starts sooner, and fetches it quietly in
+// the background (preload) so the lift ride down does not wait for it.
+let RAPIER = null;
+let loading = null;
+
+function loadRapier() {
+  if (!loading) loading = import('@dimforge/rapier3d-compat').then((m) => { RAPIER = m.default; return RAPIER; });
+  return loading;
+}
 
 // A thin wrapper around the Rapier physics world. Level geometry becomes static
 // triangle-mesh colliders (baked into world space from the hub model's COL_ proxy
 // meshes); the player is a kinematic capsule driven by a character controller
 // (see player/PlayerController.js).
 export class Physics {
+  // Start downloading Rapier without waiting for it
+  static preload() {
+    loadRapier().catch(() => {});
+  }
+
   // Rapier's WebAssembly has to be initialised once before a world can exist
   static async create() {
+    await loadRapier();
     await RAPIER.init();
     return new Physics();
   }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createGLTFLoader } from '../core/loaders.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -97,7 +97,8 @@ export class HabitatSession {
     webgl.shadowMap.autoUpdate = false;
     // Performance (measured on Intel UHD 620): 4x MSAA cost ~9 ms a frame, so edges are smoothed
     // by FXAA instead (~1 ms). The glow (bloom) is dropped automatically on slow machines.
-    webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
+    // at most one rendered pixel per screen pixel (Windows display scaling would multiply them)
+    webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
     const size = new THREE.Vector2();
     webgl.getSize(size);
     const pr = webgl.getPixelRatio();
@@ -134,7 +135,7 @@ export class HabitatSession {
 
   // Loads one of the level's models: collision into the physics world, then the game's materials
   async _loadModel(url) {
-    const gltf = await new GLTFLoader().loadAsync(url);
+    const gltf = await createGLTFLoader().loadAsync(url);
     const model = gltf.scene;
     model.updateMatrixWorld(true);
     for (const node of [...model.children]) {
@@ -498,6 +499,8 @@ export class HabitatSession {
       this.qualityStep = 1;
     } else {
       webgl.setPixelRatio(Math.min(webgl.getPixelRatio(), 0.8));
+      // (the composer keeps its own copy of the pixel ratio: without this the step did nothing)
+      this.composer.setPixelRatio(webgl.getPixelRatio());
       this.composer.setSize(window.innerWidth, window.innerHeight);
       const pr = webgl.getPixelRatio();
       this.fxaa.material.uniforms.resolution.value.set(1 / (window.innerWidth * pr), 1 / (window.innerHeight * pr));

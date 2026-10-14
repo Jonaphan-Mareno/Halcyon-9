@@ -61,8 +61,11 @@ const WALL_SCREEN_NAMES = ['Monitor_wall_01', 'Sphere008'];
 // controlroom.glb and walking out of the door leads straight into the control room.
 const CELL_MODEL = './assets/models/cell.glb';
 const CELL_LIGHT_COLOR = 0xff4a30;   // the red emergency light (the cell's only light)
-const CELL_LIGHT_BASE = 1;          // its brightness and how far it pulses
-const CELL_LIGHT_PULSE = 2;
+// Its brightness and how far it pulses. (It used to swing from -1 to 3: below zero it took light
+// away, and the cell went pitch black for part of every pulse. Now it never drops under 1.7.)
+const CELL_LIGHT_BASE = 2.5;
+const CELL_LIGHT_PULSE = 0.8;
+const CELL_GLOW = new THREE.Color(0.05, 0.008, 0.006);   // a faint red glow over the whole cell
 const CELL_LIGHT_HEIGHT = 1;
 const BRICK_RANGE = 3;               // how close you must be to pick it up
 const BRICK_SIZE = [0.25, 0.085, 0.12];   // a real house brick (a touch larger, so it is easy to spot)
@@ -2269,6 +2272,7 @@ onRingPuzzleComplete() {
     });
 
     this.relay = { root, rings };
+    root.userData.noAimAssist = true;   // each ring is clicked on its own: no aim assist here
     this.scene.add(root);
     this._rebuildInteractables();
   }
@@ -2602,6 +2606,12 @@ onRingPuzzleComplete() {
     const lit = this.lights.length ? this._ambientFactor() : 0;
     this._hemiSky.value.copy(AMBIENT_DEAD.sky).lerp(AMBIENT_LIT.sky, lit);
     this._hemiGround.value.copy(AMBIENT_DEAD.ground).lerp(AMBIENT_LIT.ground, lit);
+    // in the cell, a faint red glow too, so it is never too dark to find your way
+    if (this._cellLightLevel > 0.01) {
+      this._hemiSky.value.r += CELL_GLOW.r * this._cellLightLevel;
+      this._hemiSky.value.g += CELL_GLOW.g * this._cellLightLevel;
+      this._hemiSky.value.b += CELL_GLOW.b * this._cellLightLevel;
+    }
     if (this._droppedAmbient) {
       this._hemiSky.value.add(this._droppedAmbient);
       this._hemiGround.value.r += this._droppedAmbient.r * 0.5;

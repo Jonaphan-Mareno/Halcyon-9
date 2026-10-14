@@ -760,20 +760,57 @@ export class Game {
     // the CPU each frame (~10 ms on a UHD 620 laptop): every third frame is plenty for a prompt
     this._reticleTick = (this._reticleTick + 1) % 3;
     if (this._reticleTick !== 0) return;
-    this.raycaster.setFromCamera(this.center, this.camera.instance);
-    const targets = this.currentLevel.interactables || [];
-    const hit = this.raycaster.intersectObjects(targets, true)[0];
+    const hit = this._pickInteractable();
     this.reticle.classList.toggle('active', !!hit);
     this.ui.setPrompt(hit ? this.currentLevel.getInteractPrompt?.(hit.object, hit.distance) : null);
+  }
+
+  // What the player is aiming at. The exact ray under the crosshair first; if it misses, aim
+  // assist: anything usable within a few degrees of the crosshair (more for big things), in reach
+  // and not behind a wall. So aiming at an object's floating marker, or just beside a small thing
+  // like the brick, still works. (Objects marked userData.noAimAssist, like the relay rings,
+  // where you must pick one ring, need the exact ray.)
+  _pickInteractable() {
+    const level = this.currentLevel;
+    const cam = this.camera.instance;
+    const targets = level.interactables || [];
+    this.raycaster.setFromCamera(this.center, cam);
+    const hit = this.raycaster.intersectObjects(targets, true)[0];
+    if (hit) return hit;
+
+    const dir = cam.getWorldDirection(this._aimDir || (this._aimDir = new THREE.Vector3()));
+    const box = this._aimBox || (this._aimBox = new THREE.Box3());
+    const centre = this._aimCentre || (this._aimCentre = new THREE.Vector3());
+    const to = this._aimTo || (this._aimTo = new THREE.Vector3());
+    let best = null;
+    let bestScore = 1;
+    for (const object of targets) {
+      if (object.userData.noAimAssist) continue;
+      box.setFromObject(object);
+      if (box.isEmpty()) continue;
+      box.getCenter(centre);
+      const radius = box.getSize(to).length() / 2;
+      to.subVectors(centre, cam.position);
+      const distance = to.length();
+      if (distance < 0.01 || distance > this.raycaster.far) continue;
+      const allowed = Math.max(THREE.MathUtils.degToRad(6), Math.atan(radius / distance) + THREE.MathUtils.degToRad(3));
+      const score = to.angleTo(dir) / allowed;
+      if (score >= bestScore) continue;
+      const reach = Math.max(0, distance - radius * 0.5);
+      if (level.canInteract?.(object, reach) === false) continue;
+      best = { object, distance: reach, point: centre.clone() };
+      bestScore = score;
+    }
+    // not through walls
+    if (best && level._clearLineTo && !level._clearLineTo(best.point, Math.max(0, best.distance - 0.1))) return null;
+    return best;
   }
 
   // Interact with whatever is under the reticle (click or E)
   tryInteract(options = {}) {
     // Something in Voss's hands (the cell's brick): click throws it, E drops it
     if (this.currentLevel.handleHeldItem?.(options)) return;
-    this.raycaster.setFromCamera(this.center, this.camera.instance);
-    const targets = this.currentLevel.interactables || [];
-    const hit = this.raycaster.intersectObjects(targets, true)[0];
+    const hit = this._pickInteractable();
     if (!hit) return;
     if (this.currentLevel.canInteract?.(hit.object, hit.distance) === false) return;
     this.currentLevel.onInteract?.(hit.object, options);

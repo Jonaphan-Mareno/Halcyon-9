@@ -569,13 +569,14 @@ const POS_VARYING = '\nvarying vec3 vTriPos;\nvarying vec3 vTriNrm;\n';
 //                  reach and a colour (its brightness). Live uniforms, so the level can flicker
 //                  them and turn them red.
 // Only inside the atrium's outer wall: the lift cabin, the rooms and the lab are left alone.
-export const HUB_POOLS = 7;
+export const HUB_POOLS = 8;
 const SHADE_SIZE = 128;      // texels across the shade map
 const SHADE_SPAN = 35;       // metres the shade map covers (the atrium is 34 m across)
 export const hubLighting = {
   uPools: { value: Array.from({ length: HUB_POOLS }, () => new THREE.Vector4(0, -100, 0, 0.001)) },
   uPoolColors: { value: Array.from({ length: HUB_POOLS }, () => new THREE.Color(0, 0, 0)) },
-  uShadeMap: { value: null }
+  uShadeMap: { value: null },
+  uRestore: { value: 0 }       // 0..1: how far the room's light has come back (the pumps restart)
 };
 
 // one plain white map until the level bakes its own: nothing is darkened
@@ -645,10 +646,13 @@ const HUB_LIGHT_GLSL = `
   uniform vec4 uPools[HUB_POOLS];
   uniform vec3 uPoolColors[HUB_POOLS];
   uniform sampler2D uShadeMap;
-  // how much of the room's light reaches this point (1 = all of it), from the baked shade map
+  uniform float uRestore;
+  // how much of the room's light reaches this point (1 = all of it), from the baked shade map,
+  // brought back towards clean as the power returns
   float hubShade(vec3 p) {
     vec2 shade = texture2D(uShadeMap, p.xz / ${SHADE_SPAN.toFixed(1)} + 0.5).rg;
     float s = mix(shade.r, shade.g, smoothstep(5.0, 5.8, p.y));
+    s = mix(s, 1.0, uRestore);
     return mix(1.0, s, 1.0 - smoothstep(16.9, 17.3, length(p.xz)));
   }
   // light from the lamps that still work: soft pools facing their lamp, without shadows

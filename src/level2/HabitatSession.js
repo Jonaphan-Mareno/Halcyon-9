@@ -24,6 +24,8 @@ import { projectWaypoint } from '../ui/waypoint.js';
 import { Interact } from './Interact.js';
 import { LINES, TALKS, CUES } from './Level2Lines.js';
 import { buildHallClues } from './HallClues.js';
+import { Gates } from './Gates.js';
+import { KeypadUI } from '../ui/KeypadUI.js';
 import '../ui/level2.css';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
@@ -52,7 +54,8 @@ const LAMP_POOLS = [
   { at: [0, 2.6, -14.2], reach: 7, color: [0.5, 0.78, 1.0], power: 1.5 },    // cold sea-glow from the window
   { at: [-15.4, 4.2, 0.6], reach: 5.5, color: [1.0, 0.45, 0.16], power: 1.6, flicker: true }, // the sparking wires, west
   { at: [11.5, 2.4, 11.5], reach: 5, color: [1.0, 0.16, 0.1], power: 1.4 },  // a red emergency lamp at the east stair
-  { at: [-3.9, 2.9, 15.6], reach: 3.4, color: [1.0, 0.9, 0.74], power: 1.5 }   // a desk lamp by the crew's photo board
+  { at: [-3.9, 2.9, 15.6], reach: 3.4, color: [1.0, 0.9, 0.74], power: 1.5 },  // a desk lamp by the crew's photo board
+  { at: [15.6, 7.3, 0], reach: 3.6, color: [1.0, 0.86, 0.66], power: 1.8 }     // upstairs, the crew quarters' lights still on
 ];
 const DEAD_ZONES = [
   { at: [-13, 1.5, -6], reach: 7, depth: 0.6 },     // west, by the sealed pods
@@ -63,6 +66,11 @@ const DEAD_ZONES = [
 const GRIME = 0.62;          // how dark the patches of soot and dead panels get
 const UNDER_GALLERY = 0.72;  // how much darker it is under the gallery ring
 const ATRIUM_DIM = 0.7;      // the atrium's share of the room light: the lamp pools stand out against it
+// When the garden's pumps restart, most of the atrium's light comes back: the dark, damaged
+// arrival gives way to the room as it was meant to look (still a little under strain)
+const RESTORED_LIGHT = 0.55; // how far towards clean the shade goes (uRestore)
+const RESTORED_BASE = 0.86;  // the mood's normal brightness after the restart (0.74 before)
+const HATCH_CODE = '471902'; // Kessler's override (placeholder, see the script's open decisions)
 
 // Glass everywhere (the sea window, railings, the lab's tubes and beakers): dark and one-sided, so
 // it adds reflections without laying a milky white film over what is behind it, and clear face-on
@@ -120,6 +128,10 @@ export class HabitatSession {
     this._head = new THREE.Vector3();
     this._talkToken = 0;
     window.addEventListener('keydown', (e) => {
+      if (this.keypad?.isOpen) {
+        if (e.code === 'Escape') this._closeKeypad();
+        return;
+      }
       if (game.state !== 'PLAYING' || !this.ready) return;
       if (e.code === 'KeyE' && !e.repeat) this.interact?.use();
       if (e.code === 'Enter') this.skipLine();
@@ -356,7 +368,7 @@ export class HabitatSession {
       lab: at('PT_Plate_LAB', -2.4),
       kessler: at('PT_Plate_KESSLER', -2.2)
     });
-    this.story.onChange = (flag) => console.log('Level 2 story:', flag);
+    this.story.onChange = (flag) => this._onStory(flag);
 
     // things Voss can use (E): the hall's optional clues, scene 2.2
     this.interact = new Interact(this.game.camera.instance, this.physics);
@@ -366,6 +378,32 @@ export class HabitatSession {
     if (clues.ration) this.interact.add({ id: 'ration', position: clues.ration, radius: 0.2, label: 'Look at the tray', use: () => this.say('ration') });
     const pods = at('PT_PodDoor', 0);
     if (pods) this.interact.add({ id: 'pods', position: pods, radius: 1.2, label: 'Read the sign on the pod door', use: () => this.say('pods') });
+
+    // what holds him back (scenes 2.2 to 2.9): the stair bulkheads, the hatch and its keypad,
+    // Kessler's door (it wants her card and the lab's authorisation)
+    this.gates = new Gates({ scene, atrium, physics: this.physics });
+    this.gates.bulkheadSpots.forEach((p, i) => this.interact.add({
+      id: 'bulkhead' + i, position: p, radius: 1.4, label: 'Look through the bulkhead',
+      when: () => this.gates.bulkheadsSealed, use: () => this.say('stairs')
+    }));
+    if (this.gates.hatchCentre) {
+      this.interact.add({
+        id: 'hatch', position: this.gates.hatchCentre.clone().setY(0.4), radius: 1.0, reach: 2.4,
+        label: () => (this.story.has('gardenCleared') ? 'Use the hatch keypad' : 'Hatch keypad (no power)'),
+        when: () => !this.story.has('hatchOpen'), use: () => this._useHatch()
+      });
+    }
+    this.keypad = new KeypadUI({ onSubmit: (code) => this._hatchCode(code), onCancel: () => this._closeKeypad() });
+    this.keypad.root.querySelector('.keypad-brand').textContent = 'MAINTENANCE HATCH 4';
+    this.keypad.root.querySelector('.keypad-instruction').textContent = 'EMERGENCY OVERRIDE: CREW LEADER KEY (DR. E. KESSLER)';
+    const kessler = atrium.getObjectByName('DOOR_KESSLER');
+    if (kessler) {
+      this.interact.add({
+        id: 'kesslerDoor', position: new THREE.Box3().setFromObject(kessler).getCenter(new THREE.Vector3()), radius: 1.3,
+        label: "Dr. Kessler's door (locked)", when: () => !this._kesslerUnlocked(), use: () => this._tryKesslerDoor()
+      });
+    }
+    this.restore = 0;
 
     this._addAriaScreens([atrium, lab]);
     this._setUpLab(lab);
@@ -637,7 +675,8 @@ export class HabitatSession {
     // the quarter doors: slide up into the wall as you come near, back down as you leave.
     // Solid only while fully closed, since that is where their collider is baked.
     for (const d of this.quarterDoors) {
-      const near = this.controls.position.distanceTo(d.centre) < 4;
+      const allowed = d.node.name !== 'DOOR_KESSLER' || this._kesslerUnlocked();
+      const near = allowed && this.controls.position.distanceTo(d.centre) < 4;
       d.open = THREE.MathUtils.clamp(d.open + (near ? dt : -dt) / 1.2, 0, 1);
       const t = d.open * d.open * (3 - 2 * d.open);
       d.node.position.y = d.closedY + 3.4 * t;
@@ -666,6 +705,12 @@ export class HabitatSession {
     }
 
     // sparks crackle from the damaged wiring; the dangling light stutters, cutting out on each crackle
+    this.gates?.update(dt);
+    if (this.restore < this._restoreTarget) {
+      this.restore = Math.min(this._restoreTarget, this.restore + dt / 3);
+      hubLighting.uRestore.value = this.restore * RESTORED_LIGHT;
+      if (g.mood) g.mood.base = THREE.MathUtils.lerp(0.74, RESTORED_BASE, this.restore);
+    }
     this._applyMood();
     this.sparks.update(dt);
     if (this.sparks.burstNow) this.flicker = 0.35;
@@ -726,6 +771,77 @@ export class HabitatSession {
     return token === this._talkToken;
   }
 
+  // ---------------------------------------------------------
+  // The story's consequences: whatever sets a flag (the fight, the keypad, F7 in debug), the
+  // level reacts here
+  // ---------------------------------------------------------
+  _onStory(flag) {
+    console.log('Level 2 story:', flag);
+    if (flag === 'gardenCleared') this._powerReturns();
+    if (flag === 'hatchOpen') {
+      this.gates?.openHatch();
+      this.say('hatchOpen');
+    }
+  }
+
+  // The last drone is down and the pumps restart (end of scene 2.3): a stutter and a deep hit,
+  // the atrium's light comes back, the stair bulkheads sink into the floor, and ARIA denies it
+  _powerReturns() {
+    const g = this.game;
+    g.mood?.flicker(0.9);
+    setTimeout(() => {
+      g.music?.stinger('reveal');
+      this._restoreTarget = 1;
+      this.gates?.openBulkheads();
+    }, 700);
+    setTimeout(() => this.say('bulkhead'), 2600);
+  }
+
+  _kesslerUnlocked() {
+    return this.story.has('cardTaken') && this.story.has('labDone');
+  }
+
+  _tryKesslerDoor() {
+    const ui = this.game.ui;
+    if (!this.story.has('cardTaken')) ui.showToast('ACCESS: CARD REQUIRED', 2500);
+    else ui.showToast('CARD ACCEPTED. LAB AUTHORISATION REQUIRED', 3000);
+  }
+
+  // The hatch keypad: dead until the pumps restart, then it wants Kessler's code
+  _useHatch() {
+    if (!this.story.has('gardenCleared')) {
+      this.game.ui.showToast('The keypad is dead. No power.', 2500);
+      return;
+    }
+    this.game.state = 'KEYPAD';
+    this.controls.instance.unlock?.();
+    this.game.ui.setPrompt(null);
+    this.keypad.open();
+  }
+
+  _closeKeypad() {
+    if (!this.keypad.isOpen) return;
+    this.keypad.close();
+    this.game.state = 'PLAYING';
+  }
+
+  _hatchCode(code) {
+    if (code === HATCH_CODE) {
+      this.keypad.setStatus('ACCESS GRANTED', 'success');
+      setTimeout(() => {
+        this._closeKeypad();
+        this.story.set('hatchOpen');
+      }, 900);
+      return;
+    }
+    this.keypad.setStatus('ACCESS DENIED', 'error');
+    setTimeout(() => {
+      this._closeKeypad();
+      // the first refusal: ARIA explains whose lock it is, and tells him not to go upstairs
+      if (this.story.set('hatchTried')) this.say('hatchLocked');
+    }, 1200);
+  }
+
   // Enter: skip ARIA's line, or move on from Voss's
   skipLine() {
     const ui = this.game.ui;
@@ -744,7 +860,7 @@ export class HabitatSession {
     const p = this.controls.position;
     // the thing he is looking at, if he can use it
     const hit = this.interact ? this.interact.update(this._head.set(p.x, p.y + 1.6, p.z)) : null;
-    ui.setPrompt(hit ? 'E   ' + hit.label : null);
+    ui.setPrompt(hit ? 'E   ' + (typeof hit.label === 'function' ? hit.label() : hit.label) : null);
     const goal = this.story.objective(p);
     ui.setObjective(goal.text);
     // no marker during a fight (it stays up close, as Level 1's does)

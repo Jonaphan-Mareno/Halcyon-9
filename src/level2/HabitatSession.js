@@ -9,7 +9,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { Physics } from '../core/Physics.js';
 import { PlayerController } from '../player/PlayerController.js';
-import { createHubTextures, applyHubMaterials, surfaceMaterial } from '../graphics/HubMaterials.js';
+import { createHubTextures, applyHubMaterials, surfaceMaterial, hubLighting, withHubLighting, bakeShadeMap, HUB_POOLS } from '../graphics/HubMaterials.js';
 import { surfaceFor, SURFACE } from '../levels/level1Look.js';
 import { makeLiftScreen } from '../levels/liftCabin.js';
 import { VideoWindow } from '../graphics/VideoWindow.js';
@@ -38,6 +38,26 @@ const LIFT_OPENING = { halfWidth: 2.2, top: 3.62, back: 17.52 };   // a little p
 // of a lamp: level 1 lights the cabin with the control room's lamps, and a real light here would
 // be worked out for every pixel on screen (~3 ms a frame on Intel UHD 620)
 const LIFT_INSIDE_FILL = 1.5;
+
+// The atrium's broken lighting (see hubLighting in HubMaterials): the lamps that still work make
+// soft pools, and some areas have gone dead. Positions in metres (north is -z, the lift +z).
+const LAMP_POOLS = [
+  { at: [0, 3.2, 14], reach: 6.5, color: [1.0, 0.88, 0.72], power: 1.8 },      // the lift approach: warm, welcoming
+  { at: [-7, 3.6, 3], reach: 6.5, color: [1.0, 0.9, 0.76], power: 1.6 },         // one lounge lamp left working
+  { at: [9.5, 4.5, -6.5], reach: 8.5, color: [0.86, 0.95, 1.0], power: 2.2, flicker: true },  // the garden: flickers with the dangling light
+  { at: [0, 2.6, -14.2], reach: 7, color: [0.5, 0.78, 1.0], power: 1.5 },    // cold sea-glow from the window
+  { at: [-15.4, 4.2, 0.6], reach: 5.5, color: [1.0, 0.45, 0.16], power: 1.6, flicker: true }, // the sparking wires, west
+  { at: [11.5, 2.4, 11.5], reach: 5, color: [1.0, 0.16, 0.1], power: 1.4 }   // a red emergency lamp at the east stair
+];
+const DEAD_ZONES = [
+  { at: [-13, 1.5, -6], reach: 7, depth: 0.6 },     // west, by the sealed pods
+  { at: [-8, 1, -12.5], reach: 6, depth: 0.5 },     // north-west, behind the beds
+  { at: [12.5, 1, 5.5], reach: 5.5, depth: 0.45 },  // behind the east stair
+  { at: [-10, 7, -10], reach: 7, depth: 0.55 }      // the gallery, north-west
+];
+const GRIME = 0.62;          // how dark the patches of soot and dead panels get
+const UNDER_GALLERY = 0.72;  // how much darker it is under the gallery ring
+const ATRIUM_DIM = 0.7;      // the atrium's share of the room light: the lamp pools stand out against it
 
 // Glass everywhere (the sea window, railings, the lab's tubes and beakers): dark and one-sided, so
 // it adds reflections without laying a milky white film over what is behind it, and clear face-on
@@ -186,9 +206,9 @@ export class HabitatSession {
           // leaves: cut out by their alpha, both sides drawn. They get the cheaper Lambert lighting
           // (measured: plants cost ~5 ms a frame with full PBR)
           if (!leafCache.has(m)) {
-            leafCache.set(m, new THREE.MeshLambertMaterial({
+            leafCache.set(m, withHubLighting(new THREE.MeshLambertMaterial({
               name: m.name, color: m.color, map: m.map || null, alphaTest: 0.25, side: THREE.DoubleSide
-            }));
+            })));
           }
         } else if (m.name === 'glass' || m.name === 'glass_broken') {
           realGlass(m, m.name === 'glass' ? 0.18 : 0.4);
@@ -366,6 +386,17 @@ export class HabitatSession {
       }
     });
     this.flicker = 0;
+    this._setUpBrokenLighting();
+  }
+
+  // The lamp pools go into the surfaces' shader (one shared set of uniforms); the dead zones,
+  // soot and gallery shadow are baked once into the shade map
+  _setUpBrokenLighting() {
+    this.pools = LAMP_POOLS.slice(0, HUB_POOLS).map((p, i) => {
+      hubLighting.uPools.value[i].set(p.at[0], p.at[1], p.at[2], p.reach);
+      return { color: new THREE.Color(...p.color).multiplyScalar(p.power), flicker: !!p.flicker };
+    });
+    bakeShadeMap({ zones: DEAD_ZONES, grime: GRIME, gallery: { edge: 13.6, strength: UNDER_GALLERY }, dim: ATRIUM_DIM });
   }
 
   // The lift: the same cabin Voss rode down from the control room, in the control room's own
@@ -600,8 +631,8 @@ export class HabitatSession {
     const p = this.controls.position;
     const goal = this.story.objective(p);
     ui.setObjective(goal.text);
-    // no marker during a fight, or once he is standing at the place
-    if (!goal.target || p.distanceTo(goal.target) < 2.5) {
+    // no marker during a fight (it stays up close, as Level 1's does)
+    if (!goal.target) {
       ui.setWaypoint(null);
       return;
     }
@@ -638,6 +669,12 @@ export class HabitatSession {
     hemi.groundColor.copy(b.hemiGround);
     sun.color.copy(b.sun);
     for (const r of this.roomLights || []) { r.light.intensity = r.base * dim; r.light.color.copy(r.color); }
+    // the lamp pools: dimmed with the room, the faulty ones stuttering with the dangling light
+    const buzz = this.flicker > 0 ? (Math.random() < 0.5 ? 0.15 : 1.2) : 1;
+    (this.pools || []).forEach((p, i) => {
+      const c = hubLighting.uPoolColors.value[i].copy(p.color).multiplyScalar(dim * (p.flicker ? buzz : 1));
+      mood.tint(c);
+    });
     if (mood.red > 0 || this._wasRed) {
       mood.tint(hemi.color);
       mood.tint(hemi.groundColor);

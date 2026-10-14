@@ -767,12 +767,14 @@ rbox(cab, 'aria_screen', r1 - 0.06, 270, 2.1, 0.03, 1.3, 0.78)
 empty('ARIA_Lift', P(r1 - 0.1, 270, 2.1))
 empty('SPAWN_Lift', P(rc - 0.2, 270, 0.05))
 
-# the maintenance hatch in the floor (the way out, later)
+# the maintenance hatch in the floor: the way down to Level 3, in the middle of the north-east
+# garden beds so the drones there stand in the way (moved there in l2-atrium.blend by
+# move_l2_hatch.py; kept the same here)
 hatch = A('Atrium_Hatch')
-rbox(hatch, 'hull_dark', 14.6, 330, 0.01, 1.8, 1.8, 0.03)
+rbox(hatch, 'hull_dark', 12.6, 30, 0.01, 1.8, 1.8, 0.03)
 for k in range(5):
-    rbox(hatch, 'accent', 14.6, 330, 0.03, 0.2, 1.8, 0.02, t=-0.8 + k * 0.4)
-empty('PT_Hatch', P(14.6, 330, 0.05))
+    rbox(hatch, 'accent', 12.6, 30, 0.03, 0.2, 1.8, 0.02, t=-0.8 + k * 0.4)
+empty('PT_Hatch', P(12.6, 30, 0.05))
 
 # ------------------------------------------------------------------ ARIA's monitors (spec: M1 to M10)
 mon = A('Atrium_Monitors')

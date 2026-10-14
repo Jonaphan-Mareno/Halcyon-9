@@ -555,6 +555,145 @@ const GLOWS = {
 
 const POS_VARYING = '\nvarying vec3 vTriPos;\nvarying vec3 vTriNrm;\n';
 
+// ------------------------------------------------------------------ uneven, broken lighting
+// The atrium should look damaged, not evenly lit. Real lamps would each be worked out for every
+// pixel on screen (about 3 ms a frame each on Intel UHD 620), so the unevenness is painted into
+// the surfaces' own shader instead:
+//   the shade map  a small top-down texture of how much of the room's light reaches each spot,
+//                  worked out once when the level loads (bakeShadeMap): dead zones, patches of
+//                  soot and dead panels, the darkness under the gallery ring, and an overall dim
+//                  so the lamp pools stand out. Red channel: floor level; green: gallery level.
+//                  One texture read per pixel instead of that maths (measured: the maths cost
+//                  4 to 8 ms a frame in floor-filled views at 1024x768)
+//   pools          soft pools of light from the lamps that still work (no shadows): a centre, a
+//                  reach and a colour (its brightness). Live uniforms, so the level can flicker
+//                  them and turn them red.
+// Only inside the atrium's outer wall: the lift cabin, the rooms and the lab are left alone.
+export const HUB_POOLS = 6;
+const SHADE_SIZE = 128;      // texels across the shade map
+const SHADE_SPAN = 35;       // metres the shade map covers (the atrium is 34 m across)
+export const hubLighting = {
+  uPools: { value: Array.from({ length: HUB_POOLS }, () => new THREE.Vector4(0, -100, 0, 0.001)) },
+  uPoolColors: { value: Array.from({ length: HUB_POOLS }, () => new THREE.Color(0, 0, 0)) },
+  uShadeMap: { value: null }
+};
+
+// one plain white map until the level bakes its own: nothing is darkened
+{
+  const white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat);
+  white.needsUpdate = true;
+  hubLighting.uShadeMap.value = white;
+}
+
+// The same value noise the shade map was designed with (smooth random blobs)
+function hash2(x, y) {
+  const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+function noise2(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  let fx = x - ix, fy = y - iy;
+  fx = fx * fx * (3 - 2 * fx);
+  fy = fy * fy * (3 - 2 * fy);
+  const a = hash2(ix, iy), b = hash2(ix + 1, iy), c = hash2(ix, iy + 1), d = hash2(ix + 1, iy + 1);
+  return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fy;
+}
+const smooth = (e0, e1, x) => {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+
+// Work out the shade map for a level. zones: [{ at: [x, y, z], reach, depth }] dead areas;
+// grime 0..1 how dark the soot patches get; gallery { edge, strength } darkness under the
+// gallery ring (from its inner edge outwards, at floor level); dim 0..1 the whole atrium's share
+// of the room light. Floor level is sampled at y = 1 m, gallery level at y = 7 m.
+export function bakeShadeMap({ zones = [], grime = 0, gallery = { edge: 13.6, strength: 0 }, dim = 1 }) {
+  const data = new Uint8Array(SHADE_SIZE * SHADE_SIZE * 4);
+  for (let j = 0; j < SHADE_SIZE; j++) {
+    for (let i = 0; i < SHADE_SIZE; i++) {
+      const x = ((i + 0.5) / SHADE_SIZE - 0.5) * SHADE_SPAN;
+      const z = ((j + 0.5) / SHADE_SIZE - 0.5) * SHADE_SPAN;
+      const r = Math.hypot(x, z);
+      const shadeAt = (y) => {
+        const n = noise2(x * 0.22 + y * 0.07, z * 0.22) * 0.6 + noise2(x * 0.6 + y * 0.2 + 7.3, z * 0.6 + 7.3) * 0.4;
+        let s = dim * (1 - grime * smooth(0.32, 0.72, n));
+        if (y < 5.4) s *= 1 - gallery.strength * smooth(gallery.edge - 0.6, gallery.edge + 0.9, r);
+        for (const zone of zones) {
+          const d = Math.hypot(x - zone.at[0], y - zone.at[1], z - zone.at[2]);
+          s *= 1 - zone.depth * (1 - smooth(0, zone.reach, d));
+        }
+        return s;
+      };
+      const k = (j * SHADE_SIZE + i) * 4;
+      data[k] = Math.round(255 * Math.min(1, shadeAt(1)));
+      data[k + 1] = Math.round(255 * Math.min(1, shadeAt(7)));
+      data[k + 2] = 0;
+      data[k + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, SHADE_SIZE, SHADE_SIZE, THREE.RGBAFormat);
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  hubLighting.uShadeMap.value?.dispose();
+  hubLighting.uShadeMap.value = tex;
+  return tex;
+}
+
+const HUB_LIGHT_GLSL = `
+  #define HUB_POOLS ${HUB_POOLS}
+  uniform vec4 uPools[HUB_POOLS];
+  uniform vec3 uPoolColors[HUB_POOLS];
+  uniform sampler2D uShadeMap;
+  // how much of the room's light reaches this point (1 = all of it), from the baked shade map
+  float hubShade(vec3 p) {
+    vec2 shade = texture2D(uShadeMap, p.xz / ${SHADE_SPAN.toFixed(1)} + 0.5).rg;
+    float s = mix(shade.r, shade.g, smoothstep(5.0, 5.8, p.y));
+    return mix(1.0, s, 1.0 - smoothstep(16.9, 17.3, length(p.xz)));
+  }
+  // light from the lamps that still work: soft pools facing their lamp, without shadows
+  vec3 hubPools(vec3 p, vec3 n) {
+    vec3 c = vec3(0.0);
+    for (int i = 0; i < HUB_POOLS; i++) {
+      vec3 toLamp = uPools[i].xyz - p;
+      float d = length(toLamp);
+      float fall = 1.0 - smoothstep(0.0, uPools[i].w, d);
+      c += uPoolColors[i] * (fall * fall) * max(dot(n, toLamp / max(d, 0.001)), 0.0);
+    }
+    return c;
+  }
+`;
+
+// After the scene's lights are added up: dim them where the room is dark, add the lamp pools
+const HUB_LIGHT_APPLY = `#include <aomap_fragment>
+  {
+    float hubS = hubShade(vTriPos);
+    reflectedLight.directDiffuse *= hubS;
+    reflectedLight.indirectDiffuse *= hubS;
+    reflectedLight.directSpecular *= hubS;
+    reflectedLight.indirectSpecular *= hubS;
+    reflectedLight.directDiffuse += hubPools(vTriPos, normalize(vTriNrm)) * diffuseColor.rgb;
+  }`;
+
+function addHubLighting(shader) {
+  Object.assign(shader.uniforms, hubLighting);
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', `#include <common>${HUB_LIGHT_GLSL}`)
+    .replace('#include <aomap_fragment>', HUB_LIGHT_APPLY);
+}
+
+// The same broken lighting on a material that is not one of the textured surfaces (the plants'
+// leaves), so a leaf in a dead corner is as dark as the floor under it
+export function withHubLighting(material) {
+  material.onBeforeCompile = (shader) => {
+    addVertexPosition(shader);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>${POS_VARYING}`);
+    addHubLighting(shader);
+  };
+  material.customProgramCacheKey = () => 'hub-lit';
+  return material;
+}
+
 function addVertexPosition(shader) {
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', `#include <common>${POS_VARYING}`)
@@ -624,6 +763,7 @@ function texturedMaterial(source, spec, textures) {
         roughnessFactor = clamp(roughnessFactor * (1.55 - triH * 1.1), 0.12, 1.0);`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         normal = triPerturb(-vViewPosition, normal, vec2(dFdx(triH), dFdy(triH)) * uBump, faceDirection);`);
+    addHubLighting(shader);
   };
   return mat;
 }

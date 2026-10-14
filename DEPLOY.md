@@ -24,6 +24,9 @@ models (the control room goes from ~21 MB to under 1 MB). Already-compressed fil
 For the atrium: export with `Blender/scripts/export_l2_atrium.py` first (never rebuild
 `l2-atrium.blend` from the build script: it holds the hand-placed bedrooms).
 
+After the control room, also run `npm run extract-lift`: level 2's lift (`lift.glb`) is cut out
+of `controlroom.glb`, so both levels have the same lift.
+
 ## Optional server settings
 
 `deploy/htaccess` adds compression and caching. Copy it into the game's folder as `.htaccess`.

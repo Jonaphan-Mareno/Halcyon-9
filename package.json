@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "optimize-models": "node scripts/optimize-models.mjs"
+    "optimize-models": "node scripts/optimize-models.mjs",
+    "extract-lift": "node scripts/extract-lift.mjs"
   },
   "devDependencies": {
     "@gltf-transform/cli": "^4.5.1",

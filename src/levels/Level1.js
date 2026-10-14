@@ -9,6 +9,7 @@ import { surfaceFor, SURFACE } from "./level1Look.js";
 import { createBrickMaps } from "./brickTexture.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { MonitorWall } from "./MonitorWall.js";
+import { makeLiftScreen } from "./liftCabin.js";
 
 // Must match MAX_LIGHTS in Shaders.js (the room's 8 lights + the flashlight)
 const MAX_LIGHTS = 9;
@@ -507,6 +508,7 @@ export class Level1{
         if (screen) this.ariaManager.pinMonitor(screen);
         this.wallMonitor = this.ariaManager.pinnedMonitor;
       }
+      this._buildLiftScreen();
 
       this._measureGenerator();
       if (this.wallMonitor) new THREE.Box3().setFromObject(this.wallMonitor).getCenter(this._monitorCentre);
@@ -970,8 +972,23 @@ onRingPuzzleComplete() {
 
     // The call panel inside the cabin only becomes usable once the doors are open
     this._rebuildInteractables();
+    // and ARIA can follow Voss onto the lift's screen
+    if (this.liftScreen && this.ariaManager) this.ariaManager.collectMonitors(this.liftScreen);
 
     console.log('Elevator door opening');
+  }
+
+  // ARIA's screen on the lift's back wall (level 2's lift has the same one). It joins her
+  // monitors only once the doors open: until then she would follow Voss onto a screen he cannot
+  // see, as the keypad beside the doors is the nearest place to it.
+  _buildLiftScreen() {
+    const bezelMat = this._surfaceMats?.get(SURFACE.softBlack)
+      || this._makeLevelMaterial(new THREE.MeshStandardMaterial(), -1, SURFACE.softBlack);
+    const parts = makeLiftScreen(this.room, bezelMat);
+    if (!parts) return;
+    this.room.add(parts.bezel, parts.screen);
+    if (this.ariaManager) parts.screen.material = this.ariaManager.idleMaterial;
+    this.liftScreen = parts.screen;
   }
 
   // controlroom.glb ships no "close" clip: each of the two actions runs its door

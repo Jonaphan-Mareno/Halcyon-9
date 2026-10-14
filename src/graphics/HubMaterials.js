@@ -628,6 +628,13 @@ function texturedMaterial(source, spec, textures) {
   return mat;
 }
 
+// A textured material straight from a surface description ({ kind, tile, bump, color, rough,
+// metal }, as in levels/level1Look.js), for a model made with another level's surfaces
+export function surfaceMaterial(spec, textures, name = '') {
+  const source = { color: new THREE.Color(spec.color ?? 0xffffff), roughness: spec.rough ?? 0.5, metalness: spec.metal ?? 0, name };
+  return texturedMaterial(source, spec, textures);
+}
+
 // Glowing materials keep their colour but their light flows
 function glowingMaterial(source, flowGlsl) {
   const mat = source.clone();

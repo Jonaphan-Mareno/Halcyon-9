@@ -29,6 +29,7 @@ import { KeypadUI } from '../ui/KeypadUI.js';
 import { Garden } from './Garden.js';
 import { PlayerStats, MAX_INTEGRITY } from '../player/PlayerStats.js';
 import { HUD } from '../ui/HUD.js';
+import { FightHelp } from '../ui/FightHelp.js';
 import '../ui/level2.css';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
@@ -75,8 +76,8 @@ const DAMAGED_BASE = 0.8;    // the mood's normal brightness on arrival (the pow
 const RESTORED_LIGHT = 0.6;  // how far towards clean the shade goes (uRestore)
 const RESTORED_BASE = 0.92;  // the mood's normal brightness after the restart (DAMAGED_BASE before)
 const HATCH_CODE = '471902'; // Kessler's override (placeholder, see the script's open decisions)
-const DIRECT_HIT = 20;       // a drone's dive, straight into him (health is out of 100)
-const GRAZE = 6;             // a dive that only clips him
+const DIRECT_HIT = 15;       // a drone's dive, straight into him (health is out of 100)
+const GRAZE = 5;             // a dive that only clips him
 const MANIFOLD_AT = { r: 14.6, angle: 30 };   // the garden's wall of pipes, behind the hatch
 
 // Glass everywhere (the sea window, railings, the lab's tubes and beakers): dark and one-sided, so
@@ -123,6 +124,7 @@ export class HabitatSession {
     // Voss's health (integrity), the same as in Level 1, on the same HUD
     this.player = new PlayerStats();
     this.hud = new HUD(root, { onRestart: () => {} });
+    this.fightHelp = new FightHelp(root);
     this.loadingEl = document.createElement('div');
     this.loadingEl.id = 'level-loading';
     this.loadingEl.className = 'visible';
@@ -354,6 +356,8 @@ export class HabitatSession {
         if (n) this.doors.push({ node: n, closed: n.position.clone(), open: n.position.clone().add(new THREE.Vector3(name.endsWith('L') ? -1.9 : 1.9, 0, 0)) });
       }
     }
+    // the closed doors are solid until ARIA has finished
+    this._blockLiftDoors();
 
     // the lab's sliding double doors open as you walk up to them
     this.labDoors = [];
@@ -433,10 +437,12 @@ export class HabitatSession {
       say: (talk, quietOnly) => (quietOnly && this._talking()) ? Promise.resolve(false) : this.say(talk),
       isTalking: () => this._talking(),
       onWake: () => this.story.set('dronesWoken'),
+      onPipe: () => this.story.set('pipeTaken'),
       onHurt: (kind, from) => this._hurt(kind, from),
       onCleared: () => this.story.set('gardenCleared'),
       toast: (text) => this.game.ui.showToast(text, 6500)
     });
+    this.story.targets.pipe = this.garden.pipeSpot;
     this.interact.add({
       id: 'pipe', position: this.garden.pipeSpot, radius: 0.5, label: 'Pull out the water pipe',
       when: () => !this.garden.holding && this.garden.state !== 'done', use: () => this.garden.takePipe()
@@ -586,6 +592,30 @@ export class HabitatSession {
     this.lift = lift;
   }
 
+  // An invisible wall across the closed lift doors (the doors themselves are not solid while they
+  // can still slide): he cannot step out before ARIA has told him about the drones
+  _blockLiftDoors() {
+    if (!this.doors.length) return;
+    const box = new THREE.Box3();
+    for (const d of this.doors) {
+      d.node.updateWorldMatrix(true, true);
+      box.expandByObject(d.node);
+    }
+    const size = box.getSize(new THREE.Vector3());
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(Math.max(size.x, 0.2), Math.max(size.y, 2.5), Math.max(size.z, 0.3)));
+    box.getCenter(wall.position);
+    this._liftGate = this.physics.addStaticObject(wall);
+  }
+
+  // In the lift (scene 2.1): ARIA's welcome, then her warning about the drones with the fight's
+  // controls on screen. The doors stay shut until she has finished (Enter skips her lines).
+  async _arrive() {
+    await this.say('arrival');
+    this._fightHelpOn = true;
+    await this.say('briefing');
+    this._arrivalDone = true;
+  }
+
   // Voss is out of the lift: its doors shut behind him and its lights die (it is flooded below)
   _shutLift() {
     this.liftShut = true;
@@ -689,11 +719,16 @@ export class HabitatSession {
     const p = this.controls.position;
     if (playing && !this._arrivalStarted) {
       this._arrivalStarted = true;
-      this.say('arrival').then(() => { this._arrivalDone = true; });
+      this._arrive();
     }
     if (this._arrivalDone && !this.liftShut && this.doorOpen < 1) {
       this.doorOpen = Math.min(1, this.doorOpen + dt / 1.6);
       this._setLiftDoors(this.doorOpen);
+      // open wide enough to walk through: the invisible wall goes
+      if (this._liftGate && this.doorOpen > 0.7) {
+        this.physics.world.removeCollider(this._liftGate, true);
+        this._liftGate = null;
+      }
     }
     if (playing && this.lift && !this.liftShut && this.story.has('leftLift') && p.z < LIFT_FRONT_Z - 1) this._shutLift();
     if (this.liftShut && this.doorOpen > 0) {
@@ -746,7 +781,7 @@ export class HabitatSession {
     if (this.garden) {
       this._head.set(p.x, p.y + 1.6, p.z);
       this.garden.update({ dt, feet: p, head: this._head, playing,
-        canWake: this.story.has('leftLift') && !this.story.has('gardenCleared') });
+        canWake: this._arrivalDone && this.story.has('leftLift') && !this.story.has('gardenCleared') });
       this.garden.updateTease(dt);
       // a drone glimpsed far across the hall the first time he walks into it (scene 2.2)
       if (playing && !this._teased && this.story.has('leftLift') && !this.story.has('dronesWoken') && p.z < 9) {
@@ -754,14 +789,17 @@ export class HabitatSession {
         this.garden.tease(new THREE.Vector3(-8, 4.2, -8), new THREE.Vector3(7, 4.2, -11), 5);
         setTimeout(() => this.say('tease'), 1200);
       }
-      // the fight's music: pressure, harder the more drones are up
+      // the fight's music (level2-fight.mp3) and a tenser mood, harder the more drones are up
       const fighting = this.garden.active;
       this.musicMood = fighting ? 'pressure' : null;
-      this.musicIntensity = fighting ? 0.35 + 0.65 * Math.min(1, this.garden.alive / 4) : 0;
-      this.musicTension = 0.4 + 0.5 * this.musicIntensity;
+      this.musicTension = fighting ? 0.6 + 0.3 * Math.min(1, this.garden.alive / 4) : 0;
     }
     this.hud.setVisible(playing || g.state === 'KEYPAD');
     this.hud.update(this.player);
+    // the fight's controls, from ARIA's warning in the lift until the garden is clear
+    const helpOn = this._fightHelpOn && playing && this.garden && this.garden.state !== 'done';
+    this.fightHelp.setVisible(!!helpOn);
+    if (helpOn) this.fightHelp.update(this.garden.holding, this.garden.coldSnap, this.garden.active);
     if (this.restore < this._restoreTarget) {
       this.restore = Math.min(this._restoreTarget, this.restore + dt / 3);
       hubLighting.uRestore.value = this.restore * RESTORED_LIGHT;
@@ -778,7 +816,6 @@ export class HabitatSession {
     if (this.aria.useHead) this.aria.head.update(dt);
     g.reticle.classList.toggle('visible', this.controls.view === 'first');
     if (playing && !this.story.has('leftLift') && p.z < LIFT_FRONT_Z) this.story.set('leftLift');
-    g.music?.setScene(this._sceneAt(p));
     this._guide(playing);
     this._perf(delta, playing);
   }
@@ -835,6 +872,7 @@ export class HabitatSession {
   _onStory(flag) {
     console.log('Level 2 story:', flag);
     if (flag === 'gardenCleared') this._powerReturns();
+    if (flag === 'pipeTaken' && !this.garden?.holding) this.garden?.takePipe();   // (the debug key)
     if (flag === 'hatchOpen') {
       this.gates?.openHatch();
       this.say('hatchOpen');
@@ -847,7 +885,6 @@ export class HabitatSession {
     const g = this.game;
     g.mood?.flicker(0.9);
     setTimeout(() => {
-      g.music?.stinger('reveal');
       this._restoreTarget = 1;
       this.gates?.openBulkheads();
       this.gates?.setKeypadPowered(true);
@@ -931,16 +968,6 @@ export class HabitatSession {
     const ui = this.game.ui;
     if (ui.isAriaLine()) this.aria.skip();
     else ui.advance();
-  }
-
-  // Where he is, for the background sound: the lab (north, beyond the gallery), one of the rooms
-  // off the gallery or the lift (enclosed and quiet), the gallery, or the open atrium
-  _sceneAt(p) {
-    const r = Math.hypot(p.x, p.z);
-    if (p.y > 4.5 && p.z < -17.3 && Math.abs(p.x) < 7) return 'lab';
-    if (r > 17.2) return 'room';
-    if (p.y > 4) return 'upstairs';
-    return 'open';
   }
 
   // The objective banner and the marker on the next place to go, both from the story's flags

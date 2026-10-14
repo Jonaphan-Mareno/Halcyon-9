@@ -122,3 +122,33 @@
 
 /* Level 2 works like It Takes Two: dying restarts the course, so there are no lives to show */
 #hud .hud-row:nth-child(2) { display: none; }
+
+/* the garden fight's controls (FightHelp.js), under the objective */
+#fight-help {
+  position: absolute;
+  left: 24px;
+  top: 124px;
+  max-width: 320px;
+  padding: 0.55rem 1rem 0.6rem;
+  background: rgba(0, 15, 30, 0.7);
+  border-left: 3px solid #ffd23f;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  z-index: 11;
+}
+#fight-help.visible { opacity: 1; }
+.fh-title { font-size: 0.7rem; letter-spacing: 0.3rem; color: #ffd23f; opacity: 0.85; margin-bottom: 0.35rem; }
+.fh-row { display: flex; align-items: baseline; gap: 0.6rem; margin: 0.22rem 0; font-size: 0.85rem; line-height: 1.3; }
+.fh-row.done { opacity: 0.4; text-decoration: line-through; }
+.fh-key {
+  flex: none;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid rgba(0, 229, 255, 0.55);
+  color: var(--primary-color);
+  font-size: 0.7rem;
+  letter-spacing: 0.08rem;
+}
+.fh-state { margin-left: auto; font-size: 0.75rem; letter-spacing: 0.1rem; color: #ffb347; }
+.fh-state.ready { color: #3dff7a; }
+.fh-tip { margin-top: 0.4rem; font-size: 0.75rem; color: #ff8a8a; opacity: 0.9; }

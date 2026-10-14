@@ -29,6 +29,12 @@ export const LINES = {
   'v-trying': voss('...Trying?'),
   'l2-lift-3': aria('guarded', "Oh, you know how it is. Deep-sea living is a work in progress. Go on, have a look around."),
   'l2-lift-4': aria('sly', 'The hatch is just right up ahead.'),
+  // her warning about the drones, before the doors open (the fight's controls are on screen)
+  'l2-lift-5': aria('guarded', "Oh, and Voss? Before I open the doors: the garden's maintenance drones have been acting up since the water got in."),
+  'v-acting-up': voss('Acting up how?'),
+  'l2-lift-6': aria('guarded', "They go for anything that moves. There's a water pipe on the wall by the hatch. Pull it out and soak them."),
+  'l2-lift-7': aria('sly', "Once they're wet, give me the word and I'll drop the temperature. Wet drones freeze. Frozen drones fall."),
+  'l2-lift-8': aria('bubbly', "And if one's eye turns red, step aside. It's about to dive. Right. Doors opening."),
 
   // 2.2 The hall
   'v-chore': voss('Someone still had chore duty down here. Tidying up, watering the beds... like any of that mattered anymore.'),
@@ -130,6 +136,7 @@ export const LOGS = {
 // The exchanges, as the level plays them: each is a list of line ids spoken in order
 export const TALKS = {
   arrival: ['l2-lift-1', 'l2-lift-2', 'v-trying', 'l2-lift-3'],
+  briefing: ['l2-lift-5', 'v-acting-up', 'l2-lift-6', 'l2-lift-7', 'l2-lift-8'],
   liftShut: ['l2-lift-4'],
   chore: ['v-chore'],
   ration: ['v-ration'],

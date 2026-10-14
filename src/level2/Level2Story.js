@@ -14,6 +14,7 @@
 export const FLAGS = [
   'leftLift',       // stepped out of the lift
   'dronesWoken',    // the drones dropped on him in the garden
+  'pipeTaken',      // he pulled the water pipe off the wall by the hatch
   'gardenCleared',  // the last drone shattered: the pumps restart and the stair bulkheads lift
   'hatchTried',     // tried the hatch keypad: it wants Kessler's override
   'cardTaken',      // took Kessler's access card from Voss's locker
@@ -26,7 +27,7 @@ export const FLAGS = [
 const BUNK = { x0: 17.3, x1: 25.9, y0: 5.0, z0: -5.5, z1: 3.0 };
 
 export class Level2Story {
-  // targets: world positions for the waypoint { hatch, quarters, lab, kessler }
+  // targets: world positions for the waypoint { hatch, pipe, quarters, lab, kessler }
   constructor(targets) {
     this.targets = targets;
     this.flags = Object.fromEntries(FLAGS.map((f) => [f, false]));
@@ -65,8 +66,9 @@ export class Level2Story {
     const t = this.targets;
     if (f.hatchOpen) return { text: 'Climb down into the shaft', label: 'HATCH', target: t.hatch };
     if (!f.gardenCleared) {
-      if (f.dronesWoken) return { text: 'Hold out until the pumps restart', label: '', target: null };
-      return { text: 'Reach the maintenance hatch at the back of the garden', label: 'HATCH', target: t.hatch };
+      // ARIA told him in the lift: the pipe first (the drones only dive once he has it)
+      if (!f.pipeTaken) return { text: 'Take the water pipe off the wall by the hatch', label: 'PIPE', target: t.pipe || t.hatch };
+      return { text: 'Soak the drones, then freeze them', label: '', target: null };
     }
     if (f.codeFound) return { text: 'Go back to the hatch', label: 'HATCH', target: t.hatch };
     // the garden is clear but nothing upstairs has been touched yet: try the hatch first

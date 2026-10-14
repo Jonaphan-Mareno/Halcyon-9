@@ -17,7 +17,7 @@ import { withHubLighting } from '../graphics/HubMaterials.js';
 
 const ORBIT_RADIUS = 4.6;
 const ORBIT_HEIGHT = 2.6;
-const TELEGRAPH = 1.0;
+const TELEGRAPH = 1.2;
 const DIVE_SPEED = 9.5;
 const RECOVER = 0.9;
 const DRY_SECONDS = 6;           // a soaked drone dries out again in this long

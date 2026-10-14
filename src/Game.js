@@ -15,7 +15,7 @@ import { Inventory } from './ui/Inventory.js';
 import { ItemPreview } from './ui/ItemPreview.js';
 import { IntroSequence } from './story/IntroSequence.js';
 import { AudioManager } from './audio/AudioManager.js';
-import { MusicDirector } from './audio/MusicDirector.js';
+import { Soundtrack } from './audio/Soundtrack.js';
 import { MoodLight } from './graphics/MoodLight.js';
 import { CircuitPuzzle } from './puzzles/CircuitPuzzle.js';
 import { PlayerStats } from './player/PlayerStats.js';
@@ -180,15 +180,15 @@ export class Game {
     // models, so it is ready for whichever level needs it
     Physics.preload();
 
-    // The score and the lighting mood belong to the whole game (they carry from level to level).
-    // The music may only start after a click: init() runs from the start button.
-    this.music = new MusicDirector();
-    this.music.start();
+    // The music and the lighting mood belong to the whole game (they carry from level to level).
+    // The music is your own files (see Soundtrack.js); it may only start after a click, and
+    // init() runs from the start button.
+    this.music = new Soundtrack();
     this.mood = new MoodLight({ base: 0.74 });
     this._angerUntil = 0;
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyM') this.ui?.showToast?.(this.music.toggleMute() ? 'Music off (M)' : 'Music on (M)', 1200);
-      // F8: preview ARIA snapping (red lights, harsh music). Handy for the demo and while tuning.
+      // F8: preview ARIA snapping (red lights). Handy for the demo and while tuning.
       if (e.code === 'F8') { e.preventDefault(); this.ariaAnger(5); }
     });
 
@@ -364,12 +364,11 @@ export class Game {
   // Mood: what the score and the lighting are doing right now
   // ---------------------------------------------------------
 
-  // ARIA snaps: the room goes red, the music turns harsh, and her face goes red on every
-  // screen, for `seconds`. (The story decides when; F8 previews it.)
+  // ARIA snaps: the room goes red and her face goes red on every screen, for `seconds`.
+  // (The story decides when; F8 previews it.)
   ariaAnger(seconds = 5) {
     this._angerUntil = performance.now() + seconds * 1000;
     this.mood.alert(seconds, 1);
-    this.music?.stinger('snap');
     const aria = this.level2Mode ? this.level2?.aria : this.currentLevel?.ariaManager;
     aria?.updateAriaState?.('hostile');
     clearTimeout(this._calmTimer);
@@ -396,7 +395,6 @@ export class Game {
       mood = this.level2.musicMood;
       tension = this.level2.musicTension ?? 0.5;
       music.setMood(mood);
-      music.setIntensity(this.level2.musicIntensity ?? 0.5);
       this.mood.tension += (tension - this.mood.tension) * 0.03;
       return;
     }
@@ -407,7 +405,6 @@ export class Game {
       tension = 0.4 + 0.5 * (this.puzzle.stress || 0);
     } else if (!this.level2Mode && this.currentLevel?.inCell) { mood = 'uneasy'; tension = 0.35; }
     music.setMood(mood);
-    if (mood !== 'pressure') music.setIntensity(mood === 'angry' ? 1 : 0);
     this.mood.tension += (tension - this.mood.tension) * 0.03;
   }
 
@@ -1194,7 +1191,6 @@ export class Game {
       const stress = this.puzzle.stress;
       this.currentLevel.setStress(stress);
       this.audio.setHum(stress);
-      this.music?.setIntensity(stress);
     }
   }
 
@@ -1254,7 +1250,6 @@ export class Game {
     this.player.heal(HEAL_PER_REPAIR);
     this.audio.stopHum(0.2);
     this.audio.success();
-    this.music?.stinger('relief');
     level.setStress(0);
     level.partialRepair(); // the wiring holds: sparks and a partial brightening; the rings are next
 

@@ -11,8 +11,9 @@ import { withHubLighting } from '../graphics/HubMaterials.js';
 // mint and violet inside the ice (the organism got into them).
 //
 // Two waves: two drones to learn it ("That's two. There are... a few more."), then six, never
-// more than four in the air. Only one drone attacks at a time: a one-second lock-on (its eye turns
-// red), then a dive. When the last one breaks, the level is told (onCleared).
+// more than four in the air. They circle without diving until he has the pipe in his hands. Only
+// one drone attacks at a time: a lock-on (its eye turns red), then a dive. When the last one
+// breaks, the level is told (onCleared).
 
 const WAVES = [2, 6];
 const MAX_ALIVE = 4;
@@ -21,15 +22,16 @@ const REST_SECONDS = 6;
 const COLD_SNAP_COOLDOWN = 8;
 const JET_RANGE = 9;
 const SOAK_PER_SECOND = 1.3;     // under the jet for under a second soaks a drone
-const ATTACK_GAP = [1.1, 2.2];   // seconds between one drone's dive and the next one's lock-on
-const IDLE_SECONDS = 50;
+const ATTACK_GAP = [1.8, 3.2];   // seconds between one drone's dive and the next one's lock-on
+const FIRST_DIVE = 3;            // seconds after he takes the pipe before the first dive
+const IDLE_SECONDS = 25;         // the drones are up and he still hasn't taken the pipe
 const HOSE_POINTS = 18;
 
 const rand = (a, b) => a + Math.random() * (b - a);
 
 export class Garden {
   // opts: { scene, physics, camera, centre (the hatch), manifoldAt { r, angle },
-  //         say(talk, quietOnly), isTalking(), onWake(), onHurt(kind, from), onCleared(), toast(text) }
+  //         say(talk, quietOnly), isTalking(), onWake(), onPipe(), onHurt(kind, from), onCleared(), toast(text) }
   constructor(opts) {
     Object.assign(this, opts);
     this.fx = new FrostFX(this.scene);
@@ -160,6 +162,8 @@ export class Garden {
     if (this.holding) return;
     this.holding = true;
     this.hoseMesh.visible = true;
+    this.onPipe?.();
+    if (this.state === 'fight') this.attackTimer = Math.max(this.attackTimer, FIRST_DIVE);
     this.toast?.('Hold the left mouse button to spray. When they are wet, press Q and ARIA freezes them.');
   }
 
@@ -264,14 +268,14 @@ export class Garden {
       // one attacker at a time
       const busy = this.drones.some((d) => d.state === 'telegraph' || d.state === 'dive');
       this.attackTimer -= dt;
-      if (!busy && this.attackTimer <= 0 && playing) {
+      if (!busy && this.attackTimer <= 0 && playing && this.holding) {
         const ready = this.drones.filter((d) => d.state === 'circle' && this._sees(d, head));
         if (ready.length) {
           ready[Math.floor(Math.random() * ready.length)].attack(head);
           this.attackTimer = rand(ATTACK_GAP[0], ATTACK_GAP[1]);
         }
       }
-      if (playing) {
+      if (playing && !this.holding) {
         this.idleTime += dt;
         if (this.idleTime > IDLE_SECONDS && !this._said.idle) {
           this._said.idle = true;

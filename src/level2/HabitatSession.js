@@ -19,6 +19,8 @@ import { Organism } from './Organism.js';
 import { LabScreens } from './LabScreens.js';
 import { HoloScreens } from './HoloScreens.js';
 import { Sparks } from './Sparks.js';
+import { Level2Story } from './Level2Story.js';
+import { projectWaypoint } from '../ui/waypoint.js';
 import '../ui/level2.css';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
@@ -87,6 +89,18 @@ export class HabitatSession {
     document.addEventListener('click', () => {
       if (game.state === 'PLAYING' && !this.controls.instance.isLocked) this.controls.lock();
     });
+
+    // ?debug in the address: F7 sets the next story flag, to walk the objectives through the route
+    this._wpInfo = { x: 0, y: 0, angle: 0, onScreen: true, label: '', distance: 0 };
+    if (new URLSearchParams(window.location.search).has('debug')) {
+      window.addEventListener('keydown', (e) => {
+        if (e.code !== 'F7' || !this.story) return;
+        e.preventDefault();
+        const flag = this.story.next();
+        if (flag) this.story.set(flag);
+        game.ui.showToast(flag ? 'Debug: ' + flag : 'Debug: every flag is set', 1500);
+      });
+    }
 
     Physics.create().then(async (physics) => {
       this.physics = physics;
@@ -285,6 +299,20 @@ export class HabitatSession {
       centre.add(new THREE.Vector3(-centre.x, -centre.y, 0).normalize().multiplyScalar(2.2));
       this.quarterDoors.push({ node, centre, closedY: node.position.y, solid: true, open: 0 });
     }
+
+    // the story so far, and where the objective marker points (the model's marker empties: the
+    // nameplates sit above their doors, so the marker drops to the doorway)
+    const at = (name, dy) => {
+      const o = atrium.getObjectByName(name);
+      return o ? o.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, dy, 0)) : null;
+    };
+    this.story = new Level2Story({
+      hatch: at('PT_Hatch', 0.8),
+      quarters: at('PT_Plate_VOSS', -2.2),
+      lab: at('PT_Plate_LAB', -2.4),
+      kessler: at('PT_Plate_KESSLER', -2.2)
+    });
+    this.story.onChange = (flag) => console.log('Level 2 story:', flag);
 
     this._addAriaScreens([atrium, lab]);
     this._setUpLab(lab);
@@ -557,7 +585,27 @@ export class HabitatSession {
     this.aria.ariaMaterial.uniforms.uTime.value += dt;
     if (this.aria.useHead) this.aria.head.update(dt);
     g.reticle.classList.toggle('visible', this.controls.view === 'first');
+    if (playing && !this.story.has('leftLift') && p.z < LIFT_FRONT_Z) this.story.set('leftLift');
+    this._guide(playing);
     this._perf(delta, playing);
+  }
+
+  // The objective banner and the marker on the next place to go, both from the story's flags
+  _guide(playing) {
+    const ui = this.game.ui;
+    if (!playing) {
+      ui.setWaypoint(null);
+      return;
+    }
+    const p = this.controls.position;
+    const goal = this.story.objective(p);
+    ui.setObjective(goal.text);
+    // no marker during a fight, or once he is standing at the place
+    if (!goal.target || p.distanceTo(goal.target) < 2.5) {
+      ui.setWaypoint(null);
+      return;
+    }
+    ui.setWaypoint(projectWaypoint(this.game.camera.instance, goal.target, goal.label, this._wpInfo));
   }
 
   // The game's mood (see MoodLight): the whole atrium a little dimmer than clean, and red when

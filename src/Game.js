@@ -376,6 +376,12 @@ export class Game {
     this._calmTimer = setTimeout(() => aria?.updateAriaState?.('neutral'), seconds * 1000);
   }
 
+  // Hold the music on one mood for a while, whatever the player is doing (a scripted beat,
+  // such as ARIA's long silence in the lab)
+  holdMusic(mood, seconds) {
+    this._musicHold = { mood, until: performance.now() + seconds * 1000 };
+  }
+
   // Called every frame: picks the music's mood from what the player is doing
   _steerMusic() {
     const music = this.music;
@@ -384,6 +390,7 @@ export class Game {
     let mood = 'calm';
     let tension = 0.15;
     if (performance.now() < this._angerUntil) { mood = 'angry'; tension = 1; }
+    else if (this._musicHold && performance.now() < this._musicHold.until) { mood = this._musicHold.mood; tension = 0.5; }
     else if (s === 'DEAD' || s === 'GAME_OVER') { mood = 'silence'; tension = 0.6; }
     else if (!this.level2Mode && s === 'PUZZLE') {
       // a blackout after an overload is silent; otherwise the pressure follows the countdown

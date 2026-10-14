@@ -569,7 +569,7 @@ const POS_VARYING = '\nvarying vec3 vTriPos;\nvarying vec3 vTriNrm;\n';
 //                  reach and a colour (its brightness). Live uniforms, so the level can flicker
 //                  them and turn them red.
 // Only inside the atrium's outer wall: the lift cabin, the rooms and the lab are left alone.
-export const HUB_POOLS = 6;
+export const HUB_POOLS = 7;
 const SHADE_SIZE = 128;      // texels across the shade map
 const SHADE_SPAN = 35;       // metres the shade map covers (the atrium is 34 m across)
 export const hubLighting = {

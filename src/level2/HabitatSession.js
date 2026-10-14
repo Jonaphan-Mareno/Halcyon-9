@@ -21,6 +21,9 @@ import { HoloScreens } from './HoloScreens.js';
 import { Sparks } from './Sparks.js';
 import { Level2Story } from './Level2Story.js';
 import { projectWaypoint } from '../ui/waypoint.js';
+import { Interact } from './Interact.js';
+import { LINES, TALKS, CUES } from './Level2Lines.js';
+import { buildHallClues } from './HallClues.js';
 import '../ui/level2.css';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
@@ -28,6 +31,7 @@ import '../ui/level2.css';
 // No gameplay yet: that is designed and added after the environment is approved.
 
 const SOLID = ['COL_', 'DOOR_'];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // The lift is level 1's (lift.glb, see levels/liftCabin.js), its origin the middle of the door
 // sill at the front of the frame. Set there, the frame's front corners sit on the curved inside
@@ -47,7 +51,8 @@ const LAMP_POOLS = [
   { at: [9.5, 4.5, -6.5], reach: 8.5, color: [0.86, 0.95, 1.0], power: 2.2, flicker: true },  // the garden: flickers with the dangling light
   { at: [0, 2.6, -14.2], reach: 7, color: [0.5, 0.78, 1.0], power: 1.5 },    // cold sea-glow from the window
   { at: [-15.4, 4.2, 0.6], reach: 5.5, color: [1.0, 0.45, 0.16], power: 1.6, flicker: true }, // the sparking wires, west
-  { at: [11.5, 2.4, 11.5], reach: 5, color: [1.0, 0.16, 0.1], power: 1.4 }   // a red emergency lamp at the east stair
+  { at: [11.5, 2.4, 11.5], reach: 5, color: [1.0, 0.16, 0.1], power: 1.4 },  // a red emergency lamp at the east stair
+  { at: [-3.9, 2.9, 15.6], reach: 3.4, color: [1.0, 0.9, 0.74], power: 1.5 }   // a desk lamp by the crew's photo board
 ];
 const DEAD_ZONES = [
   { at: [-13, 1.5, -6], reach: 7, depth: 0.6 },     // west, by the sealed pods
@@ -103,22 +108,41 @@ export class HabitatSession {
     this.loadingEl = document.createElement('div');
     this.loadingEl.id = 'level-loading';
     this.loadingEl.className = 'visible';
-    this.loadingEl.innerHTML = '<div class="loading-title">LEVEL 2</div><div class="loading-sub">Habitat atrium (environment preview)</div><div class="loading-bar"><div></div></div>';
+    this.loadingEl.innerHTML = '<div class="loading-title">LEVEL 2</div><div class="loading-sub">The habitat deck</div><div class="loading-bar"><div></div></div>';
     root.appendChild(this.loadingEl);
 
     document.addEventListener('click', () => {
       if (game.state === 'PLAYING' && !this.controls.instance.isLocked) this.controls.lock();
     });
 
-    // ?debug in the address: F7 sets the next story flag, to walk the objectives through the route
+    // E uses what Voss is looking at; Enter skips a line of dialogue
     this._wpInfo = { x: 0, y: 0, angle: 0, onScreen: true, label: '', distance: 0 };
+    this._head = new THREE.Vector3();
+    this._talkToken = 0;
+    window.addEventListener('keydown', (e) => {
+      if (game.state !== 'PLAYING' || !this.ready) return;
+      if (e.code === 'KeyE' && !e.repeat) this.interact?.use();
+      if (e.code === 'Enter') this.skipLine();
+    });
+
+    // ?debug in the address: F7 sets the next story flag (to walk the objectives through the
+    // route), F9 plays the next of ARIA's exchanges (to hear every line)
     if (new URLSearchParams(window.location.search).has('debug')) {
+      let nextTalk = 0;
       window.addEventListener('keydown', (e) => {
-        if (e.code !== 'F7' || !this.story) return;
-        e.preventDefault();
-        const flag = this.story.next();
-        if (flag) this.story.set(flag);
-        game.ui.showToast(flag ? 'Debug: ' + flag : 'Debug: every flag is set', 1500);
+        if (!this.story) return;
+        if (e.code === 'F7') {
+          e.preventDefault();
+          const flag = this.story.next();
+          if (flag) this.story.set(flag);
+          game.ui.showToast(flag ? 'Debug: ' + flag : 'Debug: every flag is set', 1500);
+        } else if (e.code === 'F9') {
+          e.preventDefault();
+          const names = Object.keys(TALKS);
+          const name = names[nextTalk++ % names.length];
+          game.ui.showToast('Debug: ' + name + ' (' + nextTalk + '/' + names.length + ')', 2000);
+          this.say(name);
+        }
       });
     }
 
@@ -128,7 +152,7 @@ export class HabitatSession {
       await this._precompile();
       this.ready = true;
       this.loadingEl.classList.remove('visible');
-      game.ui.showToast('Environment preview: WASD + mouse, Space jump, V switches camera. Rooms and gameplay come next.', 8000);
+      game.ui.showToast('WASD to move, Space to jump, E to use things, V to switch camera.', 7000);
     }).catch((e) => console.error('Level 2 atrium failed to load.', e));
   }
 
@@ -334,6 +358,15 @@ export class HabitatSession {
     });
     this.story.onChange = (flag) => console.log('Level 2 story:', flag);
 
+    // things Voss can use (E): the hall's optional clues, scene 2.2
+    this.interact = new Interact(this.game.camera.instance, this.physics);
+    const clues = buildHallClues(scene, atrium);
+    if (clues.board) this.interact.add({ id: 'board', position: clues.board, radius: 0.9, label: 'Look at the photo board', use: () => this.say('chore') });
+    if (clues.frame) this.interact.add({ id: 'frame', position: clues.frame, radius: 0.2, label: 'Look at the photo', use: () => this.say('photo') });
+    if (clues.ration) this.interact.add({ id: 'ration', position: clues.ration, radius: 0.2, label: 'Look at the tray', use: () => this.say('ration') });
+    const pods = at('PT_PodDoor', 0);
+    if (pods) this.interact.add({ id: 'pods', position: pods, radius: 1.2, label: 'Read the sign on the pod door', use: () => this.say('pods') });
+
     this._addAriaScreens([atrium, lab]);
     this._setUpLab(lab);
 
@@ -415,6 +448,7 @@ export class HabitatSession {
     // buttons, orange hazard strips); the light strip, blue trim and call panel screen keep
     // their own colours, as in level 1
     const mats = new Map();
+    this.liftInsideMats = [];
     const material = (spec, inside = false) => {
       const key = spec.kind + spec.color + inside;
       if (!mats.has(key)) {
@@ -422,6 +456,7 @@ export class HabitatSession {
         if (inside) {
           m.envMap = scene.environment;    // (a material's own env map takes its own intensity)
           m.envMapIntensity = LIFT_INSIDE_FILL;
+          this.liftInsideMats.push(m);
         }
         mats.set(key, m);
       }
@@ -472,7 +507,21 @@ export class HabitatSession {
       scene.add(parts.bezel);
       this.liftScreen = parts.screen;
     }
+    this.liftStripMat = lift.getObjectByName('Cabin_LightStrip')?.material || null;
     this.lift = lift;
+  }
+
+  // Voss is out of the lift: its doors shut behind him and its lights die (it is flooded below)
+  _shutLift() {
+    this.liftShut = true;
+    if (this.liftStripMat) this.liftStripMat.emissiveIntensity = 0.1;
+    for (const m of this.liftInsideMats || []) m.envMapIntensity = 0.3;
+    this.say('liftShut');
+  }
+
+  _setLiftDoors(open) {
+    const t = open * open * (3 - 2 * open);
+    for (const d of this.doors) d.node.position.lerpVectors(d.closed, d.open, t);
   }
 
   // ARIA on every monitor (the ARIA_ markers from the model), idling for now. Same face and
@@ -560,11 +609,23 @@ export class HabitatSession {
     const dt = Math.min(delta, 0.05);
     const playing = g.state === 'PLAYING';
     if (playing || g.state === 'WAKING') this.controls.update(dt, playing);
-    // the lift doors slide open once you can move
-    if (playing && this.doorOpen < 1) {
+    // the lift: ARIA welcomes Voss on the way down, the doors open once she has finished, and
+    // they shut behind him once he is a step out (scene 2.1)
+    const p = this.controls.position;
+    if (playing && !this._arrivalStarted) {
+      this._arrivalStarted = true;
+      this.say('arrival').then(() => { this._arrivalDone = true; });
+    }
+    if (this._arrivalDone && !this.liftShut && this.doorOpen < 1) {
       this.doorOpen = Math.min(1, this.doorOpen + dt / 1.6);
-      const t = this.doorOpen * this.doorOpen * (3 - 2 * this.doorOpen);
-      for (const d of this.doors) d.node.position.lerpVectors(d.closed, d.open, t);
+      this._setLiftDoors(this.doorOpen);
+    }
+    if (playing && this.lift && !this.liftShut && this.story.has('leftLift') && p.z < LIFT_FRONT_Z - 1) this._shutLift();
+    if (this.liftShut && this.doorOpen > 0) {
+      this.doorOpen = Math.max(0, this.doorOpen - dt / 1.6);
+      this._setLiftDoors(this.doorOpen);
+      // shut: solid, unless he slipped back inside while they closed
+      if (this.doorOpen === 0 && p.z < LIFT_FRONT_Z - 0.4) for (const d of this.doors) this.physics.addStaticObject(d.node);
     }
     this.sea.update(dt, g.camera.instance);
     // the lab doors slide open when you are near them
@@ -595,7 +656,6 @@ export class HabitatSession {
 
     // the organism, its readings and the spills follow its surges. Only animate while you are in
     // or near the lab (redrawing the screens costs time); the lab is north of the gallery door.
-    const p = this.controls.position;
     const nearLab = p.y > 4 && p.z < -12;
     if (nearLab) {
       this.organism.update(dt);
@@ -621,14 +681,70 @@ export class HabitatSession {
     this._perf(delta, playing);
   }
 
+  // ARIA and Voss speak: a list of line ids, or the name of one of the exchanges in
+  // Level2Lines.js. The lines play one after another: Voss's as text that stays up for a reading
+  // time, ARIA's with her voice (or a subtitle until it is recorded), her face's expression and
+  // her colour. Starting a new exchange cuts the current one short. Resolves true when finished,
+  // false when cut short.
+  async say(talk) {
+    const ids = Array.isArray(talk) ? talk : TALKS[talk];
+    if (!ids) {
+      console.warn('Level 2: no exchange called "' + talk + '".');
+      return false;
+    }
+    const ui = this.game.ui;
+    const token = ++this._talkToken;
+    if (this.aria.speaking) this.aria.skip();
+    for (const id of ids) {
+      if (token !== this._talkToken) return false;
+      const line = LINES[id];
+      if (!line) {
+        console.warn('Level 2: no line "' + id + '".');
+        continue;
+      }
+      if (line.who === 'voss') {
+        const shown = ui.showVossLine(line.text, { timed: true });
+        await Promise.race([shown, sleep(Math.max(2200, line.text.length * 60))]);
+        continue;
+      }
+      // a long silence before she answers: the music drops out and the lights stutter
+      if (line.pause) {
+        ui.hideDialogue();
+        this.game.holdMusic?.('silence', line.pause + 1.5);
+        this.game.mood?.flicker(0.45);
+        await sleep(line.pause * 1000);
+        if (token !== this._talkToken) return false;
+      }
+      const cue = CUES[line.cue] || CUES.guarded;
+      if (line.anger) this.game.ariaAnger?.(line.anger);
+      else this.aria.updateAriaState(cue.mood);
+      ui.showAriaLine(line.text, 'Enter: skip');
+      await this.aria.speak(id, Math.max(2.5, line.text.length * 0.055), cue.expression);
+      if (!line.anger) this.aria.updateAriaState('neutral');
+    }
+    if (token === this._talkToken) ui.hideDialogue();
+    return token === this._talkToken;
+  }
+
+  // Enter: skip ARIA's line, or move on from Voss's
+  skipLine() {
+    const ui = this.game.ui;
+    if (ui.isAriaLine()) this.aria.skip();
+    else ui.advance();
+  }
+
   // The objective banner and the marker on the next place to go, both from the story's flags
   _guide(playing) {
     const ui = this.game.ui;
     if (!playing) {
       ui.setWaypoint(null);
+      ui.setPrompt(null);
       return;
     }
     const p = this.controls.position;
+    // the thing he is looking at, if he can use it
+    const hit = this.interact ? this.interact.update(this._head.set(p.x, p.y + 1.6, p.z)) : null;
+    ui.setPrompt(hit ? 'E   ' + hit.label : null);
     const goal = this.story.objective(p);
     ui.setObjective(goal.text);
     // no marker during a fight (it stays up close, as Level 1's does)

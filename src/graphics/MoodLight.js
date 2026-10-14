@@ -53,6 +53,11 @@ export class MoodLight {
     this._holdUntil = this._time + seconds;
   }
 
+  // A stutter of failing power, now (a scripted beat)
+  flicker(seconds = 0.3) {
+    this._stutter = seconds;
+  }
+
   // Back to normal at once
   clear() {
     this._redTarget = 0;

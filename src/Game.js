@@ -391,6 +391,15 @@ export class Game {
     let tension = 0.15;
     if (performance.now() < this._angerUntil) { mood = 'angry'; tension = 1; }
     else if (this._musicHold && performance.now() < this._musicHold.until) { mood = this._musicHold.mood; tension = 0.5; }
+    else if (this.level2Mode && this.level2?.musicMood) {
+      // a level 2 scene asks for its own mood (the garden fight: pressure)
+      mood = this.level2.musicMood;
+      tension = this.level2.musicTension ?? 0.5;
+      music.setMood(mood);
+      music.setIntensity(this.level2.musicIntensity ?? 0.5);
+      this.mood.tension += (tension - this.mood.tension) * 0.03;
+      return;
+    }
     else if (s === 'DEAD' || s === 'GAME_OVER') { mood = 'silence'; tension = 0.6; }
     else if (!this.level2Mode && s === 'PUZZLE') {
       // a blackout after an overload is silent; otherwise the pressure follows the countdown

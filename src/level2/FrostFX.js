@@ -109,6 +109,30 @@ export class FrostFX {
     for (let k = 0; k < 14; k++) this.mist(at, 0.2, 40);
   }
 
+  // A jet of water from the garden's pipe: heavier droplets that arc down
+  water(from, dir, dt, rate = 200) {
+    const n = Math.max(1, Math.round(rate * dt));
+    for (let k = 0; k < n; k++) {
+      const spread = 0.05;
+      const speed = 13 + Math.random() * 3;
+      this._spawn(from.x, from.y, from.z,
+        (dir.x + (Math.random() - 0.5) * spread * 2) * speed,
+        (dir.y + (Math.random() - 0.5) * spread * 2) * speed + 1.2,
+        (dir.z + (Math.random() - 0.5) * spread * 2) * speed,
+        0.09, 0.35, 0.65 + Math.random() * 0.15, 0.42, 0.62, 0.85, -9, 0.4);
+    }
+  }
+
+  // The organism's filaments glowing in shattered ice: mint and violet motes that drift and fade
+  filaments(at, count = 26) {
+    for (let k = 0; k < count; k++) {
+      const mint = Math.random() < 0.55;
+      this._spawn(at.x, at.y + 0.2, at.z, (Math.random() - 0.5) * 2.4, 0.6 + Math.random() * 1.6, (Math.random() - 0.5) * 2.4,
+        0.1 + Math.random() * 0.08, -0.02, 1.6 + Math.random() * 1.2,
+        mint ? 0.35 : 0.7, mint ? 1.0 : 0.35, mint ? 0.7 : 1.0, -0.6, 1.2);
+    }
+  }
+
   // Sparks from a live cable
   sparks(at, count = 6) {
     for (let k = 0; k < count; k++) {

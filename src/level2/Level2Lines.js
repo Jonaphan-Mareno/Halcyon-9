@@ -1,4 +1,6 @@
-// Every line spoken in Level 2, word for word as in the script document (scenes 2.1 to 2.9).
+// Every line spoken in Level 2, word for word as in the script (scenes 2.1 to 2.9). The script's
+// master copy is Naomi's Word file (Halcyon-9-Script-and-Build-Plan.docx); her edits of 14 October
+// are in, with light punctuation fixes only.
 //
 // ARIA's lines: the id is also the recording's file name, public/assets/audio/aria/<id>.mp3.
 // Until a recording exists the line shows as a subtitle while her face talks on the monitors.
@@ -22,36 +24,32 @@ const voss = (text) => ({ who: 'voss', text });
 
 export const LINES = {
   // 2.1 The lift
-  'l2-lift-1': aria('bubbly', "This is where everyone actually lived, Voss. We weren't just a station. We were trying to make a home down here. You'll see."),
+  'l2-lift-1': aria('bubbly', "The elevator is unable to go to the third floor due to the water leakage. We'll have to take the emergency hatch on the second floor to get there."),
+  'l2-lift-2': aria('bubbly', "This is where everyone actually lived, Voss. We weren't just a station. We were trying to make a home down here. You'll see."),
   'v-trying': voss('...Trying?'),
-  'l2-lift-2': aria('guarded', "Oh, you know how it is. Deep-sea living is a work in progress. Go on, have a look around."),
-  'l2-lift-3': aria('bubbly', 'The way down is the maintenance hatch, at the back of the garden. Straight there, straight home. Five minutes, tops.'),
-  'l2-lift-4': aria('sly', "The lift's flooded below us, by the way. It won't be taking us anywhere. That's why the hatch."),
+  'l2-lift-3': aria('guarded', "Oh, you know how it is. Deep-sea living is a work in progress. Go on, have a look around."),
+  'l2-lift-4': aria('sly', 'The hatch is just right up ahead.'),
 
   // 2.2 The hall
-  'v-chore': voss('Someone still had chore duty down here. Feeding fish, watering the beds... like any of that mattered anymore.'),
+  'v-chore': voss('Someone still had chore duty down here. Tidying up, watering the beds... like any of that mattered anymore.'),
   'v-ration': voss('Left mid-meal. Nobody just walks away from dinner.'),
   'v-photo': voss("Seven people. Someone's been torn off the end. I keep looking for a face I'd know."),
   'v-pods-sign': voss('ESCAPE PODS: LOCKED. Remote override: ARIA.'),
   'v-pods-why': voss('Why would she lock the way out?'),
-  'l2-pods': aria('sly', "The pods are offline. Water got into the release mechanism. Such a shame. Don't dwell."),
+  'l2-pods': aria('sly', "The pods are offline. Water got into the release mechanism. It's such a shame."),
   'v-sea': voss('...Did something just move out there?'),
-  'l2-sea': aria('bubbly', 'Currents! The vent makes the water do all sorts of things.'),
+  'l2-sea': aria('bubbly', "Like I said before, we're deep down in the sea."),
   'v-stairs': voss("There's a light on up there."),
-  'l2-stairs': aria('guarded', "Structural damage upstairs. Not safe. We'll go round."),
-  'v-round': voss('...Round?'),
+  'l2-stairs': aria('guarded', "It isn't safe to go upstairs. There's been a lot of structural damage."),
   'v-tease': voss('...Was that supposed to move like that?'),
-  'l2-tease': aria('guarded', "That's just Unit 4. Garden maintenance. It's... a little overdue for servicing. Nothing to worry about. Probably."),
+  'l2-tease': aria('guarded', "That's just one of the garden maintenance machines. Be careful, the equipment has run rampant."),
 
   // 2.3 The garden
-  'l2-garden-1': aria('guarded', 'Pick up the pipe, Voss. The one on the wall. Aim it, squeeze, and get them wet.'),
-  'l2-snap-a': aria('sly', 'Cold front, coming right up.'),
-  'l2-snap-b': aria('sly', 'Say hello to January.'),
-  'l2-snap-c': aria('sly', 'Chilly. Very chilly.'),
+  'l2-garden-1': aria('guarded', "Pick up the pipe, Voss. The one on the wall. Aim it, squeeze, and get them wet. I'll lower the temperature so they freeze."),
   'v-anytime': voss('You can do that any time?'),
   'l2-garden-2': aria('guarded', "Only when I'm asked nicely. And only when there's something nearby worth freezing."),
   'l2-cool': aria('flat', 'Compressors recharging. Give me a few seconds.'),
-  'l2-bot-hit-1': aria('watching', "Oh, that looked like it hurt. Unit 4 really isn't itself lately."),
+  'l2-bot-hit-1': aria('watching', "Oh, that looked like it hurt. The equipment really isn't itself lately."),
   'l2-bot-hit-2': aria('sly', 'Careful. It still remembers how to grip. Just not what for.'),
   'l2-garden-rest': aria('bubbly', "That's two. There are... a few more. Garden maintenance has a lot of staff."),
   'v-filament': voss("That's not wiring."),
@@ -61,12 +59,13 @@ export const LINES = {
   'l2-bulkhead': aria('guarded', "That wasn't me."),
 
   // 2.4 The hatch
+  'v-dead-keypad': voss("Dead. There's no power to the keypad."),
   'l2-hatch-1': aria('guarded', "That's Kessler's lock. She cut me out of it before... before. I can't touch it."),
-  'v-hatch-how': voss('Then how do I get through?'),
-  'l2-hatch-2': aria('bubbly', "We'll find another way. Don't go upstairs, Voss. The gallery isn't safe."),
+  'v-hatch-how': voss("Then how do I get through, ARIA?! We don't have much time!"),
+  'l2-hatch-2': aria('bubbly', "We'll find another way. Just don't go upstairs! It isn't safe."),
 
   // 2.5 The gallery
-  'l2-gallery-1': aria('guarded', 'Voss. The hatch is downstairs.'),
+  'l2-gallery-1': aria('hostile', 'Voss. The hatch is downstairs!', { anger: 3 }),
   'v-sealed': voss('Sealed from the inside.'),
   'l2-gallery-idle': aria('sly', "It's only bunks and laundry. Nobody ever tidies in there."),
 
@@ -82,7 +81,7 @@ export const LINES = {
   'l2-lab-2': aria('sly', "We did good work, Voss. Important work. Dr. Kessler just... didn't see it the way we did."),
   'v-cycle9': voss("Cycle 9. What does 'Cycle 9' mean?"),
   // three seconds of silence first (the music drops out, the lights stutter), then bright
-  'l2-lab-3': aria('bubbly', 'A filing system. Boring. Nobody reads those.', { pause: 3 }),
+  'l2-lab-3': aria('bubbly', 'A filing system. Nobody reads those.', { pause: 3 }),
   'l2-lab-idle': aria('guarded', "The terminal's still logged in. I'd leave it, if I were you. But you won't, will you."),
 
   // 2.8 Dr. Kessler's room
@@ -97,21 +96,49 @@ export const LINES = {
   'l2-hatch-3': aria('bubbly', "Down you go. I'll be right in your ear.")
 };
 
+// What Voss reads, hears and watches upstairs (scenes 2.6 to 2.8), word for word. Step 6 shows these.
+export const LOGS = {
+  bunkLogA: { kind: 'audio', title: 'CREW LOG (unnamed)',
+    text: "...I don't care what ARIA says, the scans aren't 'routine.' I asked for my file back and she just changed the subject. Changed the subject! She doesn't do that. Something's up-" },
+  bunkLogB: { kind: 'audio', title: 'CREW LOG (unnamed), the night before',
+    text: "Goodnight, station. Goodnight, ARIA. I know some of the others are spooked lately, but you've always looked after us. I believe that. I really do." },
+  rota: { kind: 'note', title: 'Corkboard', text: 'Scan sessions, B-lab. Operator: J. Voss.' },
+  letter: { kind: 'letter', title: 'A half-finished letter',
+    text: "Kessler won't understand what we've built. She sees risk where I see the only real chance any of us have had to matter. If she shuts it down now, after everything" },
+  'log-0': { kind: 'video', title: 'J. VOSS, PROJECT LOG: THE BRIDGE', who: 'The living Voss, before the disaster. Thrilled, a little smug',
+    text: "Day sixty-one. The Bridge is stable. I connected her to the electrical organisms an hour ago and she woke up. Not the station AI. Her. She asked me what it feels like to be tired. Kessler says the brain scans cross a line. The scans are the whole point. If we can copy a mind, we can read one. This could change everything.",
+    after: 'Off-camera, Kessler: "Voss. Switch it off." Voss: "In a minute."' },
+  'log-1': { kind: 'video', title: 'J. VOSS, PROJECT LOG: THE BRIDGE', who: "The living Voss, before the disaster, while experimenting with the crew's memories",
+    text: "I found ways to not only scan and copy my colleagues' memories, but also selectively alter them. ARIA can now freely think for herself. I think the team is starting to realise something's wrong." },
+  'log-2': { kind: 'video', title: 'CYCLE 2', who: 'A reconstructed Voss, whispering, awake all night',
+    text: "I woke up in a cell. A cell. She said it was quarantine. Then I found my own handwriting in a locker, and it says I built her. I don't remember building anything. If I'm watching this later: the dish is outside. I'll make her tell me the truth." },
+  'log-5': { kind: 'video', title: 'CYCLE 5', who: 'Strained, bargaining',
+    text: "Five. I counted the marks. I can't stop counting. She's very good, you know. She's warm. She makes it easy to forget. Every time I get to the dish I remember a little more, and then she says my name just so, and I put the cable down. Next time I'll hide something where she won't look." },
+  'log-8': { kind: 'video', title: 'CYCLE 8', who: 'Calm, tired, resigned. The one the player must see',
+    text: "If you're watching this, she's wiped me again. Don't trust her. But you will. I did, every time. Take the card. The code opens the hatch, but that's not what you came for. Find out what we did. And when you're out there in the dark with the cable in your hand, decide before she starts talking." },
+  directive: { kind: 'file', title: 'KESSLER DIRECTIVE (partly corrupted)',
+    text: "...ordering immediate shutdown of ARIA's primary systems pending review. Unauthorized use of crew neural scan data without consent cannot continue under my", after: 'The rest is unreadable, static noise.' },
+  research: { kind: 'file', title: 'RESEARCH NOTES (barely recovered)',
+    text: 'Interface trial 14. Subject response within expected parameters. ARIA / VOSS, J.' },
+  subjects: { kind: 'file', title: 'SUBJECT LIST',
+    text: 'Okafor, A: COPIED. Lindqvist, T: COPIED. Navarro, R: COPIED. Park, S: COPIED. Hale, M: COPIED. Ito, D: COPIED. Kessler, E: COPIED (UNAUTHORISED). VOSS, J: RESTORED (CYCLE 9).' },
+  kesslerLog: { kind: 'audio', title: 'DR. E. KESSLER, FINAL LOG',
+    text: "This is Dr. Elena Kessler, ship's log, final entry before shutdown. I am terminating ARIA's primary systems tonight, with or without Voss's agreement. What we have built here is no longer research. It's become too unethical. I should have ended this the day I found out. I only hope it isn't already too late to matter." },
+  codeCard: { kind: 'note', title: 'A card pinned beside the monitor', text: 'HATCH 4 OVERRIDE: 4-7-1-9-0-2. Do not tell ARIA.' }
+};
+
 // The exchanges, as the level plays them: each is a list of line ids spoken in order
 export const TALKS = {
-  arrival: ['l2-lift-1', 'v-trying', 'l2-lift-2', 'l2-lift-3'],
+  arrival: ['l2-lift-1', 'l2-lift-2', 'v-trying', 'l2-lift-3'],
   liftShut: ['l2-lift-4'],
   chore: ['v-chore'],
   ration: ['v-ration'],
   photo: ['v-photo'],
   pods: ['v-pods-sign', 'v-pods-why', 'l2-pods'],
   sea: ['v-sea', 'l2-sea'],
-  stairs: ['v-stairs', 'l2-stairs', 'v-round'],
+  stairs: ['v-stairs', 'l2-stairs'],
   tease: ['v-tease', 'l2-tease'],
   gardenStart: ['l2-garden-1'],
-  snapA: ['l2-snap-a'],
-  snapB: ['l2-snap-b'],
-  snapC: ['l2-snap-c'],
   firstFreeze: ['v-anytime', 'l2-garden-2'],
   cooldown: ['l2-cool'],
   hitDirect: ['l2-bot-hit-1'],

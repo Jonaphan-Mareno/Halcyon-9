@@ -6,7 +6,9 @@ import { withHubLighting } from '../graphics/HubMaterials.js';
 //   the stair bulkheads   an emergency bulkhead with a big window across the foot of each
 //                         staircase: he can see up to the gallery (and the one lit door) but not
 //                         climb. When the garden's pumps restart they sink into the floor.
-//   the door signs        CREW QUARTERS (lit, the only light upstairs), DR. E. KESSLER, LAB
+//   the door signs        CREW QUARTERS (lit, with warm light round its door: the only light
+//                         upstairs), DR. E. KESSLER, LAB, and ESCAPE PODS over the pod door below
+//   the hatch keypad      a post beside the hatch; its screen says NO POWER until the pumps restart
 //   the hatch             a slab in the garden floor. Opened with Kessler's code it slides aside
 //                         onto a shaft ringed with blue lights, drawn by a small shader (the
 //                         shaft is not modelled: the shader works out what you would see down a
@@ -127,6 +129,7 @@ export class Gates {
     this._buildBulkheads();
     this._buildSigns(atrium);
     this._buildHatch(atrium);
+    this._buildKeypad();
   }
 
   // ------------------------------------------------------------------ the stair bulkheads
@@ -199,11 +202,12 @@ export class Gates {
 
   // ------------------------------------------------------------------ the door signs
   _buildSigns(atrium) {
-    const place = (marker, tex, lit, w = 1.7, h = 0.42) => {
+    const place = (marker, tex, lit, w = 1.7, h = 0.42, dy = 0) => {
       const o = atrium.getObjectByName(marker);
       if (!o) return;
-      const p = o.getWorldPosition(new THREE.Vector3());
-      const mat = lit ? new THREE.MeshBasicMaterial({ map: tex })
+      const p = o.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, dy, 0));
+      // a lit sign glows (brighter than white, so the bloom catches it)
+      const mat = lit ? new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color().setScalar(1.7) })
         : withHubLighting(new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.2 }));
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
       m.name = 'Gate_Sign';
@@ -211,7 +215,23 @@ export class Gates {
       m.lookAt(0, p.y, 0);
       this.scene.add(m);
     };
-    place('PT_Plate_VOSS', sign('CREW QUARTERS', { lit: true, color: '#ffe2b0' }), true);
+    place('PT_Plate_VOSS', sign('CREW QUARTERS', { lit: true, color: '#ffe2b0' }), true, 2.6, 0.65);
+    place('PT_PodDoor', sign('ESCAPE PODS', { lit: true, color: '#ff7a4a' }), true, 2.2, 0.55, 1.75);
+    // warm light leaking round the crew quarters' door: two upright strips and one across the top
+    const door = atrium.getObjectByName('DOOR_VOSS');
+    if (door) {
+      const b = new THREE.Box3().setFromObject(door);
+      const glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.72, 0.42).multiplyScalar(1.8) });
+      const x = b.min.x - 0.06;
+      const strip = (h, w, y, z) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(0.04, h, w), glow);
+        m.position.set(x, y, z);
+        this.scene.add(m);
+      };
+      strip(b.max.y - b.min.y, 0.06, (b.min.y + b.max.y) / 2, b.min.z - 0.05);
+      strip(b.max.y - b.min.y, 0.06, (b.min.y + b.max.y) / 2, b.max.z + 0.05);
+      strip(0.06, b.max.z - b.min.z + 0.16, b.max.y + 0.05, (b.min.z + b.max.z) / 2);
+    }
     place('PT_Plate_KESSLER', sign('DR. E. KESSLER', { color: '#8fa3b3' }), false);
     place('PT_Plate_LAB', sign('LAB', { color: '#8fa3b3' }), false, 1.1, 0.42);
   }
@@ -250,6 +270,45 @@ export class Gates {
     };
     this.scene.add(hole);
     this.hole = hole;
+  }
+
+  // The keypad on its post beside the hatch, on the side away from where the slab slides
+  _buildKeypad() {
+    if (!this.hatchCentre) return;
+    const c = this.hatchCentre;
+    const angle = Math.atan2(-c.z, c.x);
+    const base = c.clone().add(new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle)).multiplyScalar(1.55));
+    const metal = withHubLighting(new THREE.MeshStandardMaterial({ color: 0x23282d, roughness: 0.4, metalness: 0.6 }));
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.05, 0.14), metal);
+    post.position.set(base.x, 0.525, base.z);
+    const head = new THREE.Group();
+    head.position.set(base.x, 1.12, base.z);
+    head.lookAt(0, 1.12, 0);                          // faces the middle of the atrium, where he comes from
+    head.rotateX(-0.45);                              // tilted back, like a console
+    head.add(new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.3, 0.08), metal));
+    const screen = (text, color) => canvasTexture(256, 160, (g, w, h) => {
+      g.fillStyle = '#05080b';
+      g.fillRect(0, 0, w, h);
+      g.fillStyle = color;
+      g.font = 'bold 30px Consolas, monospace';
+      g.textAlign = 'center';
+      g.fillText('HATCH 4', w / 2, 52);
+      g.font = 'bold 26px Consolas, monospace';
+      g.fillText(text, w / 2, 104);
+    });
+    this._screens = { off: screen('NO POWER', '#ff4a3a'), on: screen('ENTER CODE', '#5fe8ff') };
+    this._screenMat = new THREE.MeshBasicMaterial({ map: this._screens.off, color: new THREE.Color().setScalar(1.3) });
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.19), this._screenMat);
+    face.position.z = 0.042;
+    head.add(face);
+    this.scene.add(post, head);
+    post.updateMatrixWorld(true);
+    this.physics.addStaticObject(post);
+    this.keypadSpot = head.getWorldPosition(new THREE.Vector3());
+  }
+
+  setKeypadPowered(on) {
+    if (this._screenMat) this._screenMat.map = on ? this._screens.on : this._screens.off;
   }
 
   get hatchIsOpen() {

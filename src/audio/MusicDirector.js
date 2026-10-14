@@ -4,33 +4,42 @@
 //
 // It is one slow, dark bed of sound that the game steers by MOOD:
 //
-//   calm      the normal background: a low drone, a breath of air, a sparse bell now and then,
-//             a distant hull creak. Ominous but unhurried.
-//   uneasy    the same with a half-step clash in the drone and more bells: something is wrong
+//   calm      the normal background: a low drone, a breath of air through the vents, water
+//             dripping somewhere, now and then the hull groaning deep down. Ominous, unhurried.
+//   uneasy    the same with a half-step clash in the drone: something is wrong
 //   pressure  adds a heartbeat and a rising string cluster; setIntensity(0..1) speeds it up
 //             and brightens it (the generator countdown, the drones)
 //   angry     ARIA has dropped the mask: harsh distorted cluster and a fast pulse
 //   dread     the flooded levels: deeper, muffled, a rumble underneath
 //   silence   nearly everything fades out. Silence is a tool, used on purpose.
 //
+// and by SCENE, where Voss is (setScene): 'open' (a big space: air and drips), 'upstairs' (quieter,
+// fewer drips), 'lab' (the organism's electrical hum), 'room' (a small closed room: near silence).
+//
 // stinger(name) plays one-shot hits on top ('snap', 'reveal', 'relief', 'falseVictory').
 // While ARIA speaks, the music ducks so her voice is clear (see the 'aria-speaking' event
 // dispatched by AriaManager).
 
 const MOODS = {
-  //            drone  clash  air    pad    ping [min,max] s   creak [min,max] s  pulse  tension  grit  muffle
-  calm:     { drone: 0.10, clash: 0.00, air: 0.030, ping: [7, 15],  creak: [20, 45], pulse: 0, tension: 0.00, grit: 0, muffle: 3200 },
-  uneasy:   { drone: 0.11, clash: 0.05, air: 0.040, ping: [5, 10],  creak: [12, 26], pulse: 0, tension: 0.00, grit: 0, muffle: 2800 },
-  pressure: { drone: 0.12, clash: 0.06, air: 0.050, ping: [10, 20], creak: [10, 22], pulse: 1, tension: 0.04, grit: 0, muffle: 3600 },
-  angry:    { drone: 0.15, clash: 0.11, air: 0.060, ping: [0, 0],   creak: [8, 16],  pulse: 2, tension: 0.13, grit: 1, muffle: 5000 },
-  dread:    { drone: 0.14, clash: 0.04, air: 0.075, ping: [9, 18],  creak: [6, 14],  pulse: 0, tension: 0.02, grit: 0, muffle: 1000 },
-  silence:  { drone: 0.004, clash: 0.00, air: 0.004, ping: [0, 0],  creak: [0, 0],   pulse: 0, tension: 0.00, grit: 0, muffle: 1500 }
+  //            drone  clash  air    drip [min,max] s  groan [min,max] s  pulse  tension  grit  muffle
+  calm:     { drone: 0.10, clash: 0.00, air: 0.030, drip: [2.5, 7],  creak: [30, 60], pulse: 0, tension: 0.00, grit: 0, muffle: 3200 },
+  uneasy:   { drone: 0.11, clash: 0.05, air: 0.040, drip: [3, 8],    creak: [20, 40], pulse: 0, tension: 0.00, grit: 0, muffle: 2800 },
+  pressure: { drone: 0.12, clash: 0.06, air: 0.050, drip: [0, 0],    creak: [16, 30], pulse: 1, tension: 0.04, grit: 0, muffle: 3600 },
+  angry:    { drone: 0.15, clash: 0.11, air: 0.060, drip: [0, 0],    creak: [10, 20], pulse: 2, tension: 0.13, grit: 1, muffle: 5000 },
+  dread:    { drone: 0.14, clash: 0.04, air: 0.075, drip: [1.5, 4],  creak: [10, 20], pulse: 0, tension: 0.02, grit: 0, muffle: 1000 },
+  silence:  { drone: 0.004, clash: 0.00, air: 0.004, drip: [0, 0],   creak: [0, 0],   pulse: 0, tension: 0.00, grit: 0, muffle: 1500 }
+};
+
+// where Voss is: how much of each layer the place has (multiplies the mood's levels)
+const SCENES = {
+  open:     { drone: 1.0, air: 1.0, drip: 1.0, hum: 0 },
+  upstairs: { drone: 0.9, air: 0.7, drip: 0.4, hum: 0 },
+  lab:      { drone: 0.8, air: 0.6, drip: 0.2, hum: 1 },
+  room:     { drone: 0.6, air: 0.4, drip: 0, hum: 0 }
 };
 
 // root note of the drone (Hz) per level: each level sits a little lower and colder
 const ROOTS = { 1: 55, 2: 49, 3: 41.2 };
-// bell notes, as ratios over the root: minor, with the dark second and flat fifth
-const BELL_RATIOS = [1, 1.2, 1.335, 1.5, 1.6, 1.78, 1.0595];
 
 const VOLUME = 0.5;
 const DUCKED = 0.28;
@@ -40,12 +49,13 @@ export class MusicDirector {
   constructor() {
     this.ctx = null;
     this.mood = 'calm';
+    this.scene = 'open';
     this.level = 1;
     this.intensity = 0;
     this.muted = false;
     this._ducked = false;
     this._timer = null;
-    this._nextPing = 0;
+    this._nextDrip = 0;
     this._nextCreak = 0;
     this._nextBeat = 0;
     this._onSpeaking = (e) => this.duck(!!e.detail);
@@ -75,7 +85,7 @@ export class MusicDirector {
     this.bus.connect(comp);
     comp.connect(ctx.destination);
 
-    // a shared reverb (a decaying noise tail) so bells and creaks sit in a big empty space
+    // a shared reverb (a decaying noise tail) so drips and groans sit in a big empty space
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = this._impulse(2.8);
     const wet = ctx.createGain();
@@ -181,6 +191,31 @@ export class MusicDirector {
     tremDepth.connect(this.tremGain.gain);
     trem.start(t);
 
+    // --- hum: the lab's electrical organism, a mains-like 120 Hz with a faint buzz on top that
+    // swells and fades slowly
+    this.humGain = ctx.createGain();
+    this.humGain.gain.value = 0;
+    this.humGain.connect(this.muffle);
+    // (the swell scales the hum, 0.8 +- 0.2, so it is silent wherever the hum is off)
+    const humSwell = ctx.createGain();
+    humSwell.gain.value = 0.8;
+    humSwell.connect(this.humGain);
+    this._osc('sine', 120, humSwell, 1);
+    this._osc('sine', 240, humSwell, 0.35);
+    const buzzFilter = ctx.createBiquadFilter();
+    buzzFilter.type = 'bandpass';
+    buzzFilter.frequency.value = 900;
+    buzzFilter.Q.value = 3;
+    buzzFilter.connect(humSwell);
+    this._osc('sawtooth', 60, buzzFilter, 0.12);
+    const humLfo = ctx.createOscillator();
+    const humDepth = ctx.createGain();
+    humLfo.frequency.value = 0.2;
+    humDepth.gain.value = 0.2;
+    humLfo.connect(humDepth);
+    humDepth.connect(humSwell.gain);
+    humLfo.start(t);
+
     window.addEventListener('aria-speaking', this._onSpeaking);
     // if the page started it without a click, the first click or key press wakes it
     if (ctx.state !== 'running') {
@@ -236,10 +271,17 @@ export class MusicDirector {
     if (this.ctx) {
       this._apply(1.6);
       const now = this.ctx.currentTime;
-      this._nextPing = now + 2;
-      this._nextCreak = now + 4;
+      this._nextDrip = now + 1;
+      this._nextCreak = now + 6;
       if (mood === 'angry') this.shaper.curve = this._distortion(1);
     }
+  }
+
+  // Where Voss is ('open', 'upstairs', 'lab', 'room'): the background changes with the place
+  setScene(scene) {
+    if (!SCENES[scene] || scene === this.scene) return;
+    this.scene = scene;
+    if (this.ctx) this._apply(2.5);
   }
 
   // 0..1: how hard the pressure is pushing (the heartbeat speeds up, the strings brighten)
@@ -274,11 +316,13 @@ export class MusicDirector {
 
   _apply(seconds) {
     const m = MOODS[this.mood];
+    const sc = SCENES[this.scene];
     const now = this.ctx.currentTime;
     const tau = seconds / 3;
-    this.droneGain.gain.setTargetAtTime(m.drone, now, tau);
+    this.droneGain.gain.setTargetAtTime(m.drone * sc.drone, now, tau);
     this.clashGain.gain.setTargetAtTime(m.clash, now, tau);
-    this.airGain.gain.setTargetAtTime(m.air, now, tau);
+    this.airGain.gain.setTargetAtTime(m.air * sc.air, now, tau);
+    this.humGain.gain.setTargetAtTime(this.mood === 'silence' ? 0 : 0.018 * sc.hum, now, tau);
     this.gritMix.gain.setTargetAtTime(m.grit * 0.07, now, tau);
     this.muffle.frequency.setTargetAtTime(m.muffle, now, tau);
     // deeper levels' drone filter is darker still
@@ -294,7 +338,7 @@ export class MusicDirector {
   }
 
   // ---------------------------------------------------------
-  // The slow scheduler (every 200 ms): bells, creaks and the heartbeat
+  // The slow scheduler (every 200 ms): drips, groans and the heartbeat
   // ---------------------------------------------------------
 
   _tick() {
@@ -302,9 +346,10 @@ export class MusicDirector {
     const now = this.ctx.currentTime;
     const m = MOODS[this.mood];
 
-    if (m.ping[1] > 0 && now >= this._nextPing) {
-      this._bell();
-      this._nextPing = now + rand(m.ping[0], m.ping[1]);
+    const dripRate = SCENES[this.scene].drip;
+    if (m.drip[1] > 0 && dripRate > 0 && now >= this._nextDrip) {
+      this._drip();
+      this._nextDrip = now + rand(m.drip[0], m.drip[1]) / dripRate;
     }
     if (m.creak[1] > 0 && now >= this._nextCreak) {
       this._creak();
@@ -318,53 +363,47 @@ export class MusicDirector {
     }
   }
 
-  // a single soft bell, high and far away, drowned in reverb
-  _bell() {
+  // a drop of water falling into a puddle somewhere: a quick falling "plop", mostly echo
+  _drip() {
     const ctx = this.ctx;
     const t = ctx.currentTime;
-    const root = ROOTS[this.level];
-    const octave = this.mood === 'dread' ? 4 : 8 + (Math.random() < 0.3 ? 4 : 0);
-    const freq = root * octave * BELL_RATIOS[Math.floor(Math.random() * BELL_RATIOS.length)];
+    const f0 = rand(900, 1600);
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.45, t + 0.05);
     const g = ctx.createGain();
+    const level = rand(0.02, 0.045);
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.07, t + 0.015);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 4.5);
-    const a = ctx.createOscillator();
-    const b = ctx.createOscillator();
-    a.type = 'sine';
-    b.type = 'sine';
-    a.frequency.value = freq;
-    b.frequency.value = freq * 2.76;        // an inharmonic overtone: metallic, not musical
-    const bg = ctx.createGain();
-    bg.gain.value = 0.18;
-    a.connect(g);
-    b.connect(bg);
-    bg.connect(g);
+    g.gain.exponentialRampToValueAtTime(level, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    o.connect(g);
     g.connect(this.reverb);
-    g.connect(this.muffle);
-    a.start(t);
-    b.start(t);
-    a.stop(t + 4.6);
-    b.stop(t + 4.6);
+    const dry = ctx.createGain();
+    dry.gain.value = 0.35;
+    g.connect(dry);
+    dry.connect(this.muffle);
+    o.start(t);
+    o.stop(t + 0.12);
   }
 
-  // the hull groaning under the sea: noise through a narrow band that slides down in pitch
+  // the hull groaning deep under the sea: low noise through a band that slides down in pitch
   _creak() {
     const ctx = this.ctx;
     const t = ctx.currentTime;
-    const dur = rand(1.6, 3.2);
+    const dur = rand(2.8, 5);
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     src.loop = true;
     const f = ctx.createBiquadFilter();
     f.type = 'bandpass';
-    f.Q.value = 14;
-    const start = rand(110, 240);
+    f.Q.value = 6;
+    const start = rand(55, 120);
     f.frequency.setValueAtTime(start, t);
     f.frequency.exponentialRampToValueAtTime(start * rand(0.45, 0.7), t + dur);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.16, t + dur * 0.4);
+    g.gain.exponentialRampToValueAtTime(0.06, t + dur * 0.4);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     src.connect(f);
     f.connect(g);

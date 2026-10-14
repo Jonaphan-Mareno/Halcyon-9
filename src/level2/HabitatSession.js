@@ -26,6 +26,9 @@ import { LINES, TALKS, CUES } from './Level2Lines.js';
 import { buildHallClues } from './HallClues.js';
 import { Gates } from './Gates.js';
 import { KeypadUI } from '../ui/KeypadUI.js';
+import { Garden } from './Garden.js';
+import { PlayerStats, MAX_INTEGRITY } from '../player/PlayerStats.js';
+import { HUD } from '../ui/HUD.js';
 import '../ui/level2.css';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
@@ -63,14 +66,18 @@ const DEAD_ZONES = [
   { at: [12.5, 1, 5.5], reach: 5.5, depth: 0.45 },  // behind the east stair
   { at: [-10, 7, -10], reach: 7, depth: 0.55 }      // the gallery, north-west
 ];
-const GRIME = 0.62;          // how dark the patches of soot and dead panels get
-const UNDER_GALLERY = 0.72;  // how much darker it is under the gallery ring
-const ATRIUM_DIM = 0.7;      // the atrium's share of the room light: the lamp pools stand out against it
+const GRIME = 0.48;          // how dark the patches of soot and dead panels get
+const UNDER_GALLERY = 0.58;  // how much darker it is under the gallery ring
+const ATRIUM_DIM = 0.82;     // the atrium's share of the room light: the lamp pools stand out against it
+const DAMAGED_BASE = 0.8;    // the mood's normal brightness on arrival (the power is failing)
 // When the garden's pumps restart, most of the atrium's light comes back: the dark, damaged
 // arrival gives way to the room as it was meant to look (still a little under strain)
-const RESTORED_LIGHT = 0.55; // how far towards clean the shade goes (uRestore)
-const RESTORED_BASE = 0.86;  // the mood's normal brightness after the restart (0.74 before)
+const RESTORED_LIGHT = 0.6;  // how far towards clean the shade goes (uRestore)
+const RESTORED_BASE = 0.92;  // the mood's normal brightness after the restart (DAMAGED_BASE before)
 const HATCH_CODE = '471902'; // Kessler's override (placeholder, see the script's open decisions)
+const DIRECT_HIT = 20;       // a drone's dive, straight into him (health is out of 100)
+const GRAZE = 6;             // a dive that only clips him
+const MANIFOLD_AT = { r: 14.6, angle: 30 };   // the garden's wall of pipes, behind the hatch
 
 // Glass everywhere (the sea window, railings, the lab's tubes and beakers): dark and one-sided, so
 // it adds reflections without laying a milky white film over what is behind it, and clear face-on
@@ -106,13 +113,16 @@ export class HabitatSession {
     game.camera.flashlight.intensity = 0;
     game.camera.flashlight.castShadow = false;
 
-    if (game.mood) game.mood.base = 0.74;    // a little under strain, never fully clean
+    if (game.mood) game.mood.base = DAMAGED_BASE;    // under strain, never fully clean
     this._setUpRendering();
     this.controls = new PlayerController(camera, document.body, game.scene);
     game.controls = this.controls;
     this.controls.camDist = 3.8;
 
     const root = document.getElementById('ui-layer');
+    // Voss's health (integrity), the same as in Level 1, on the same HUD
+    this.player = new PlayerStats();
+    this.hud = new HUD(root, { onRestart: () => {} });
     this.loadingEl = document.createElement('div');
     this.loadingEl.id = 'level-loading';
     this.loadingEl.className = 'visible';
@@ -135,20 +145,31 @@ export class HabitatSession {
       if (game.state !== 'PLAYING' || !this.ready) return;
       if (e.code === 'KeyE' && !e.repeat) this.interact?.use();
       if (e.code === 'Enter') this.skipLine();
+      if (e.code === 'KeyQ' && !e.repeat) this.garden?.freeze();
+    });
+    // the left mouse button sprays the garden's water pipe while he holds it
+    document.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      this.garden?.audio.start();
+      if (game.state === 'PLAYING' && this.controls.instance.isLocked && this.garden?.holding) this.garden.spraying = true;
+    });
+    document.addEventListener('mouseup', (e) => {
+      if (e.button === 0 && this.garden) this.garden.spraying = false;
     });
 
-    // ?debug in the address: F7 sets the next story flag (to walk the objectives through the
-    // route), F9 plays the next of ARIA's exchanges (to hear every line)
+    // ?debug in the address: ] sets the next story flag (to walk the objectives through the
+    // route), [ plays the next of ARIA's exchanges (to hear every line). (Not F7: in Edge and
+    // Chrome it turns on caret browsing and steals the keyboard.)
     if (new URLSearchParams(window.location.search).has('debug')) {
       let nextTalk = 0;
       window.addEventListener('keydown', (e) => {
         if (!this.story) return;
-        if (e.code === 'F7') {
+        if (e.code === 'BracketRight') {
           e.preventDefault();
           const flag = this.story.next();
           if (flag) this.story.set(flag);
           game.ui.showToast(flag ? 'Debug: ' + flag : 'Debug: every flag is set', 1500);
-        } else if (e.code === 'F9') {
+        } else if (e.code === 'BracketLeft') {
           e.preventDefault();
           const names = Object.keys(TALKS);
           const name = names[nextTalk++ % names.length];
@@ -386,9 +407,9 @@ export class HabitatSession {
       id: 'bulkhead' + i, position: p, radius: 1.4, label: 'Look through the bulkhead',
       when: () => this.gates.bulkheadsSealed, use: () => this.say('stairs')
     }));
-    if (this.gates.hatchCentre) {
+    if (this.gates.keypadSpot) {
       this.interact.add({
-        id: 'hatch', position: this.gates.hatchCentre.clone().setY(0.4), radius: 1.0, reach: 2.4,
+        id: 'hatch', position: this.gates.keypadSpot, radius: 0.35, reach: 2.2,
         label: () => (this.story.has('gardenCleared') ? 'Use the hatch keypad' : 'Hatch keypad (no power)'),
         when: () => !this.story.has('hatchOpen'), use: () => this._useHatch()
       });
@@ -404,6 +425,22 @@ export class HabitatSession {
       });
     }
     this.restore = 0;
+
+    // the garden fight (scene 2.3): the drones, the wall of pipes and its hose
+    this.garden = new Garden({
+      scene, physics: this.physics, camera: this.game.camera.instance,
+      centre: this.gates.hatchCentre || new THREE.Vector3(10.9, 0, -6.3), manifoldAt: MANIFOLD_AT,
+      say: (talk, quietOnly) => (quietOnly && this._talking()) ? Promise.resolve(false) : this.say(talk),
+      isTalking: () => this._talking(),
+      onWake: () => this.story.set('dronesWoken'),
+      onHurt: (kind, from) => this._hurt(kind, from),
+      onCleared: () => this.story.set('gardenCleared'),
+      toast: (text) => this.game.ui.showToast(text, 6500)
+    });
+    this.interact.add({
+      id: 'pipe', position: this.garden.pipeSpot, radius: 0.5, label: 'Pull out the water pipe',
+      when: () => !this.garden.holding && this.garden.state !== 'done', use: () => this.garden.takePipe()
+    });
 
     this._addAriaScreens([atrium, lab]);
     this._setUpLab(lab);
@@ -706,10 +743,29 @@ export class HabitatSession {
 
     // sparks crackle from the damaged wiring; the dangling light stutters, cutting out on each crackle
     this.gates?.update(dt);
+    if (this.garden) {
+      this._head.set(p.x, p.y + 1.6, p.z);
+      this.garden.update({ dt, feet: p, head: this._head, playing,
+        canWake: this.story.has('leftLift') && !this.story.has('gardenCleared') });
+      this.garden.updateTease(dt);
+      // a drone glimpsed far across the hall the first time he walks into it (scene 2.2)
+      if (playing && !this._teased && this.story.has('leftLift') && !this.story.has('dronesWoken') && p.z < 9) {
+        this._teased = true;
+        this.garden.tease(new THREE.Vector3(-8, 4.2, -8), new THREE.Vector3(7, 4.2, -11), 5);
+        setTimeout(() => this.say('tease'), 1200);
+      }
+      // the fight's music: pressure, harder the more drones are up
+      const fighting = this.garden.active;
+      this.musicMood = fighting ? 'pressure' : null;
+      this.musicIntensity = fighting ? 0.35 + 0.65 * Math.min(1, this.garden.alive / 4) : 0;
+      this.musicTension = 0.4 + 0.5 * this.musicIntensity;
+    }
+    this.hud.setVisible(playing || g.state === 'KEYPAD');
+    this.hud.update(this.player);
     if (this.restore < this._restoreTarget) {
       this.restore = Math.min(this._restoreTarget, this.restore + dt / 3);
       hubLighting.uRestore.value = this.restore * RESTORED_LIGHT;
-      if (g.mood) g.mood.base = THREE.MathUtils.lerp(0.74, RESTORED_BASE, this.restore);
+      if (g.mood) g.mood.base = THREE.MathUtils.lerp(DAMAGED_BASE, RESTORED_BASE, this.restore);
     }
     this._applyMood();
     this.sparks.update(dt);
@@ -722,6 +778,7 @@ export class HabitatSession {
     if (this.aria.useHead) this.aria.head.update(dt);
     g.reticle.classList.toggle('visible', this.controls.view === 'first');
     if (playing && !this.story.has('leftLift') && p.z < LIFT_FRONT_Z) this.story.set('leftLift');
+    g.music?.setScene(this._sceneAt(p));
     this._guide(playing);
     this._perf(delta, playing);
   }
@@ -793,8 +850,35 @@ export class HabitatSession {
       g.music?.stinger('reveal');
       this._restoreTarget = 1;
       this.gates?.openBulkheads();
+      this.gates?.setKeypadPowered(true);
     }, 700);
     setTimeout(() => this.say('bulkhead'), 2600);
+  }
+
+  // A drone's dive: a direct hit knocks him back; at zero ARIA restores him from backup
+  _hurt(kind, from) {
+    if (this._restoring) return;
+    this.hud.flash();
+    if (kind === 'direct' && from) this.controls.knockback?.(from, 6);
+    if (this.player.damage(kind === 'direct' ? DIRECT_HIT : GRAZE)) this._restoreFromBackup();
+  }
+
+  _restoreFromBackup() {
+    this._restoring = true;
+    this.player.deaths++;
+    this.hud.showDeath('BACKUP RESTORED', 'RESTORED: CYCLE 9');
+    setTimeout(() => {
+      this.hud.hideDeath();
+      this.player.integrity = MAX_INTEGRITY;
+      // back at the edge of the garden, facing it
+      this.controls.teleport?.(new THREE.Vector3(4, 0.1, -2));
+      this._restoring = false;
+    }, 1800);
+  }
+
+  // Is anyone talking right now? (a hit's remark waits for a quiet moment)
+  _talking() {
+    return this.aria.speaking || this.game.ui.dialogue.classList.contains('visible');
   }
 
   _kesslerUnlocked() {
@@ -810,7 +894,7 @@ export class HabitatSession {
   // The hatch keypad: dead until the pumps restart, then it wants Kessler's code
   _useHatch() {
     if (!this.story.has('gardenCleared')) {
-      this.game.ui.showToast('The keypad is dead. No power.', 2500);
+      this.say(['v-dead-keypad']);
       return;
     }
     this.game.state = 'KEYPAD';
@@ -847,6 +931,16 @@ export class HabitatSession {
     const ui = this.game.ui;
     if (ui.isAriaLine()) this.aria.skip();
     else ui.advance();
+  }
+
+  // Where he is, for the background sound: the lab (north, beyond the gallery), one of the rooms
+  // off the gallery or the lift (enclosed and quiet), the gallery, or the open atrium
+  _sceneAt(p) {
+    const r = Math.hypot(p.x, p.z);
+    if (p.y > 4.5 && p.z < -17.3 && Math.abs(p.x) < 7) return 'lab';
+    if (r > 17.2) return 'room';
+    if (p.y > 4) return 'upstairs';
+    return 'open';
   }
 
   // The objective banner and the marker on the next place to go, both from the story's flags

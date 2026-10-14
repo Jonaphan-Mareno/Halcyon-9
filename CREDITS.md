@@ -1,7 +1,9 @@
 # Credits: third-party assets
 
 Everything not listed here (the station, rooms, furniture, props, the organism, shaders, the
-procedural textures, the vegetables in the garden beds) is our own work.
+procedural textures, the vegetables in the garden beds, the music and sound effects) is our own
+work. The score and the sound effects are synthesised in the browser (src/audio), so there are
+no audio files to credit.
 
 ## Poly Haven (CC0 1.0, public domain)
 
@@ -55,6 +57,12 @@ Required credit lines (CC BY 4.0, http://creativecommons.org/licenses/by/4.0/):
 | Asset | Source | Used for |
 |---|---|---|
 | `public/assets/video/sea_loop.mp4` | Generated with Google Gemini (Veo) by Naomi Mareno; trimmed into a seamless loop with FFmpeg | the deep sea outside the atrium's big window |
+
+## Voice
+
+| Asset | Source | Used for |
+|---|---|---|
+| `public/assets/audio/aria/*.mp3` | Text-to-speech from ElevenLabs, voice "Maisie" (as named in the Level 2 script; confirm the exact voice and plan terms before submission) | ARIA's spoken lines |
 
 ## To add when used
 

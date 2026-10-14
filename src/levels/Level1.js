@@ -2554,16 +2554,20 @@ onRingPuzzleComplete() {
     }
     order.sort((a, b) => a.key - b.key);
     const pixelLights = Math.min(roomCount, this._pixelLights ?? ROOM_PIXEL_LIGHTS);
+    // the game's mood: the room is a little dimmer than clean, and red when an alarm sounds
+    const mood = this.mood;
+    const dim = mood ? mood.dim : 1;
     const dropped = this._droppedAmbient || (this._droppedAmbient = new THREE.Color());
     dropped.setRGB(0, 0, 0);
     for (let k = 0; k < order.length; k++) {
       const i = order[k].i;
       const light = this.lights[i];
-      const intensity = LIGHT_FULL * this._lightFactor(i);
+      const intensity = LIGHT_FULL * this._lightFactor(i) * dim;
       if (k < pixelLights) {
         light.getWorldPosition(this._lightWorldPos);
         this._lightWorldPositions[count].copy(this._lightWorldPos);
         this._lightWorldColors[count].copy(light.color);
+        mood?.tint(this._lightWorldColors[count]);
         this._lightWorldIntensities[count] = intensity;
         this._lightCones[count].set(-2, -2); // plain point light
         count++;
@@ -2618,7 +2622,8 @@ onRingPuzzleComplete() {
     if (this._fixtures) {
       for (const fx of this._fixtures) {
         const k = this._lightFactor(fx.index);
-        fx.mat.color.setRGB(0.92, 0.97, 1.0).multiplyScalar(0.04 + 0.96 * Math.min(1, k * 1.15));
+        fx.mat.color.setRGB(0.92, 0.97, 1.0).multiplyScalar((0.04 + 0.96 * Math.min(1, k * 1.15)) * Math.min(1, dim + 0.1));
+        mood?.tint(fx.mat.color);
       }
     }
 
@@ -2638,7 +2643,13 @@ onRingPuzzleComplete() {
       this._hemiGround.value.g += this._droppedAmbient.g * 0.5;
       this._hemiGround.value.b += this._droppedAmbient.b * 0.5;
     }
-    this._envStrength.value = ENV_DEAD + (ENV_LIT - ENV_DEAD) * lit;
+    if (mood) {
+      this._hemiSky.value.multiplyScalar(mood.ambient);
+      this._hemiGround.value.multiplyScalar(mood.ambient);
+      mood.tint(this._hemiSky.value);
+      mood.tint(this._hemiGround.value);
+    }
+    this._envStrength.value = (ENV_DEAD + (ENV_LIT - ENV_DEAD) * lit) * (mood ? mood.ambient : 1);
 
     // One set of uniforms for every material (positions go to view space as the scene is drawn,
     // in _lightsToView)

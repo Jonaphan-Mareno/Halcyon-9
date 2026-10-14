@@ -242,9 +242,13 @@ export class AriaManager {
       let timer = null;
       const audio = new Audio(ARIA_AUDIO_PATH + clipName + '.mp3');
 
+      // the score ducks while she speaks (see MusicDirector)
+      window.dispatchEvent(new CustomEvent('aria-speaking', { detail: true }));
+
       const finish = () => {
         if (finished) return;
         finished = true;
+        window.dispatchEvent(new CustomEvent('aria-speaking', { detail: false }));
         clearTimeout(timer);
         audio.pause();
         this.video.onerror = null;

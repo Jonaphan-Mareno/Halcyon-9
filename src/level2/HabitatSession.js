@@ -71,6 +71,7 @@ export class HabitatSession {
     game.camera.flashlight.intensity = 0;
     game.camera.flashlight.castShadow = false;
 
+    if (game.mood) game.mood.base = 0.74;    // a little under strain, never fully clean
     this._setUpRendering();
     this.controls = new PlayerController(camera, document.body, game.scene);
     game.controls = this.controls;
@@ -225,10 +226,12 @@ export class HabitatSession {
         litRooms.push({ centre: c, n: 1 });
       }
     });
+    this.roomLights = this.roomLights || [];
     for (const room of litRooms) {
       const l = new THREE.PointLight(0xffeeda, 30, 10, 2);
       l.position.copy(room.centre);
       this.game.scene.add(l);
+      this.roomLights.push({ light: l, base: l.intensity, color: l.color.clone() });
     }
     this.game.scene.add(model);
     return model;
@@ -297,10 +300,12 @@ export class HabitatSession {
     // shadow, the lab's included). Measured on Intel UHD 620: three extra fill lights and the lab's
     // spotlight cost ~14 ms a frame, because every light is worked out for every pixel on screen.
     // The room's reflections (environment) fill in the rest.
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x8c949c, 0.42));
+    this.hemi = new THREE.HemisphereLight(0xffffff, 0x8c949c, 0.42);
+    scene.add(this.hemi);
     // daylight-like light from the skylight: even, no hot spot on the ceiling
     // (the main light, so its shadows read; the sky light and reflections are the soft fill)
     const sky = new THREE.DirectionalLight(0xfaf6ee, 1.9);
+    this.sun = sky;
     sky.position.set(4, 20, 6);
     // it casts the hall's shadows (pillars, gallery, furniture, the clutter on the floor), drawn
     // once like the lab's. The ceiling and skylight do not block it.
@@ -542,6 +547,7 @@ export class HabitatSession {
     }
 
     // sparks crackle from the damaged wiring; the dangling light stutters, cutting out on each crackle
+    this._applyMood();
     this.sparks.update(dt);
     if (this.sparks.burstNow) this.flicker = 0.35;
     this.flicker = Math.max(0, this.flicker - dt);
@@ -552,6 +558,46 @@ export class HabitatSession {
     if (this.aria.useHead) this.aria.head.update(dt);
     g.reticle.classList.toggle('visible', this.controls.view === 'first');
     this._perf(delta, playing);
+  }
+
+  // The game's mood (see MoodLight): the whole atrium a little dimmer than clean, and red when
+  // an alarm sounds or ARIA snaps. The light panels glow white on their own, so while red they
+  // are tinted too.
+  _applyMood() {
+    const mood = this.game.mood;
+    if (!mood) return;
+    const dim = mood.dim;
+    const hemi = this.hemi, sun = this.sun, scene = this.game.scene;
+    if (!this._moodBase) {
+      this._moodBase = {
+        hemiSky: hemi.color.clone(), hemiGround: hemi.groundColor.clone(), sun: sun.color.clone(),
+        glow: [], hemi: hemi.intensity, sunI: sun.intensity, env: scene.environmentIntensity
+      };
+      const wanted = ['white_glow', 'tile_glow', 'blue_glow', 'accent_glow'];
+      const seen = new Set();
+      this.atrium.traverse((o) => {
+        if (!o.isMesh) return;
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+          if (wanted.includes(m.name) && !seen.has(m)) { seen.add(m); this._moodBase.glow.push({ m, color: m.emissive.clone() }); }
+        }
+      });
+    }
+    const b = this._moodBase;
+    hemi.intensity = b.hemi * mood.ambient;
+    sun.intensity = b.sunI * dim;
+    scene.environmentIntensity = b.env * mood.ambient;
+    hemi.color.copy(b.hemiSky);
+    hemi.groundColor.copy(b.hemiGround);
+    sun.color.copy(b.sun);
+    for (const r of this.roomLights || []) { r.light.intensity = r.base * dim; r.light.color.copy(r.color); }
+    if (mood.red > 0 || this._wasRed) {
+      mood.tint(hemi.color);
+      mood.tint(hemi.groundColor);
+      mood.tint(sun.color);
+      for (const r of this.roomLights || []) mood.tint(r.light.color);
+      for (const g of b.glow) { g.m.emissive.copy(g.color); mood.tint(g.m.emissive); }
+      this._wasRed = mood.red > 0;
+    }
   }
 
   // A small frame counter (top right; F3 hides it), and automatic quality: if the first few

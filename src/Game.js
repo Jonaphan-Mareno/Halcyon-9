@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { Renderer } from './core/Renderer.js';
+import { PerfMonitor } from './core/PerfMonitor.js';
+import { Physics } from './core/Physics.js';
 import { Camera } from './core/Camera.js';
 import { Controls } from './core/Controls.js';
 import { Level1 } from './levels/Level1.js';
@@ -32,9 +34,13 @@ const ELEVATOR_ACCESS_CODE = '123456';
 
 // Circuit puzzle timing: each failed attempt adds a little time, up to a cap,
 // so it never becomes frustrating
-const PUZZLE_BASE_SECONDS = 60;
+const PUZZLE_BASE_SECONDS = 40;
 const PUZZLE_BONUS_PER_FAILURE = 5;
-const PUZZLE_MAX_BONUS = 15;
+const PUZZLE_MAX_BONUS = 10;
+// After a failed attempt ARIA marks the next junctions to turn on the fresh circuit: how many,
+// and for how long (seconds)
+const PUZZLE_HINT_TILES = [0, 3, 5];
+const PUZZLE_HINT_SECONDS = 14;
 
 // What hurts Voss (health is out of 100), and what repairs him
 const OVERLOAD_DAMAGE = 34; // the generator trips: an electric shock. Three overloads in a row are fatal
@@ -56,6 +62,9 @@ const ARIA_PUZZLE_LINES = {
               text: "Oops! No harm done... let's try that again." },
   overload2:{ clip: 'overload-2', expression: 'sly',
               text: "Oh dear! Again! They say lightning never strikes twice. It was clearly lying. Here's a hint: start at the battery, follow the glow, and keep it away from the red fuses. They have very strong... current opinions." },
+  // (no recording yet: shown as a subtitle with her talking face)
+  hint1:    { clip: 'puzzle-hint', expression: 'bubbly',
+              text: "Let me help. I've marked the first junctions you need to turn. Start at the battery, follow my marks, and watch the copper light up." },
   zap1:     { clip: 'zap-1', expression: 'sly',
               text: "Ooh, that's a live fuse. Touching it is not recommended. Although I hear the shocks are free." },
   zap2:     { clip: 'zap-2', expression: 'bubbly',
@@ -92,6 +101,18 @@ const ARIA_RESTORE_LINES = [
 const ARIA_GAME_OVER_TEXT = "Backup... corrupted. I am so sorry, Voss. I really did try.";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Level 1's automatic quality steps, best first (see PerfMonitor): effects go before resolution
+// drops far, as a blurry picture is worse than slightly simpler lighting
+const LEVEL1_QUALITY = [
+  { scale: 1, lights: 4, parallax: true },
+  { scale: 0.9, lights: 4, parallax: true },
+  { scale: 0.9, lights: 3, parallax: false },
+  { scale: 0.8, lights: 3, parallax: false },
+  { scale: 0.75, lights: 2, parallax: false },
+  { scale: 0.65, lights: 2, parallax: false },
+  { scale: 0.55, lights: 2, parallax: false }
+];
 
 const formatTime = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 
@@ -153,6 +174,9 @@ export class Game {
     this.camera = new Camera(this.width / this.height);
     this.camera.instance.position.set(0, 3, 0); // adjust ctor args to match your Camera class
     this.renderer = new Renderer();
+    // The physics engine (Rapier) is a separate download: start it now, alongside the level's
+    // models, so it is ready for whichever level needs it
+    Physics.preload();
 
     if (this.startLevel === '2' || this.startLevel === 'hose' || this.startLevel === 'reactor') {
       this._initLevel2();
@@ -161,6 +185,15 @@ export class Game {
 
     // Load first level
     this.currentLevel = new Level1(this.scene, this.camera.instance);
+    // FXAA instead of MSAA, and a resolution that adapts to the machine (F3 shows the frame rate)
+    this.renderer.usePost(this.scene, this.camera.instance);
+    this.perf = new PerfMonitor({
+      steps: LEVEL1_QUALITY,
+      onStep: (q) => {
+        this.renderer.setScale(q.scale);
+        this.currentLevel?.setQuality?.(q);
+      }
+    });
 
     // Controls
     this.controls = new Controls(this.camera.instance, document.body, this.currentLevel);
@@ -194,6 +227,8 @@ export class Game {
     window.addEventListener('resize', () => this.onResize());
 
     this.raycaster = new THREE.Raycaster();
+    this.raycaster.far = 8;        // nothing is used from further away (cheaper: far objects are skipped)
+    this._reticleTick = 0;
     this.center = new THREE.Vector2(0, 0);
     this.reticle = document.getElementById('reticle');
 
@@ -294,6 +329,11 @@ export class Game {
       this.ui.objective, this.ui.waypoint, this.ui.overloadBanner, this.ui.dialogue
     ].filter(Boolean);
     document.getElementById('ui-layer').replaceChildren(...keep);
+
+    // level 2 brings its own post-processing and frame counter
+    this.perf?.dispose();
+    this.perf = null;
+    this.renderer.disposePost();
 
     this.level2Mode = true;
     this.state = 'PLAYING';
@@ -594,6 +634,7 @@ export class Game {
       } else {
         this.update(delta);
         this.currentLevel?.ariaManager?.renderHead(this.renderer.instance);
+        this.perf?.update(delta, this.state === 'PLAYING');
       }
       this.renderer.render(this.scene, this.camera.instance);
     };
@@ -722,20 +763,62 @@ export class Game {
   }
 
   updateReticle() {
-    this.raycaster.setFromCamera(this.center, this.camera.instance);
-    const targets = this.currentLevel.interactables || [];
-    const hit = this.raycaster.intersectObjects(targets, true)[0];
+    // Testing the ray against everything clickable was the most expensive thing the game did on
+    // the CPU each frame (~10 ms on a UHD 620 laptop): every third frame is plenty for a prompt
+    this._reticleTick = (this._reticleTick + 1) % 3;
+    if (this._reticleTick !== 0) return;
+    const hit = this._pickInteractable();
     this.reticle.classList.toggle('active', !!hit);
     this.ui.setPrompt(hit ? this.currentLevel.getInteractPrompt?.(hit.object, hit.distance) : null);
+  }
+
+  // What the player is aiming at. The exact ray under the crosshair first; if it misses, aim
+  // assist: anything usable within a few degrees of the crosshair (more for big things), in reach
+  // and not behind a wall. So aiming at an object's floating marker, or just beside a small thing
+  // like the brick, still works. (Objects marked userData.noAimAssist, like the relay rings,
+  // where you must pick one ring, need the exact ray.)
+  _pickInteractable() {
+    const level = this.currentLevel;
+    const cam = this.camera.instance;
+    const targets = level.interactables || [];
+    this.raycaster.setFromCamera(this.center, cam);
+    const hit = this.raycaster.intersectObjects(targets, true)[0];
+    if (hit) return hit;
+
+    const dir = cam.getWorldDirection(this._aimDir || (this._aimDir = new THREE.Vector3()));
+    const box = this._aimBox || (this._aimBox = new THREE.Box3());
+    const centre = this._aimCentre || (this._aimCentre = new THREE.Vector3());
+    const to = this._aimTo || (this._aimTo = new THREE.Vector3());
+    let best = null;
+    let bestScore = 1;
+    for (const object of targets) {
+      if (object.userData.noAimAssist) continue;
+      box.setFromObject(object);
+      if (box.isEmpty()) continue;
+      box.getCenter(centre);
+      const radius = box.getSize(to).length() / 2;
+      to.subVectors(centre, cam.position);
+      const distance = to.length();
+      if (distance < 0.01 || distance > this.raycaster.far) continue;
+      const allowed = Math.max(THREE.MathUtils.degToRad(8), Math.atan(radius / distance) + THREE.MathUtils.degToRad(4));
+      const score = to.angleTo(dir) / allowed;
+      if (score >= bestScore) continue;
+      const reach = Math.max(0, distance - radius * 0.5);
+      if (level.canInteract?.(object, reach) === false) continue;
+      best = { object, distance: reach, point: centre.clone() };
+      bestScore = score;
+    }
+    // not through walls (except things reached round an obstacle, like the cell door's handle)
+    if (best && !best.object.userData.noLineOfSight && level._clearLineTo &&
+        !level._clearLineTo(best.point, Math.max(0, best.distance - 0.1))) return null;
+    return best;
   }
 
   // Interact with whatever is under the reticle (click or E)
   tryInteract(options = {}) {
     // Something in Voss's hands (the cell's brick): click throws it, E drops it
     if (this.currentLevel.handleHeldItem?.(options)) return;
-    this.raycaster.setFromCamera(this.center, this.camera.instance);
-    const targets = this.currentLevel.interactables || [];
-    const hit = this.raycaster.intersectObjects(targets, true)[0];
+    const hit = this._pickInteractable();
     if (!hit) return;
     if (this.currentLevel.canInteract?.(hit.object, hit.distance) === false) return;
     this.currentLevel.onInteract?.(hit.object, options);
@@ -964,6 +1047,7 @@ export class Game {
 
     this.currentLevel.dispose();
     this.currentLevel = new Level1(this.scene, this.camera.instance);
+    if (this.perf) this.currentLevel.setQuality(this.perf.current);   // keep the quality the machine settled on
     this.controls.level = this.currentLevel;
     this._wireLevel();
     this.hud.setTorch(false, false);
@@ -1083,6 +1167,12 @@ export class Game {
     level.setStress(0);
     this.puzzle.reset({ timeLimit: this._puzzleSeconds() });
     this.audio.startHum();
+
+    // ...and a hint on the new circuit: the first junctions to turn are marked. After the first
+    // failure ARIA explains it (the second time her line above already has the advice).
+    const marks = PUZZLE_HINT_TILES[Math.min(level.failures, PUZZLE_HINT_TILES.length - 1)];
+    if (marks) this.puzzle.showHint(marks, PUZZLE_HINT_SECONDS);
+    if (level.failures === 1) await this.ariaSays(ARIA_PUZZLE_LINES.hint1, { pauseCountdown: true });
   }
 
   // Called from the click that completed the circuit, so the mouse can be

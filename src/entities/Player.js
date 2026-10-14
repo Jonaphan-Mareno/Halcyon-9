@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createGLTFLoader } from '../core/loaders.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 // Voss, the scientist (human_scientist.glb, built in Blender from cvg.blend).
@@ -45,7 +45,7 @@ const LOOK_SMOOTHING = 10;
 
 const FADE = 0.2;
 
-// Same banding as the level shader (Shaders.js): three hard steps of light
+// The team's toon banding (level 1's shader used it before the habitat restyle): three hard steps of light
 export function makeToonRamp() {
   const data = new Uint8Array([70, 70, 70, 110, 190, 255]);
   const tex = new THREE.DataTexture(data, data.length, 1, THREE.RedFormat);
@@ -185,7 +185,7 @@ export class Player {
   }
 
   async load() {
-    const gltf = await new GLTFLoader().loadAsync(MODEL);
+    const gltf = await createGLTFLoader().loadAsync(MODEL);
     const ramp = makeToonRamp();
     const materials = new Map();
     const toon = (m) => {

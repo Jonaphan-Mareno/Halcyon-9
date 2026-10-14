@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createGLTFLoader } from '../core/loaders.js';
 
 // ARIA's 3D face, modelled in Blender (aria-head.glb) with morph targets:
 // jaw_open, mouth_smile, mouth_pucker, mouth_wide, blink, brow_up, brow_down.
@@ -90,7 +90,7 @@ export class AriaHead {
 
   // Resolves when the model is loaded, rejects if it cannot be
   async load() {
-    const gltf = await new GLTFLoader().loadAsync(HEAD_MODEL);
+    const gltf = await createGLTFLoader().loadAsync(HEAD_MODEL);
 
     // Find the head mesh (the one with morph targets)
     gltf.scene.traverse((child) => {

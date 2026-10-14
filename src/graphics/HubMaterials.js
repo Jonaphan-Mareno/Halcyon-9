@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PARALLAX_GLSL } from './parallax.js';
 
 // Textures and shaders for the level 2 hub.
 //
@@ -149,22 +150,24 @@ function paintFloor(ctx, mode, seed) {
   const T = 128;
   for (let ty = 0; ty < SIZE / T; ty++) {
     for (let tx = 0; tx < SIZE / T; tx++) {
-      const v = albedo ? 0.46 + rand() * 0.08 : 0.5;
+      // (the random number is drawn in both maps, so their hatches land on the same tiles)
+      const shade = rand();
+      const v = albedo ? 0.46 + shade * 0.08 : 0.5;
       ctx.fillStyle = gray(v);
       ctx.fillRect(tx * T + 2, ty * T + 2, T - 4, T - 4);
       if (rand() < 0.12) {
         const cx = tx * T + T / 2, cy = ty * T + T / 2;
-        ctx.strokeStyle = albedo ? gray(0.22) : gray(0.3);
+        ctx.strokeStyle = albedo ? gray(0.22) : gray(0.08);
         ctx.lineWidth = 5;
         ctx.beginPath(); ctx.arc(cx, cy, T * 0.28, 0, Math.PI * 2); ctx.stroke();
-        ctx.fillStyle = albedo ? gray(0.34) : gray(0.42);
+        ctx.fillStyle = albedo ? gray(0.34) : gray(0.36);
         ctx.beginPath(); ctx.arc(cx, cy, T * 0.2, 0, Math.PI * 2); ctx.fill();
       }
     }
   }
   for (let c = 0; c <= SIZE; c += T) {
-    ctx.strokeStyle = albedo ? gray(0.16) : gray(0.2);
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = albedo ? gray(0.16) : gray(0.05);
+    ctx.lineWidth = albedo ? 3 : 4;
     wrapped(ctx, (ox, oy) => {
       ctx.beginPath(); ctx.moveTo(c + ox, oy); ctx.lineTo(c + ox, SIZE + oy); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(ox, c + oy); ctx.lineTo(SIZE + ox, c + oy); ctx.stroke();
@@ -340,6 +343,83 @@ function paintWall(ctx, mode, seed) {
   fineScratches(ctx, rand, 8, albedo ? 'rgba(0,0,0,0.05)' : 'rgba(60,60,60,0.2)', 40);
 }
 
+// cast concrete wall (one tile = 2.4 m): mottled grey, pores, faint damp streaks, the seams of
+// the formwork panels and the rows of tie holes they leave behind
+function paintConcrete(ctx, mode, seed) {
+  const rand = rng(seed), albedo = mode === 'albedo';
+  ctx.fillStyle = gray(albedo ? 0.66 : 0.5);
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  softBlobs(ctx, rand, 26, 30, 140, albedo ? 'rgba(0,0,0,0.07)' : 'rgba(0,0,0,0.05)');
+  softBlobs(ctx, rand, 18, 30, 120, albedo ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.05)');
+  // damp streaks running down from the seams
+  if (albedo) {
+    for (let i = 0; i < 9; i++) {
+      const x = rand() * SIZE, w = 6 + rand() * 18, len = 80 + rand() * 260, y = rand() * SIZE;
+      wrapped(ctx, (ox, oy) => {
+        const g = ctx.createLinearGradient(0, y + oy, 0, y + oy + len);
+        g.addColorStop(0, 'rgba(20,24,28,0)');
+        g.addColorStop(0.3, 'rgba(20,24,28,0.08)');
+        g.addColorStop(1, 'rgba(20,24,28,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(x + ox - w / 2, y + oy, w, len);
+      });
+    }
+  }
+  paintNoise(ctx, albedo ? 0.07 : 0.25, rand);
+  // pores: tiny air bubbles in the surface
+  for (let i = 0; i < 1600; i++) {
+    const x = rand() * SIZE, y = rand() * SIZE, r = 0.5 + rand() * 1.4;
+    ctx.fillStyle = albedo ? 'rgba(30,32,36,0.45)' : gray(0.2, 0.8);
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  // formwork seams: two panels across, one down
+  ctx.fillStyle = albedo ? 'rgba(25,28,32,0.35)' : gray(0.32);
+  for (const x of [0, SIZE / 2]) { ctx.fillRect(x - 1.5, 0, 3, SIZE); }
+  ctx.fillRect(0, -1.5, SIZE, 3);
+  ctx.fillRect(0, SIZE - 1.5, SIZE, 3);
+  // tie holes: a 4 x 4 grid, every 0.6 m
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      const x = (i + 0.5) * SIZE / 4, y = (j + 0.5) * SIZE / 4;
+      ctx.fillStyle = albedo ? 'rgba(255,255,255,0.10)' : gray(0.46);
+      ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = albedo ? 'rgba(18,20,24,0.85)' : gray(0.08);
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+// troweled concrete floor (one tile = 3 m): smoother, scuffed, stained, a saw-cut joint and a
+// few hairline cracks
+function paintConcreteFloor(ctx, mode, seed) {
+  const rand = rng(seed), albedo = mode === 'albedo';
+  ctx.fillStyle = gray(albedo ? 0.64 : 0.5);
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  softBlobs(ctx, rand, 20, 40, 170, albedo ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.03)');
+  softBlobs(ctx, rand, 14, 30, 140, albedo ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.03)');
+  softBlobs(ctx, rand, 5, 20, 60, albedo ? 'rgba(10,12,14,0.14)' : 'rgba(0,0,0,0.02)');   // stains
+  paintNoise(ctx, albedo ? 0.05 : 0.14, rand);
+  for (let i = 0; i < 500; i++) {
+    const x = rand() * SIZE, y = rand() * SIZE;
+    ctx.fillStyle = albedo ? 'rgba(30,32,36,0.35)' : gray(0.3, 0.7);
+    ctx.fillRect(x, y, 1.2, 1.2);
+  }
+  fineScratches(ctx, rand, 30, albedo ? 'rgba(255,255,255,0.07)' : 'rgba(70,70,70,0.4)', 50);
+  // hairline cracks: short wandering lines
+  ctx.strokeStyle = albedo ? 'rgba(20,22,26,0.55)' : gray(0.2);
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    let x = rand() * SIZE, y = rand() * SIZE, a = rand() * Math.PI * 2;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    for (let k = 0; k < 14; k++) { a += (rand() - 0.5) * 1.1; x += Math.cos(a) * 8; y += Math.sin(a) * 8; ctx.lineTo(x, y); }
+    ctx.stroke();
+  }
+  // saw-cut joints along the tile edges
+  ctx.fillStyle = albedo ? 'rgba(20,22,26,0.6)' : gray(0.18);
+  ctx.fillRect(0, 0, SIZE, 2);
+  ctx.fillRect(0, 0, 2, SIZE);
+}
+
 function makeTexture(paint, mode, seed, srgb) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = SIZE;
@@ -388,6 +468,19 @@ function pack(albedoTex, heightTex) {
   return tex;
 }
 
+// Real soil for every planter, bed and pot: Poly Haven's Farm Soil (Amal Kumar, CC0, a 2 m
+// scan). Packed offline the same way as the drawn textures: colour in RGB, the scan's
+// displacement in alpha (contrast stretched, then scaled so the clods' tops sit at 0.52, the
+// level parallaxFloor treats as the surface). Loaded only when a model has soil (level 1 has
+// none), in the background: the planters show plain soil colour for the moment before it arrives.
+function loadSoil() {
+  const tex = new THREE.TextureLoader().load('./assets/textures/soil_farm.webp');
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;   // (RGB only; the alpha depth stays linear)
+  tex.anisotropy = 8;
+  return { albedo: tex, height: tex, packed: tex };
+}
+
 export function createHubTextures() {
   const sets = {
     plate: { albedo: makeTexture(paintPlate, 'albedo', 11, true), height: makeTexture(paintPlate, 'height', 11, false) },
@@ -398,7 +491,9 @@ export function createHubTextures() {
     paper: { albedo: makeTexture(paintPaper, 'albedo', 43, true), height: makeTexture(paintPaper, 'height', 43, false) },
     label: { albedo: makeTexture(paintLabel, 'albedo', 47, true), height: makeTexture(paintLabel, 'height', 47, false) },
     brushed: { albedo: makeTexture(paintBrushed, 'albedo', 53, true), height: makeTexture(paintBrushed, 'height', 53, false) },
-    wall: { albedo: makeTexture(paintWall, 'albedo', 59, true), height: makeTexture(paintWall, 'height', 59, false) }
+    wall: { albedo: makeTexture(paintWall, 'albedo', 59, true), height: makeTexture(paintWall, 'height', 59, false) },
+    concrete: { albedo: makeTexture(paintConcrete, 'albedo', 61, true), height: makeTexture(paintConcrete, 'height', 61, false) },
+    concreteFloor: { albedo: makeTexture(paintConcreteFloor, 'albedo', 67, true), height: makeTexture(paintConcreteFloor, 'height', 67, false) }
   };
   for (const set of Object.values(sets)) set.packed = pack(set.albedo, set.height);
   return sets;
@@ -413,7 +508,7 @@ const SURFACES = {
   rust: { kind: 'plate', tile: 3.0, bump: 1.6 },
   pipe_black: { kind: 'plate', tile: 1.2, bump: 0.8 },
   accent: { kind: 'plate', tile: 2.0, bump: 0.6 },
-  floor_dark: { kind: 'floor', tile: 4.0, bump: 1.2 },
+  floor_dark: { kind: 'floor', tile: 4.0, bump: 1.2, depth: 0.04 },   // depth: parallax-mapped grooves (m)
   cont_red: { kind: 'plate', tile: 3.0, bump: 1.4 },
   cont_blue: { kind: 'plate', tile: 3.0, bump: 1.4 },
   cont_mustard: { kind: 'plate', tile: 3.0, bump: 1.4 },
@@ -436,7 +531,9 @@ const SURFACES = {
   paper: { kind: 'paper', tile: 0.3, bump: 0 },
   label: { kind: 'label', tile: 0.16, bump: 0 },
   steel: { kind: 'brushed', tile: 0.3, bump: 0.4 },
-  lab_wall: { kind: 'wall', tile: 2.2, bump: 0.25 }
+  lab_wall: { kind: 'wall', tile: 2.2, bump: 0.25 },
+  // the photo carries the soil's colour, so the material colour is lifted to show it as is
+  soil: { kind: 'soil', tile: 1.2, bump: 1.6, depth: 0.03, color: 0xd2ccc6 }
 };
 
 // How the light flows in each glowing material (GLSL expression giving a multiplier)
@@ -468,22 +565,26 @@ function addVertexPosition(shader) {
 // Turn one of the model's materials into its textured, bump-mapped version
 function texturedMaterial(source, spec, textures) {
   const mat = new THREE.MeshStandardMaterial({
-    color: source.color.clone(),
+    color: spec.color !== undefined ? new THREE.Color(spec.color) : source.color.clone(),
     roughness: source.roughness,
     metalness: source.metalness,
     name: source.name
   });
+  if (spec.kind === 'soil' && !textures.soil) textures.soil = loadSoil();
   const tex = textures[spec.kind];
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uAlb = { value: tex.packed };
     shader.uniforms.uTile = { value: spec.tile };
     shader.uniforms.uBump = { value: spec.bump };
+    shader.uniforms.uDepth = { value: spec.depth || 0 };
     addVertexPosition(shader);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>${POS_VARYING}
         uniform sampler2D uAlb;            // colour in RGB, height in alpha
         uniform float uTile;
         uniform float uBump;
+        uniform float uDepth;
+        ${PARALLAX_GLSL}
         vec4 triSample(sampler2D t, vec3 p, vec3 w) {
           vec4 c = vec4(0.0);
           if (w.x > 0.02) c += texture2D(t, p.zy) * w.x;
@@ -506,7 +607,16 @@ function texturedMaterial(source, spec, textures) {
         triW = max(triW - 0.02, 0.0);
         triW /= (triW.x + triW.y + triW.z);
         vec3 triP = vTriPos / uTile;
-        vec4 triTex = triSample(uAlb, triP, triW);
+        vec4 triTex;
+        if (uDepth > 0.0 && triW.y > 0.9 && vTriNrm.y > 0.0) {
+          // a floor: parallax depth in the grooves, which are darker too
+          vec3 toEye = cameraPosition - vTriPos;
+          float eyeDist = length(toEye);
+          triTex = texture2D(uAlb, parallaxFloor(uAlb, triP.xz, toEye / eyeDist, uDepth / uTile, eyeDist));
+          diffuseColor.rgb *= 1.0 - 0.5 * pomDepth(triTex);
+        } else {
+          triTex = triSample(uAlb, triP, triW);
+        }
         vec3 triAlb = triTex.rgb;
         float triH = triTex.a;
         diffuseColor.rgb *= triAlb * 1.45;`)
@@ -516,6 +626,13 @@ function texturedMaterial(source, spec, textures) {
         normal = triPerturb(-vViewPosition, normal, vec2(dFdx(triH), dFdy(triH)) * uBump, faceDirection);`);
   };
   return mat;
+}
+
+// A textured material straight from a surface description ({ kind, tile, bump, color, rough,
+// metal }, as in levels/level1Look.js), for a model made with another level's surfaces
+export function surfaceMaterial(spec, textures, name = '') {
+  const source = { color: new THREE.Color(spec.color ?? 0xffffff), roughness: spec.rough ?? 0.5, metalness: spec.metal ?? 0, name };
+  return texturedMaterial(source, spec, textures);
 }
 
 // Glowing materials keep their colour but their light flows

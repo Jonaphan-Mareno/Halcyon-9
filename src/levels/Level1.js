@@ -1,17 +1,36 @@
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { createGLTFLoader } from '../core/loaders.js';
 import { Shaders } from "../graphics/Shaders";
 import { AriaManager } from "../entities/AriaManager.js";
 import { Sparks } from "../effects/Sparks.js";
 import { RingPuzzle } from "../entities/RingPuzzle.js";
+import { createHubTextures } from "../graphics/HubMaterials.js";
+import { surfaceFor, SURFACE } from "./level1Look.js";
+import { createBrickMaps } from "./brickTexture.js";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { MonitorWall } from "./MonitorWall.js";
+import { makeLiftScreen } from "./liftCabin.js";
 
 // Must match MAX_LIGHTS in Shaders.js (the room's 8 lights + the flashlight)
 const MAX_LIGHTS = 9;
 
 // Brightness of each room light at full power. Before the generator is fixed
 // the lights sit at DIM_LEVEL of this, except two emergency lights that stutter.
-const LIGHT_FULL = 5;
+const LIGHT_FULL = 6.5;
 const DIM_LEVEL = 0.04;
+
+// Ambient light (the habitat look): with the power out only a faint navy glow, at full power
+// the soft bright fill of level 2's atrium, from the ceiling above and the floor below
+const AMBIENT_DEAD = { sky: new THREE.Color(0x0b1220).multiplyScalar(0.5), ground: new THREE.Color(0x05070a).multiplyScalar(0.5) };
+const AMBIENT_LIT = { sky: new THREE.Color(0xdfe9f2).multiplyScalar(0.34), ground: new THREE.Color(0x8a8f96).multiplyScalar(0.3) };
+const ENV_DEAD = 0.05;
+// Only the room lights nearest the camera are shaded per pixel: that loop is most of the
+// shader's cost on integrated graphics. The ceiling lights hang 6.5 m up and fall off softly,
+// so the others are an even wash over what is in view: added to the ambient light instead,
+// at about what one gives at a typical distance.
+const ROOM_PIXEL_LIGHTS = 4;
+const DROPPED_LIGHT_AMBIENT = 0.03;
+const ENV_LIT = 0.6;
 
 // Flashlight: a spotlight that follows the camera once the torch is picked up
 const FLASH_INTENSITY = 26;
@@ -43,10 +62,14 @@ const WALL_SCREEN_NAMES = ['Monitor_wall_01', 'Sphere008'];
 // controlroom.glb and walking out of the door leads straight into the control room.
 const CELL_MODEL = './assets/models/cell.glb';
 const CELL_LIGHT_COLOR = 0xff4a30;   // the red emergency light (the cell's only light)
-const CELL_LIGHT_BASE = 1;          // its brightness and how far it pulses
-const CELL_LIGHT_PULSE = 2;
+// Its brightness and how far it pulses. (It used to swing from -1 to 3: below zero it took light
+// away, and the cell went pitch black for part of every pulse. Now it never drops under 1.7.)
+const CELL_LIGHT_BASE = 2.5;
+const CELL_LIGHT_PULSE = 0.8;
+const CELL_GLOW = new THREE.Color(0.05, 0.008, 0.006);   // a faint red glow over the whole cell
 const CELL_LIGHT_HEIGHT = 1;
 const BRICK_RANGE = 3;               // how close you must be to pick it up
+const BRICK_SIZE = [0.25, 0.085, 0.12];   // a real house brick (a touch larger, so it is easy to spot)
 const BRICK_HOLD_DISTANCE = 1.4;
 const BRICK_THROW_SPEED = 15;
 const GRAVITY = 9.8;
@@ -160,6 +183,7 @@ export class Level1{
     this.brick = null;
     this.brickHeld = false;
     this.brickFlying = false;
+    this.brickDone = false;        // true once Voss has left the cell: the brick stays put
     this.onBrickPickedUp = null;   // set by the Game (shows a hint)
     this.onWindowBroken = null;    // set by the Game (optional)
     this.onHandleTurned = null;    // set by the Game (sound)
@@ -193,8 +217,25 @@ export class Level1{
     this.power = 0;
     this.powerTarget = 0;
 
+    // Shared by every level material: one update a frame changes them all
+    this._shared = {
+      uPower: { value: 0 },
+      uTime: { value: 0 },
+      numLights: { value: 0 },
+      lightViewPositions: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3()) },
+      lightViewDirs: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3(0, -1, 0)) },
+      lightCones: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector2(-2, -2)) },
+      lightColors: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Color()) },
+      lightIntensities: { value: new Array(MAX_LIGHTS).fill(0) }
+    };
+    this._hemiSky = { value: AMBIENT_DEAD.sky.clone() };
+    this._hemiGround = { value: AMBIENT_DEAD.ground.clone() };
+    this._envStrength = { value: ENV_DEAD };
+    this._textures = createHubTextures();
+
     this.buildRoom();
     this.addLighting();
+    this.scene.onBeforeRender = (renderer, scene, camera) => this._lightsToView(camera);
 
     // Initialize ARIA System globally for this level
     this.ariaManager = new AriaManager(this.scene);
@@ -248,10 +289,16 @@ export class Level1{
 
   // The look shared by everything in the level: the team's toon shader, driven
   // by the level's lights. Carries over textures from the GLB material.
-  _makeLevelMaterial(originalMat, stackLayer = -1) {
-    const originalColor = originalMat.color
-      ? originalMat.color.clone()
-      : new THREE.Color(0xffffff);
+  //
+  // `surface` (from level1Look.js) gives it the habitat look: a colour, a world-mapped texture,
+  // roughness and gloss. Without one the GLB's own colour is kept.
+  _makeLevelMaterial(originalMat, stackLayer = -1, surface = null) {
+    const originalColor = surface
+      ? new THREE.Color(surface.color)
+      : originalMat.color
+        ? originalMat.color.clone()
+        : new THREE.Color(0xffffff);
+    const tex = surface && surface.kind ? this._textures[surface.kind].packed : null;
 
     // Carry the GLB material's textures into the custom shader so maps
     // baked in Blender show up without extra wiring
@@ -274,14 +321,44 @@ export class Level1{
         uvRepeat: { value: new THREE.Vector2(1, 1) },
         glowColor: { value: new THREE.Color(0, 0, 0) },
         glowAmount: { value: 0 },
-        uPower: { value: this.power },
-        uTime: { value: 0 },
-        numLights: { value: 0 },
-        lightPositions: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3()) },
-        lightDirs: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3(0, -1, 0)) },
-        lightCones: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector2(-2, -2)) },
-        lightColors: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Color()) },
-        lightIntensities: { value: new Array(MAX_LIGHTS).fill(0) }
+        // the lights, power and time are the same for every material: shared, set once a frame
+        ...this._shared,
+        triTex: { value: tex },
+        hasTri: { value: tex ? 1 : 0 },
+        triTile: { value: surface?.tile ?? 1 },
+        triBump: { value: surface?.bump ?? 0 },
+        roughness: { value: surface?.rough ?? originalMat.roughness ?? 0.6 },
+        metalness: { value: surface?.metal ?? Math.min(originalMat.metalness ?? 0, 0.5) },
+        shellMode: { value: surface?.shell ? 1 : 0 },
+        bands: { value: surface?.bands ? 1 : 0 },
+        floorTex: { value: this._textures[surface?.floorKind ?? 'floor'].packed },
+        floorTile: { value: surface?.floorTile ?? 4 },
+        floorRough: { value: surface?.floorRough ?? 0.3 },
+        floorDepth: { value: surface?.floorDepth ?? 0.04 },
+        floorColor: { value: new THREE.Color(surface?.floorColor ?? 0xffffff) },
+        ceilColor: { value: new THREE.Color(surface?.ceilColor ?? 0xffffff) },
+        hasOuter: { value: surface?.outerKind ? 1 : 0 },
+        shellCentre: { value: new THREE.Vector3() },
+        outerTex: { value: this._textures[surface?.outerKind ?? 'wall'].packed },
+        outerColor: { value: new THREE.Color(surface?.outerColor ?? 0xffffff) },
+        hasZone: { value: 0 },
+        zoneMin: { value: new THREE.Vector3() },
+        zoneMax: { value: new THREE.Vector3() },
+        zoneTex: { value: this._textures.concrete.packed },
+        zoneColor: { value: new THREE.Color(0xffffff) },
+        hemiSky: this._hemiSky,
+        hemiGround: this._hemiGround,
+        envStrength: this._envStrength
+      },
+      // Only the features this material uses are compiled in (see Shaders.js)
+      defines: {
+        ...(tex ? { USE_TRI: '' } : {}),
+        ...(surface?.shell ? { SHELL: '' } : {}),
+        ...(surface?.outerKind ? { SHELL_OUTER: '' } : {}),
+        ...(surface?.shell && (surface?.floorDepth ?? 0.04) > 0 ? { PARALLAX: '' } : {}),
+        ...(map ? { HAS_MAP: '' } : {}),
+        ...(normalMap ? { HAS_NORMALMAP: '' } : {}),
+        ...(emissiveMap ? { HAS_EMISSIVEMAP: '' } : {})
       },
       // GLB materials are all double-sided; the default FrontSide would
       // cull wall/panel faces seen from behind and make them vanish
@@ -301,10 +378,10 @@ export class Level1{
 
   async buildRoom(){
     try {
-      const gltfLoader = new GLTFLoader();
+      const gltfLoader = createGLTFLoader();
       const [roomGlb, cellGlb] = await Promise.all([
         gltfLoader.loadAsync('./assets/models/controlroom.glb'),
-        new GLTFLoader().loadAsync(CELL_MODEL).catch((e) => {
+        createGLTFLoader().loadAsync(CELL_MODEL).catch((e) => {
           console.error('Failed to load cell.glb; starting in the control room:', e);
           return null;
         })
@@ -355,7 +432,19 @@ export class Level1{
           const stackMatch = cleanName.match(/^Plane0(6[6-9]|7[01])$/);
           const stackLayer = stackMatch ? Number(cleanName.slice(-2)) - 66 : -1;
 
-          child.material = this._makeLevelMaterial(child.material, stackLayer);
+          // Static furniture with the same surface shares one material: about 200 near-identical
+          // materials made the renderer re-send every uniform for each mesh (CPU time per frame).
+          // Meshes keeping their own colours (glowing rings, screens, the puzzle pad...) still get
+          // their own, as their materials are changed while playing.
+          const surface = surfaceFor(cleanName, child.material);
+          const plain = surface && stackLayer < 0 && !child.material.map && !child.material.normalMap && !child.material.emissiveMap;
+          if (plain) {
+            this._surfaceMats = this._surfaceMats || new Map();
+            if (!this._surfaceMats.has(surface)) this._surfaceMats.set(surface, this._makeLevelMaterial(child.material, -1, surface));
+            child.material = this._surfaceMats.get(surface);
+          } else {
+            child.material = this._makeLevelMaterial(child.material, stackLayer, surface);
+          }
 
           // The generator's glowing rings (Circle001-004: cyan, green, cyan and a
           // green base ring). Unlit by default, they glow in their own colour so
@@ -405,6 +494,8 @@ export class Level1{
       // lights and with ARIA's screen renamed. Both are repaired here rather
       // than in Blender so the level survives the next export.
       this._dedupeLights();
+      this._buildFixtures();
+      try { this.monitorWall = new MonitorWall(this); } catch (e) { console.error('Monitor wall failed to build:', e); }
       this._setUpCell();
 
       // Collect monitor screens from the 3D model
@@ -417,6 +508,7 @@ export class Level1{
         if (screen) this.ariaManager.pinMonitor(screen);
         this.wallMonitor = this.ariaManager.pinnedMonitor;
       }
+      this._buildLiftScreen();
 
       this._measureGenerator();
       if (this.wallMonitor) new THREE.Box3().setFromObject(this.wallMonitor).getCenter(this._monitorCentre);
@@ -430,6 +522,7 @@ export class Level1{
       this._rebuildInteractables();
       this._loadTorch();
       this._buildRelay();
+      if (this._quality) this.setQuality(this._quality);
 
       // Populate the light uniforms right away: update() only runs while
       // PLAYING, so otherwise the room pops from ambient-only to lit on start
@@ -573,6 +666,39 @@ export class Level1{
     this.lights = kept;
   }
 
+  // A glowing ceiling panel at each room light, so you can see the lights themselves: dead
+  // (or stuttering) while the power is out, then switching on one by one when it returns.
+  // Each is placed flush under the ceiling straight above its light; a light with no ceiling
+  // close above it (the far "Sun") gets none.
+  _buildFixtures() {
+    this._fixtures = [];
+    const up = new THREE.Vector3(0, 1, 0);
+    const frameGeo = new THREE.BoxGeometry(2.0, 0.08, 0.62);
+    const panelGeo = new THREE.BoxGeometry(1.8, 0.02, 0.44);
+    const frameMat = this._makeLevelMaterial({}, -1, SURFACE.softBlack);
+    const pos = new THREE.Vector3();
+    this.lights.forEach((light, i) => {
+      if (!light.isPointLight) return;
+      light.getWorldPosition(pos);
+      // (one panel per spot: two lights hang almost together by the lift)
+      if (this._fixtures.some((fx) => Math.hypot(fx.panel.position.x - pos.x, fx.panel.position.z - pos.z) < 1.5)) return;
+      // from a little below: some lights sit right at the ceiling
+      this._rc.set(this._tmpA.set(pos.x, pos.y - 0.6, pos.z), up);
+      this._rc.far = 1.4;
+      const hit = this._rc.intersectObject(this.room, true)[0];
+      if (!hit) return;
+      const y = hit.point.y;
+      const frame = new THREE.Mesh(frameGeo, frameMat);
+      frame.position.set(pos.x, y - 0.04, pos.z);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false });
+      const panel = new THREE.Mesh(panelGeo, mat);
+      panel.position.set(pos.x, y - 0.085, pos.z);
+      this.scene.add(frame, panel);
+      this._fixtures.push({ index: i, mat, frame, panel });
+    });
+    this._rc.far = Infinity;
+  }
+
   // Where the glowing rings sit on the generator: sparks fly from around here
   _measureGenerator() {
     const box = new THREE.Box3();
@@ -611,7 +737,7 @@ export class Level1{
   // The torch, modelled in Blender, lying on the floor near ARIA
   async _loadTorch() {
     try {
-      const glb = await new GLTFLoader().loadAsync('./assets/models/torch.glb');
+      const glb = await createGLTFLoader().loadAsync('./assets/models/torch.glb');
       const model = glb.scene;
       model.traverse((child) => {
         if (child.isMesh) child.material = this._makeLevelMaterial(child.material);
@@ -700,7 +826,7 @@ onRingPuzzleComplete() {
     if (this.elevatorConsoleScreen && this.doorOpened && !this.elevatorRiding) {
       this._interactables.push(this.elevatorConsoleScreen);
     }
-    if (this.brick && this.brick.visible) this._interactables.push(this.brick);
+    if (this.brick && this.brick.visible && !this.brickDone) this._interactables.push(this.brick);
     // The far-side handle: reachable only once the window is broken, and gone
     // again as soon as the door is moving. Falls back to the door leaf itself
     // if the model has no handle node.
@@ -750,6 +876,19 @@ onRingPuzzleComplete() {
   // mesh from the scene does not free its GPU memory: geometries and
   // materials have to be disposed explicitly.
   dispose() {
+    this.scene.onBeforeRender = () => {};
+    for (const fx of this._fixtures || []) {
+      this.scene.remove(fx.frame, fx.panel);
+      fx.mat.dispose();
+    }
+    this.monitorWall?.dispose();
+    if (this._drain) this.scene.remove(this._drain);
+    if (this._brickMaps) { this._brickMaps.map.dispose(); this._brickMaps.normalMap.dispose(); }
+    for (const set of Object.values(this._textures)) {
+      set.packed.dispose();
+      set.albedo.dispose();
+      set.height.dispose();
+    }
     this.ariaManager?.dispose();
     this.sparks.dispose();
     for (const object of [this.room, this.torch, this.brick, ...this._shards, this.relay?.root, this.ringPuzzle?.hub, this.keypad]) {
@@ -833,8 +972,23 @@ onRingPuzzleComplete() {
 
     // The call panel inside the cabin only becomes usable once the doors are open
     this._rebuildInteractables();
+    // and ARIA can follow Voss onto the lift's screen
+    if (this.liftScreen && this.ariaManager) this.ariaManager.collectMonitors(this.liftScreen);
 
     console.log('Elevator door opening');
+  }
+
+  // ARIA's screen on the lift's back wall (level 2's lift has the same one). It joins her
+  // monitors only once the doors open: until then she would follow Voss onto a screen he cannot
+  // see, as the keypad beside the doors is the nearest place to it.
+  _buildLiftScreen() {
+    const bezelMat = this._surfaceMats?.get(SURFACE.softBlack)
+      || this._makeLevelMaterial(new THREE.MeshStandardMaterial(), -1, SURFACE.softBlack);
+    const parts = makeLiftScreen(this.room, bezelMat);
+    if (!parts) return;
+    this.room.add(parts.bezel, parts.screen);
+    if (this.ariaManager) parts.screen.material = this.ariaManager.idleMaterial;
+    this.liftScreen = parts.screen;
   }
 
   // controlroom.glb ships no "close" clip: each of the two actions runs its door
@@ -1594,6 +1748,28 @@ onRingPuzzleComplete() {
 
     this._buildBrick(spawnPos);
 
+    // The cell's walls are concrete inside and control-room white outside: the shader tells
+    // the two apart by which side of the cell's centre a face looks towards
+    const cellMesh = this._findNode('cell');
+    if (cellMesh?.material?.uniforms?.shellCentre) {
+      const cellBounds = new THREE.Box3().setFromObject(cellMesh);
+      cellBounds.getCenter(cellMesh.material.uniforms.shellCentre.value);
+      // The door wall is the control room's own wall (the cell box is open on that side):
+      // where it faces into the cell it is concrete too
+      const shell = this._findNode('Cube');
+      const u = shell?.material?.uniforms;
+      if (u?.hasZone) {
+        cellBounds.expandByScalar(0.25);
+        u.hasZone.value = 1;
+        shell.material.defines.SHELL_ZONE = '';
+        shell.material.needsUpdate = true;
+        u.zoneMin.value.copy(cellBounds.min);
+        u.zoneMax.value.copy(cellBounds.max);
+        u.zoneColor.value.copy(cellMesh.material.uniforms.baseColor.value);
+      }
+    }
+    this._buildDrain(spawnPos);
+
     // The cell's single light, over the middle of the room
     const cellBox = new THREE.Box3().setFromObject(this._findNode('cell'));
     cellBox.getCenter(this._cellLightPos);
@@ -1637,6 +1813,9 @@ onRingPuzzleComplete() {
     // Swing away from the player: out of the cell (towards -z)
     this._doorOpenAngle = Math.sign(freeX - hingeX) * (Math.PI / 2);
     this.door = door;
+    // Reached through the broken window, so the door between is not "in the way" (aim assist)
+    door.userData.noLineOfSight = true;
+    if (handle) handle.userData.noLineOfSight = true;
     this.doorPivot = pivot;
     this.doorHandle = handle || null;
     if (handle) new THREE.Box3().setFromObject(handle).getCenter(this._handleCentre);
@@ -1700,15 +1879,41 @@ onRingPuzzleComplete() {
     this.window = { glass, source, shards, box, broken: false };
   }
 
+  // A fired clay brick with chipped, rounded edges (see brickTexture.js)
   _buildBrick(spawnPos) {
-    const geo = new THREE.BoxGeometry(0.35, 0.2, 0.2);
-    this.brick = new THREE.Mesh(geo, this._makeLevelMaterial({ color: new THREE.Color(0x888888) }));
+    const geo = new RoundedBoxGeometry(...BRICK_SIZE, 2, 0.01);
+    this._brickMaps = createBrickMaps();
+    this.brick = new THREE.Mesh(geo, this._makeLevelMaterial({
+      color: new THREE.Color(0xffffff), roughness: 0.92, metalness: 0,
+      map: this._brickMaps.map, normalMap: this._brickMaps.normalMap
+    }));
     this.brick.name = 'Brick';
     this.brick.castShadow = true;
     this.scene.add(this.brick);   // not part of the room, so it never blocks the player
 
-    this.brick.position.set(spawnPos.x + 1, this._cellFloorY + 0.1, spawnPos.z - 1);
+    this.brick.position.set(spawnPos.x + 1, this._cellFloorY + BRICK_SIZE[1] / 2, spawnPos.z - 1);
+    this.brick.rotation.y = 0.6;
     this._brickStart.copy(this.brick.position);
+  }
+
+  // A floor drain in the middle of the cell: the only thing in it
+  _buildDrain(spawnPos) {
+    const cellBox = new THREE.Box3().setFromObject(this._findNode('cell'));
+    const centre = cellBox.getCenter(new THREE.Vector3());
+    const steel = this._makeLevelMaterial({}, -1, SURFACE.steel);
+    const dark = this._makeLevelMaterial({ color: new THREE.Color(0x020304), roughness: 0.9 });
+    const drain = new THREE.Group();
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.21, 0.016, 32), steel);
+    const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.018, 32), dark);
+    drain.add(rim, hole);
+    for (let i = -3; i <= 3; i++) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.02, Math.sqrt(0.17 * 0.17 - (i * 0.045) ** 2) * 2), steel);
+      bar.position.x = i * 0.045;
+      drain.add(bar);
+    }
+    drain.position.set(centre.x - 0.6, this._cellFloorY + 0.008, (centre.z + spawnPos.z) / 2 - 0.4);
+    this.scene.add(drain);
+    this._drain = drain;
   }
 
   _pickUpBrick() {
@@ -1822,10 +2027,10 @@ onRingPuzzleComplete() {
   _leaveCell() {
     this.inCell = false;
     this._cellLightTarget = 0;
-    // The brick stays behind in the cell
-    this.brickHeld = false;
-    this.brickFlying = false;
-    this.brick.visible = false;
+    // The brick stays where it lies (dropped if Voss was still carrying it), but can no
+    // longer be picked up
+    if (this.brickHeld) this._dropBrick();
+    this.brickDone = true;
     this._rebuildInteractables();
     this.onLeftCell?.();
   }
@@ -1894,6 +2099,7 @@ onRingPuzzleComplete() {
           this._brickVel.set(0, 0, 0);
           this.brickFlying = false;
           brick.rotation.set(0, brick.rotation.y, 0);
+          brick.position.y = hit.point.y + BRICK_SIZE[1] / 2;
         } else if (normal.y > 0.5 && this._brickVel.y <= 0) {
           // Up-facing but too high to stand on (a handle, a sill): bouncing
           // would buzz on the spot forever, so slide off sideways instead and
@@ -2013,10 +2219,10 @@ onRingPuzzleComplete() {
       m.uniforms.glowColor.value.set(glow);
       return m;
     };
-    const ringMaterial = plain(0x5b6773);
+    const ringMaterial = this._makeLevelMaterial({}, -1, SURFACE.steel);
     const ledMaterial = glowing(0x103040, 0x33e6ff);
     ledMaterial.uniforms.glowAmount.value = 0.55;
-    const boltMaterial = plain(0x2a3037);
+    const boltMaterial = this._makeLevelMaterial({}, -1, SURFACE.softBlack);
     const boltGeometry = new THREE.CylinderGeometry(0.06, 0.06, 0.42, 10);
     const ledGeometry = new THREE.SphereGeometry(0.055, 12, 10);
     const torusGeometry = new THREE.TorusGeometry(RELAY_RADIUS, 0.14, 14, 72);
@@ -2086,6 +2292,7 @@ onRingPuzzleComplete() {
     });
 
     this.relay = { root, rings };
+    root.userData.noAimAssist = true;   // each ring is clicked on its own: no aim assist here
     this.scene.add(root);
     this._rebuildInteractables();
   }
@@ -2287,6 +2494,28 @@ onRingPuzzleComplete() {
     return factor;
   }
 
+  // Cheaper shading for slow machines (PerfMonitor steps through these before lowering the
+  // resolution far): fewer room lights shaded per pixel (the rest go into the ambient), and the
+  // floor's parallax depth off
+  setQuality({ lights = ROOM_PIXEL_LIGHTS, parallax = true } = {}) {
+    this._quality = { lights, parallax };   // (re-applied once the room has loaded)
+    this._pixelLights = lights;
+    for (const mat of this.shaderMaterials) {
+      const u = mat.uniforms.floorDepth;
+      if (!u) continue;
+      if (mat.userData.floorDepth === undefined) mat.userData.floorDepth = u.value;
+      u.value = parallax ? mat.userData.floorDepth : 0;
+    }
+  }
+
+  // The average brightness of the room lights (0 dark .. 1 fully lit)
+  _ambientFactor() {
+    let sum = 0;
+    for (let i = 0; i < this.lights.length; i++) sum += this._lightFactor(i);
+    const f = sum / this.lights.length;
+    return THREE.MathUtils.clamp((f - DIM_LEVEL) / (1 - DIM_LEVEL), 0, 1);
+  }
+
   update(delta, playerPosition, camera) {
     
     this.doorMixer?.update(delta);
@@ -2310,15 +2539,39 @@ onRingPuzzleComplete() {
     const roomCount = Math.min(this.lights.length, MAX_LIGHTS - 1 - (cellLightOn ? 1 : 0));
     let count = 0;
 
-    // Gather light data once per frame instead of once per material
-    for (let i = 0; i < roomCount; i++) {
+    // Gather light data once per frame: the nearest room lights per pixel (the stuttering
+    // emergency lights always, so their flicker shows), the rest into the ambient
+    const eye = camera ? camera.position : (playerPosition || this._tmpC.set(0, 0, 0));
+    // (rebuilt whenever the number of lights changes: the first frames run before the room has loaded)
+    if (!this._lightOrder || this._lightOrder.length !== this.lights.length) {
+      this._lightOrder = this.lights.map(() => ({ key: 0, i: 0 }));
+    }
+    const order = this._lightOrder;
+    for (let i = 0; i < this.lights.length; i++) {
+      this.lights[i].getWorldPosition(this._lightWorldPos);
+      order[i].i = i;
+      order[i].key = this._flicker.has(i) && this.power < 0.99 ? -1 : this._lightWorldPos.distanceToSquared(eye);
+    }
+    order.sort((a, b) => a.key - b.key);
+    const pixelLights = Math.min(roomCount, this._pixelLights ?? ROOM_PIXEL_LIGHTS);
+    const dropped = this._droppedAmbient || (this._droppedAmbient = new THREE.Color());
+    dropped.setRGB(0, 0, 0);
+    for (let k = 0; k < order.length; k++) {
+      const i = order[k].i;
       const light = this.lights[i];
-      light.getWorldPosition(this._lightWorldPos);
-      this._lightWorldPositions[count].copy(this._lightWorldPos);
-      this._lightWorldColors[count].copy(light.color);
-      this._lightWorldIntensities[count] = LIGHT_FULL * this._lightFactor(i);
-      this._lightCones[count].set(-2, -2); // plain point light
-      count++;
+      const intensity = LIGHT_FULL * this._lightFactor(i);
+      if (k < pixelLights) {
+        light.getWorldPosition(this._lightWorldPos);
+        this._lightWorldPositions[count].copy(this._lightWorldPos);
+        this._lightWorldColors[count].copy(light.color);
+        this._lightWorldIntensities[count] = intensity;
+        this._lightCones[count].set(-2, -2); // plain point light
+        count++;
+      } else {
+        dropped.r += light.color.r * intensity * DROPPED_LIGHT_AMBIENT;
+        dropped.g += light.color.g * intensity * DROPPED_LIGHT_AMBIENT;
+        dropped.b += light.color.b * intensity * DROPPED_LIGHT_AMBIENT;
+      }
     }
 
     if (cellLightOn) {
@@ -2359,17 +2612,57 @@ onRingPuzzleComplete() {
       count++;
     }
 
-    for (const mat of this.shaderMaterials) {
-      mat.uniforms.numLights.value = count;
-      mat.uniforms.uPower.value = this.power;
-      mat.uniforms.uTime.value = this.time;
-      for (let i = 0; i < count; i++) {
-        mat.uniforms.lightPositions.value[i].copy(this._lightWorldPositions[i]);
-        mat.uniforms.lightDirs.value[i].copy(this._lightWorldDirs[i]);
-        mat.uniforms.lightCones.value[i].copy(this._lightCones[i]);
-        mat.uniforms.lightColors.value[i].copy(this._lightWorldColors[i]);
-        mat.uniforms.lightIntensities.value[i] = this._lightWorldIntensities[i];
+    this.monitorWall?.update(delta, this.power, this.time);
+
+    // The ceiling panels show their light's brightness
+    if (this._fixtures) {
+      for (const fx of this._fixtures) {
+        const k = this._lightFactor(fx.index);
+        fx.mat.color.setRGB(0.92, 0.97, 1.0).multiplyScalar(0.04 + 0.96 * Math.min(1, k * 1.15));
       }
+    }
+
+    // The ambient fill comes up with the power (and drops out with the lights in a blackout)
+    const lit = this.lights.length ? this._ambientFactor() : 0;
+    this._hemiSky.value.copy(AMBIENT_DEAD.sky).lerp(AMBIENT_LIT.sky, lit);
+    this._hemiGround.value.copy(AMBIENT_DEAD.ground).lerp(AMBIENT_LIT.ground, lit);
+    // in the cell, a faint red glow too, so it is never too dark to find your way
+    if (this._cellLightLevel > 0.01) {
+      this._hemiSky.value.r += CELL_GLOW.r * this._cellLightLevel;
+      this._hemiSky.value.g += CELL_GLOW.g * this._cellLightLevel;
+      this._hemiSky.value.b += CELL_GLOW.b * this._cellLightLevel;
+    }
+    if (this._droppedAmbient) {
+      this._hemiSky.value.add(this._droppedAmbient);
+      this._hemiGround.value.r += this._droppedAmbient.r * 0.5;
+      this._hemiGround.value.g += this._droppedAmbient.g * 0.5;
+      this._hemiGround.value.b += this._droppedAmbient.b * 0.5;
+    }
+    this._envStrength.value = ENV_DEAD + (ENV_LIT - ENV_DEAD) * lit;
+
+    // One set of uniforms for every material (positions go to view space as the scene is drawn,
+    // in _lightsToView)
+    const u = this._shared;
+    u.numLights.value = count;
+    u.uPower.value = this.power;
+    u.uTime.value = this.time;
+    for (let i = 0; i < count; i++) {
+      u.lightCones.value[i].copy(this._lightCones[i]);
+      u.lightColors.value[i].copy(this._lightWorldColors[i]);
+      u.lightIntensities.value[i] = this._lightWorldIntensities[i];
+    }
+  }
+
+  // Light positions and spotlight directions into view space, once per frame for the camera the
+  // scene is being drawn from (the shader would otherwise do it for every pixel). Runs just before
+  // each render, so the camera is exactly where it will be drawn from.
+  _lightsToView(camera) {
+    const u = this._shared;
+    camera.updateMatrixWorld();
+    const view = camera.matrixWorldInverse;
+    for (let i = 0; i < u.numLights.value; i++) {
+      u.lightViewPositions.value[i].copy(this._lightWorldPositions[i]).applyMatrix4(view);
+      u.lightViewDirs.value[i].copy(this._lightWorldDirs[i]).transformDirection(view);
     }
   }
 

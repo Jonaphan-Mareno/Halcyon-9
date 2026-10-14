@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createGLTFLoader } from '../core/loaders.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -9,7 +9,9 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { Physics } from '../core/Physics.js';
 import { PlayerController } from '../player/PlayerController.js';
-import { createHubTextures, applyHubMaterials } from '../graphics/HubMaterials.js';
+import { createHubTextures, applyHubMaterials, surfaceMaterial } from '../graphics/HubMaterials.js';
+import { surfaceFor, SURFACE } from '../levels/level1Look.js';
+import { makeLiftScreen } from '../levels/liftCabin.js';
 import { VideoWindow } from '../graphics/VideoWindow.js';
 import { AriaManager } from '../entities/AriaManager.js';
 import { makeToonRamp, toonFrom } from '../entities/Player.js';
@@ -24,6 +26,16 @@ import '../ui/level2.css';
 // No gameplay yet: that is designed and added after the environment is approved.
 
 const SOLID = ['COL_', 'DOOR_'];
+
+// The lift is level 1's (lift.glb, see levels/liftCabin.js), its origin the middle of the door
+// sill at the front of the frame. Set there, the frame's front corners sit on the curved inside
+// of the wall (radius 17 m) in the middle of the lift opening (south, so +z).
+const LIFT_FRONT_Z = 16.94;
+const LIFT_OPENING = { halfWidth: 2.2, top: 3.62, back: 17.52 };   // a little past the wall's gap
+// Inside the cabin the room's reflected light is turned up (1.5, against the scene's 0.32) in place
+// of a lamp: level 1 lights the cabin with the control room's lamps, and a real light here would
+// be worked out for every pixel on screen (~3 ms a frame on Intel UHD 620)
+const LIFT_INSIDE_FILL = 1.5;
 
 // Glass everywhere (the sea window, railings, the lab's tubes and beakers): dark and one-sided, so
 // it adds reflections without laying a milky white film over what is behind it, and clear face-on
@@ -97,7 +109,8 @@ export class HabitatSession {
     webgl.shadowMap.autoUpdate = false;
     // Performance (measured on Intel UHD 620): 4x MSAA cost ~9 ms a frame, so edges are smoothed
     // by FXAA instead (~1 ms). The glow (bloom) is dropped automatically on slow machines.
-    webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
+    // at most one rendered pixel per screen pixel (Windows display scaling would multiply them)
+    webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
     const size = new THREE.Vector2();
     webgl.getSize(size);
     const pr = webgl.getPixelRatio();
@@ -134,7 +147,7 @@ export class HabitatSession {
 
   // Loads one of the level's models: collision into the physics world, then the game's materials
   async _loadModel(url) {
-    const gltf = await new GLTFLoader().loadAsync(url);
+    const gltf = await createGLTFLoader().loadAsync(url);
     const model = gltf.scene;
     model.updateMatrixWorld(true);
     for (const node of [...model.children]) {
@@ -177,7 +190,7 @@ export class HabitatSession {
     this.hubTextures = this.hubTextures || createHubTextures();
     applyHubMaterials(model, this.hubTextures);
     // the bedrooms take the toon treatment the player wears: the cel banding and cyan rim
-    // of Shaders.js, under this level's own lights. Scoped by material name - VCol.* /
+    // (the team's toon look), under this level's own lights. Scoped by material name - VCol.* /
     // Material.00* are the bedroom set the exporter writes, so the atrium's own materials
     // are untouched. Their paint lives in vertex colours, so those are only enabled for
     // meshes that actually carry a COLOR_0 attribute (the shells have none)
@@ -225,9 +238,13 @@ export class HabitatSession {
     const scene = this.game.scene;
     // Voss's quarter is authored inside l2-atrium.blend (the Bedroom1 collection), so it ships
     // in the atrium model rather than as a separate file
-    const [atrium, lab] = await Promise.all([
+    const [atrium, lab, lift] = await Promise.all([
       this._loadModel('./assets/models/l2-atrium.glb'),
-      this._loadModel('./assets/models/l2-lab.glb')
+      this._loadModel('./assets/models/l2-lab.glb'),
+      createGLTFLoader().loadAsync('./assets/models/lift.glb').catch((e) => {
+        console.error('lift.glb failed to load; arriving in the old atrium lift instead.', e);
+        return null;
+      })
     ]);
     this.atrium = atrium;
     this.lab = lab;
@@ -235,9 +252,13 @@ export class HabitatSession {
     // arrive in the lift, facing the hall (north)
     const spawn = atrium.getObjectByName('SPAWN_Lift').getWorldPosition(new THREE.Vector3());
     this.controls.attach(this.physics, spawn.setY(spawn.y + 0.1), 0);
-    for (const name of ['ELEVATOR_Door_L', 'ELEVATOR_Door_R']) {
-      const n = atrium.getObjectByName(name);
-      if (n) this.doors.push({ node: n, closed: n.position.clone(), open: n.position.clone().add(new THREE.Vector3(name.endsWith('L') ? -1.9 : 1.9, 0, 0)) });
+    if (lift) {
+      this._placeLift(lift.scene, atrium);
+    } else {
+      for (const name of ['ELEVATOR_Door_L', 'ELEVATOR_Door_R']) {
+        const n = atrium.getObjectByName(name);
+        if (n) this.doors.push({ node: n, closed: n.position.clone(), open: n.position.clone().add(new THREE.Vector3(name.endsWith('L') ? -1.9 : 1.9, 0, 0)) });
+      }
     }
 
     // the lab's sliding double doors open as you walk up to them
@@ -314,6 +335,82 @@ export class HabitatSession {
     this.flicker = 0;
   }
 
+  // The lift: the same cabin Voss rode down from the control room, in the control room's own
+  // surfaces, set into the opening in the south wall in place of the atrium's plain cab. Its
+  // doors are the ones that slide open as you arrive, and ARIA is on a screen on its back wall.
+  _placeLift(lift, atrium) {
+    const scene = this.game.scene;
+    for (const name of ['Atrium_LiftCab', 'ELEVATOR_Door_L', 'ELEVATOR_Door_R', 'ARIA_Lift']) {
+      atrium.getObjectByName(name)?.removeFromParent();
+    }
+    lift.position.set(0, 0, LIFT_FRONT_Z);
+    scene.add(lift);
+    lift.updateMatrixWorld(true);
+
+    // level 1's surfaces (white walls, soft black ceiling and frame, the tiled floor, steel
+    // buttons, orange hazard strips); the light strip, blue trim and call panel screen keep
+    // their own colours, as in level 1
+    const mats = new Map();
+    const material = (spec, inside = false) => {
+      const key = spec.kind + spec.color + inside;
+      if (!mats.has(key)) {
+        const m = surfaceMaterial(spec, this.hubTextures);
+        if (inside) {
+          m.envMap = scene.environment;    // (a material's own env map takes its own intensity)
+          m.envMapIntensity = LIFT_INSIDE_FILL;
+        }
+        mats.set(key, m);
+      }
+      return mats.get(key);
+    };
+    const inside = new Set();
+    lift.getObjectByName('ElevatorCabin').traverse((o) => inside.add(o));
+    lift.traverse((o) => {
+      if (!o.isMesh) return;
+      const spec = surfaceFor(o.name.replace(/\./g, ''), o.material);
+      // (not the floor: the sun reaches it, and it would glare)
+      if (spec) o.material = material(spec, inside.has(o) && spec !== SURFACE.floor);
+      o.receiveShadow = true;
+    });
+
+    // the opening in the wall is wider and taller than the lift's door frame: the gap round
+    // it is filled in soft black, so the frame reads as one deep surround
+    const frame = new THREE.Box3().setFromObject(lift.getObjectByName('Door_Frame'));
+    const { halfWidth, top, back } = LIFT_OPENING;
+    const front = frame.min.z + 0.02;
+    const surround = new THREE.Group();
+    surround.name = 'Lift_Surround';
+    const fill = (x0, x1, y0, y1) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, back - front), material(SURFACE.softBlack));
+      m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (front + back) / 2);
+      m.receiveShadow = true;
+      surround.add(m);
+    };
+    fill(frame.max.x - 0.01, halfWidth, 0, top);
+    fill(-halfWidth, frame.min.x + 0.01, 0, top);
+    fill(frame.min.x, frame.max.x, frame.max.y - 0.01, top);
+    scene.add(surround);
+
+    // solid: the cabin, its frame and the surround (the atrium's old cab colliders are left
+    // behind, outside these walls)
+    this.physics.addStaticObject(lift.getObjectByName('ElevatorCabin'));
+    this.physics.addStaticObject(lift.getObjectByName('Door_Frame'));
+    this.physics.addStaticObject(surround);
+
+    // the doors slide apart into the wall (by as much as level 1's door animation moves them)
+    for (const [name, dx] of [['Door_Left', 1.56], ['Door_Right', -1.58]]) {
+      const n = lift.getObjectByName(name);
+      if (n) this.doors.push({ node: n, closed: n.position.clone(), open: n.position.clone().add(new THREE.Vector3(dx, 0, 0)) });
+    }
+
+    const parts = makeLiftScreen(lift, material(SURFACE.softBlack, true));
+    if (parts) {
+      scene.add(parts.bezel);
+      this.liftScreen = parts.screen;
+    }
+    this.lift = lift;
+  }
+
   // ARIA on every monitor (the ARIA_ markers from the model), idling for now. Same face and
   // hologram shader as Level 1; one shared material, so more screens cost almost nothing.
   _addAriaScreens(models) {
@@ -337,6 +434,7 @@ export class HabitatSession {
       else screen.lookAt(0, p.y, 0);
       screens.add(screen);
     }
+    if (this.liftScreen) screens.add(this.liftScreen);
     this.game.scene.add(screens);
     this.aria = new AriaManager(this.game.scene);
     this.aria.collectMonitors(screens);
@@ -498,6 +596,8 @@ export class HabitatSession {
       this.qualityStep = 1;
     } else {
       webgl.setPixelRatio(Math.min(webgl.getPixelRatio(), 0.8));
+      // (the composer keeps its own copy of the pixel ratio: without this the step did nothing)
+      this.composer.setPixelRatio(webgl.getPixelRatio());
       this.composer.setSize(window.innerWidth, window.innerHeight);
       const pr = webgl.getPixelRatio();
       this.fxaa.material.uniforms.resolution.value.set(1 / (window.innerWidth * pr), 1 / (window.innerHeight * pr));

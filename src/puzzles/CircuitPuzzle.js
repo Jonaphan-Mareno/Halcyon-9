@@ -10,10 +10,14 @@
 // battery to each lamp (so it is always solvable), decoy tiles and fuses fill
 // the rest, and then every tile is turned to a random angle.
 //
-// Look: a worn industrial panel, not a toy. Scratched and stained gunmetal
-// plates (procedural grime texture), ribbed rubber-sleeved cables, dim
-// indicator lamps, ceramic fuses with hazard tape. Everything is dark, and the
-// player's torch picks out the area around the mouse.
+// Look: real electrical equipment, not a toy. The tiles are rotary switch
+// modules on a circuit board: flat copper contacts run from each module's hub
+// to copper pads where they meet the next module's. Live copper heats up and
+// current crackles along it (jittering arcs, the odd spark at a joint). Heavy
+// black power cables with copper lugs, ceramic fuses with hazard tape, a
+// grimy gunmetal panel. Everything is dark, and the player's torch picks out
+// the area around the mouse. After a failed attempt ARIA can mark the next
+// switches to turn (showHint).
 //
 // The puzzle owns its overlay, input and drawing; the Game owns the
 // consequences (blackout, damage, ARIA's reactions) and reacts via callbacks.
@@ -45,6 +49,12 @@ const WIRE_COLORS = ['#8c2e2e', '#a8862f', '#56803f', '#3f7894', '#7d4f90'];
 const FUSE_COUNT = 3;
 const MIN_PATH_TILES = 15;       // shorter solutions are regenerated: keeps it a real puzzle
 const FUSE_ZAP_INTERVAL = 1.6;   // seconds between zaps while a fuse stays live
+
+// A repeatable random number in 0..1 for any input (keeps the arcs' shapes steady within a frame)
+const noise = (n) => {
+  const v = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return v - Math.floor(v);
+};
 
 const rotateMask = (mask, turns) => {
   let m = mask;
@@ -164,6 +174,8 @@ export class CircuitPuzzle {
     this.sourceRow = 0;
     this.bulbRows = [0, 1];
     this.bulbLit = [false, false];
+    this.hint = [];        // switches ARIA has marked (showHint)
+    this.hintUntil = 0;
     this.pointer = { x: W / 2, y: H / 2, inside: false };
 
     // Pooled 2D sparks (positions in canvas pixels)
@@ -204,6 +216,7 @@ export class CircuitPuzzle {
     this.timeLeft = timeLimit;
     this.frozen = false;
     this.paused = false;
+    this.hint = [];
     this._generate();
     this._propagate(false);
   }
@@ -570,14 +583,15 @@ export class CircuitPuzzle {
     ctx.fillText('GEN-CORE 02  //  AUXILIARY CIRCUIT', 34, 28);
     this._countdown(ctx);
 
-    // Battery, lamps and the fixed cables linking them to the grid
+    // The circuit board, the battery, the lamps and the cables linking them to the board
+    this._board(ctx);
     this._drawSourceAndBulbs(ctx);
 
-    // The tiles
+    // The switch modules
     const hover = this.pointer.inside ? this._tileAt(this.pointer) : null;
     for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < COLS; x++) {
-        this._drawTile(ctx, this.tiles[y][x], GX + x * TILE, GY + y * TILE, hover && hover.gx === x && hover.gy === y, grime);
+        this._drawTile(ctx, this.tiles[y][x], GX + x * TILE, GY + y * TILE, hover && hover.gx === x && hover.gy === y);
       }
     }
 
@@ -599,6 +613,9 @@ export class CircuitPuzzle {
       ctx.fillRect(0, 0, W, H);
     }
 
+    // ARIA's marks show through the dark
+    this._drawHint(ctx);
+
     // Sparks
     ctx.globalCompositeOperation = 'lighter';
     for (const p of this.particles) {
@@ -615,7 +632,7 @@ export class CircuitPuzzle {
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(170, 185, 180, 0.6)';
     ctx.fillText(
-      'CLICK A TILE TO TURN IT (SHIFT: BACK)  //  POWER BOTH LAMPS  //  KEEP LIVE WIRE AWAY FROM THE FUSES',
+      'CLICK A SWITCH TO TURN IT (SHIFT: BACK)  //  POWER BOTH LAMPS  //  KEEP THE CURRENT AWAY FROM THE FUSES',
       W / 2, H - 28
     );
 
@@ -689,201 +706,351 @@ export class CircuitPuzzle {
     ctx.fillText(`OVERLOAD IN ${this.timeLeft.toFixed(1)}s`, W - 34, 28);
   }
 
-  // A worn gunmetal plate: edges darkened, corner bolts, patch of grime
-  _plate(ctx, x, y, size, tint, grime, tile) {
-    const r = 6;
+  // ---------------------------------------------------------
+  // The board and its switch modules
+  //
+  // Not a grid of game tiles: a circuit board with rotary switch modules mounted on it. Each
+  // module carries flat copper contacts from its hub out to copper pads on the board, where they
+  // meet the next module's. Turning a module turns its contacts. Live copper heats up and current
+  // crackles along it as jittering arcs, with the odd spark at a joint.
+  // ---------------------------------------------------------
+
+  // Dark fibreglass, a faint weave, stencilled column and row marks, mounting holes
+  _board(ctx) {
+    const x0 = GX - 12;
+    const y0 = GY - 12;
+    const w = COLS * TILE + 24;
+    const h = ROWS * TILE + 24;
     ctx.save();
+    ctx.fillStyle = '#030504';
     ctx.beginPath();
-    ctx.roundRect(x + 2, y + 2, size - 4, size - 4, r);
-    const g = ctx.createLinearGradient(x, y, x + size, y + size);
-    g.addColorStop(0, tint[0]);
-    g.addColorStop(1, tint[1]);
+    ctx.roundRect(x0 - 3, y0 - 3, w + 6, h + 6, 8);
+    ctx.fill();
+    const g = ctx.createLinearGradient(x0, y0, x0 + w, y0 + h);
+    g.addColorStop(0, '#14241c');
+    g.addColorStop(1, '#08120d');
     ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.roundRect(x0, y0, w, h, 6);
     ctx.fill();
     ctx.clip();
-    if (tile) ctx.drawImage(grime, tile.grimeX, tile.grimeY, size, size, x, y, size, size);
-    // Edge wear: darker towards the rim
-    const rim = ctx.createRadialGradient(x + size / 2, y + size / 2, size * 0.25, x + size / 2, y + size / 2, size * 0.78);
-    rim.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    rim.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
-    ctx.fillStyle = rim;
-    ctx.fillRect(x, y, size, size);
-    ctx.restore();
-
-    // A thin lit edge top-left and a dark one bottom-right
-    ctx.lineWidth = 1.2;
-    ctx.strokeStyle = 'rgba(200, 215, 220, 0.14)';
-    ctx.beginPath();
-    ctx.moveTo(x + 3, y + size - 9);
-    ctx.lineTo(x + 3, y + 9);
-    ctx.quadraticCurveTo(x + 3, y + 3, x + 9, y + 3);
-    ctx.lineTo(x + size - 9, y + 3);
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
-    ctx.beginPath();
-    ctx.moveTo(x + size - 3, y + 9);
-    ctx.lineTo(x + size - 3, y + size - 9);
-    ctx.quadraticCurveTo(x + size - 3, y + size - 3, x + size - 9, y + size - 3);
-    ctx.lineTo(x + 9, y + size - 3);
-    ctx.stroke();
-    this._bolt(ctx, x + 9, y + 9, 3.2);
-    this._bolt(ctx, x + size - 9, y + 9, 3.2);
-    this._bolt(ctx, x + 9, y + size - 9, 3.2);
-    this._bolt(ctx, x + size - 9, y + size - 9, 3.2);
-  }
-
-  // A heavy rubber-sleeved cable along a path. Dead wires are dull; live wires
-  // have a hot core, a faint bloom and a flicker of current running along them.
-  _cable(ctx, trace, color, powered) {
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    // Drop shadow on the plate
-    ctx.translate(2, 3);
-    trace();
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.lineWidth = 13;
-    ctx.stroke();
-    ctx.translate(-2, -3);
-
-    // Outer sleeve
-    trace();
-    ctx.strokeStyle = '#050607';
-    ctx.lineWidth = 13;
-    ctx.stroke();
-
-    // Insulation
-    if (powered) {
-      ctx.save();
-      ctx.shadowColor = 'rgba(255, 190, 120, 0.9)';
-      ctx.shadowBlur = 12;
-    }
-    trace();
-    ctx.strokeStyle = powered ? shade(color, 1.05) : shade(color, 0.55);
-    ctx.lineWidth = 9;
-    ctx.stroke();
-    if (powered) ctx.restore();
-
-    // Ribbing: short dark dashes across the sleeve
-    trace();
-    ctx.save();
-    ctx.setLineDash([2, 7]);
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
-    ctx.lineWidth = 9;
-    ctx.stroke();
-    ctx.restore();
-
-    // A soft highlight along the top edge of the tube
-    ctx.translate(-1.6, -2);
-    trace();
-    ctx.strokeStyle = powered ? 'rgba(255, 235, 210, 0.42)' : 'rgba(210, 220, 225, 0.15)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.translate(1.6, 2);
-
-    if (powered) {
-      // A hot core and a pulse of current travelling along the wire
-      const buzz = 0.75 + 0.25 * Math.sin(this.time * 40 + color.length);
-      trace();
-      ctx.strokeStyle = `rgba(255, 224, 170, ${0.55 * buzz})`;
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
-      trace();
-      ctx.save();
-      ctx.setLineDash([4, 26]);
-      ctx.lineDashOffset = -this.time * 90;
-      ctx.strokeStyle = 'rgba(200, 235, 255, 0.95)';
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
-
-  _drawTile(ctx, tile, x, y, hovered, grime) {
-    const tint = tile.kind === 'hazard' ? ['#2a1d1d', '#140e0e'] : ['#2d3439', '#15191c'];
-    this._plate(ctx, x, y, TILE, tint, grime, tile);
-
-    if (hovered && tile.kind !== 'hazard' && tile.kind !== 'empty') {
-      ctx.strokeStyle = 'rgba(190, 215, 225, 0.35)';
-      ctx.lineWidth = 1.5;
+    const alpha = ctx.globalAlpha;
+    ctx.globalAlpha = alpha * 0.4;
+    ctx.drawImage(getGrime(), 0, 0, 512, 512, x0, y0, w, h);
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = 'rgba(130, 180, 150, 0.045)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < w + h; i += 6) {
       ctx.beginPath();
-      ctx.roundRect(x + 4, y + 4, TILE - 8, TILE - 8, 5);
+      ctx.moveTo(x0 + i, y0);
+      ctx.lineTo(x0 + i - h, y0 + h);
       ctx.stroke();
     }
+    ctx.restore();
 
+    ctx.font = '9px "Courier New", monospace';
+    ctx.fillStyle = 'rgba(205, 225, 210, 0.32)';
+    ctx.textAlign = 'center';
+    for (let c = 0; c < COLS; c++) ctx.fillText(String.fromCharCode(65 + c), GX + c * TILE + TILE / 2, GY - 5);
+    ctx.textAlign = 'right';
+    for (let r = 0; r < ROWS; r++) ctx.fillText(String(r + 1), GX - 3, GY + r * TILE + TILE / 2);
+    for (const [hx, hy] of [[x0 + 7, y0 + 7], [x0 + w - 7, y0 + 7], [x0 + 7, y0 + h - 7], [x0 + w - 7, y0 + h - 7]]) {
+      ctx.fillStyle = '#b08a4a';
+      ctx.beginPath();
+      ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#020302';
+      ctx.beginPath();
+      ctx.arc(hx, hy, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // A jagged line from a to b that changes shape many times a second: current arcing along copper
+  _jagged(ctx, ax, ay, bx, by, seed, amp) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const segs = 6;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    for (let i = 1; i < segs; i++) {
+      const t = i / segs;
+      const o = (noise(seed * 13.7 + i * 3.1) - 0.5) * 2 * amp;
+      ctx.lineTo(ax + dx * t + nx * o, ay + dy * t + ny * o);
+    }
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+  }
+
+  // A copper pad on the board, where two modules' contacts meet
+  _pad(ctx, x, y, live) {
+    ctx.fillStyle = '#050403';
+    ctx.beginPath();
+    ctx.arc(x, y, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    const p = ctx.createRadialGradient(x - 1.5, y - 1.5, 0.5, x, y, 4.5);
+    p.addColorStop(0, live ? '#ffe3b8' : '#c8925a');
+    p.addColorStop(1, live ? '#d0782e' : '#5e3a1c');
+    ctx.fillStyle = p;
+    ctx.beginPath();
+    ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // One flat copper contact from the hub out along direction d (in the module's own frame)
+  _contact(ctx, d, reach, live, heat) {
+    const ex = d.dx * reach;
+    const ey = d.dy * reach;
+    ctx.lineCap = 'butt';
+    ctx.strokeStyle = '#1a0e06';
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    ctx.strokeStyle = live
+      ? `rgb(${Math.round(225 + 30 * heat)}, ${Math.round(140 + 70 * heat)}, ${Math.round(80 + 80 * heat)})`
+      : '#9c6437';
+    ctx.lineWidth = 6;
+    ctx.stroke();
+    // a brushed highlight down one edge
+    ctx.strokeStyle = live ? 'rgba(255, 244, 225, 0.65)' : 'rgba(255, 214, 175, 0.3)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(-d.dy * 1.6, d.dx * 1.6);
+    ctx.lineTo(ex - d.dy * 1.6, ey + d.dx * 1.6);
+    ctx.stroke();
+  }
+
+  _drawTile(ctx, tile, x, y, hovered) {
     const cx = x + TILE / 2;
     const cy = y + TILE / 2;
-    const edge = TILE / 2 - 2;
+    const reach = TILE / 2 - 3;   // the contacts run out to the pads at the module's edge
 
     if (tile.kind === 'hazard') {
+      ctx.fillStyle = '#160d0b';
+      ctx.beginPath();
+      ctx.roundRect(x + 4, y + 4, TILE - 8, TILE - 8, 6);
+      ctx.fill();
       this._drawFuse(ctx, tile, x, y, cx, cy);
       return;
     }
-    if (tile.kind === 'empty') {
-      // A blank plate with cooling slots
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-      for (let i = -1; i <= 1; i++) {
-        ctx.beginPath();
-        ctx.roundRect(cx - 18, cy + i * 10 - 2, 36, 4, 2);
-        ctx.fill();
-      }
-      return;
+
+    // the pads this module's contacts reach right now (lit when live)
+    const mask = this._mask(tile);
+    for (const d of DIRS) {
+      if (mask & d.bit) this._pad(ctx, cx + d.dx * reach, cy + d.dy * reach, tile.powered);
     }
 
-    // A small status LED in the corner: dark, or amber when the tile is live
-    ctx.fillStyle = tile.powered ? '#e8a13a' : '#241c14';
-    if (tile.powered) {
-      ctx.save();
-      ctx.shadowColor = '#e8a13a';
-      ctx.shadowBlur = 6;
-      ctx.beginPath();
-      ctx.arc(x + TILE - 14, y + 14, 2.4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    } else {
-      ctx.beginPath();
-      ctx.arc(x + TILE - 14, y + 14, 2.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    // the module: a knurled bezel, an insulating disc, the contacts and a brass hub
+    const R = 25;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.beginPath();
+    ctx.arc(cx + 2, cy + 3, R + 2, 0, Math.PI * 2);
+    ctx.fill();
 
-    // The wire shape is drawn in its own orientation and rotated by the tile's
-    // animated angle, so turning looks like turning
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(tile.angle);
-    const color = WIRE_COLORS[tile.color];
-    const bits = countBits(tile.base);
-    const sides = DIRS.filter((d) => tile.base & d.bit);
-    const pt = (d) => [d.dx * edge, d.dy * edge];
+    const bezel = ctx.createLinearGradient(-R, -R, R, R);
+    bezel.addColorStop(0, '#5c666b');
+    bezel.addColorStop(1, '#171b1d');
+    ctx.fillStyle = bezel;
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 28; i++) {
+      const a = (i / 28) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * (R - 3.5), Math.sin(a) * (R - 3.5));
+      ctx.lineTo(Math.cos(a) * R, Math.sin(a) * R);
+      ctx.stroke();
+    }
+    const disc = ctx.createRadialGradient(-5, -6, 2, 0, 0, R - 4);
+    disc.addColorStop(0, '#3a2a1f');
+    disc.addColorStop(1, '#160f0a');
+    ctx.fillStyle = disc;
+    ctx.beginPath();
+    ctx.arc(0, 0, R - 4.5, 0, Math.PI * 2);
+    ctx.fill();
 
-    if (bits === 2 && (tile.base === (N | S) || tile.base === (E | Wd))) {
-      const [ax, ay] = pt(sides[0]);
-      const [bx, by] = pt(sides[1]);
-      this._cable(ctx, () => { ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); }, color, tile.powered);
-    } else if (bits === 2) {
-      const [ax, ay] = pt(sides[0]);
-      const [bx, by] = pt(sides[1]);
-      this._cable(ctx, () => { ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(0, 0, bx, by); }, color, tile.powered);
-    } else {
-      for (const d of sides) {
-        const [ax, ay] = pt(d);
-        this._cable(ctx, () => { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(ax, ay); }, color, tile.powered);
-      }
-      // A junction block clamped over the joined cables
-      ctx.fillStyle = '#0a0c0d';
-      ctx.beginPath();
-      ctx.roundRect(-11, -11, 22, 22, 4);
-      ctx.fill();
-      const block = ctx.createLinearGradient(-9, -9, 9, 9);
-      block.addColorStop(0, '#59636a');
-      block.addColorStop(1, '#1d2326');
-      ctx.fillStyle = block;
-      ctx.beginPath();
-      ctx.roundRect(-9, -9, 18, 18, 3);
-      ctx.fill();
-      this._bolt(ctx, 0, 0, 3.2);
+    if (tile.kind === 'empty') {
+      // a blanking cover: no contacts
+      ctx.restore();
+      ctx.font = 'bold 8px "Courier New", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(200, 190, 175, 0.4)';
+      ctx.fillText('N/C', cx, cy + 1);
+      return;
+    }
+
+    const heat = tile.powered ? 0.55 + 0.45 * Math.sin(this.time * 31 + cx * 0.7 + cy) : 0;
+    const sides = DIRS.filter((d) => tile.base & d.bit);
+    for (const d of sides) this._contact(ctx, d, reach, tile.powered, heat);
+    const hub = ctx.createRadialGradient(-1.5, -1.5, 0.5, 0, 0, 6);
+    hub.addColorStop(0, '#f0d8a0');
+    hub.addColorStop(1, '#6a5028');
+    ctx.fillStyle = hub;
+    ctx.beginPath();
+    ctx.arc(0, 0, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    // a white index mark on the bezel, so the turn is easy to follow
+    ctx.fillStyle = 'rgba(235, 238, 240, 0.7)';
+    ctx.fillRect(-1, -R + 1, 2, 4);
+
+    // live: current crackling along the copper, in this frame so it turns with the module
+    if (tile.powered) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.shadowColor = '#7fd0ff';
+      ctx.shadowBlur = 8;
+      ctx.strokeStyle = 'rgba(160, 220, 255, 0.85)';
+      ctx.lineWidth = 1.3;
+      const step = Math.floor(this.time * 18);
+      sides.forEach((d, i) => this._jagged(ctx, 0, 0, d.dx * reach, d.dy * reach, step + cx * 0.31 + cy * 0.17 + i * 5.3, 3.5));
+      ctx.shadowBlur = 0;
+      ctx.globalCompositeOperation = 'source-over';
     }
     ctx.restore();
+
+    // now and then a spark jumps at a live joint
+    if (tile.powered && noise(Math.floor(this.time * 9) + cx * 1.3 + cy * 0.7) > 0.985) {
+      const d = sides[Math.floor(noise(cx + cy + this.time) * sides.length)] || sides[0];
+      const ang = tile.angle;
+      const px = cx + (d.dx * Math.cos(ang) - d.dy * Math.sin(ang)) * reach;
+      const py = cy + (d.dx * Math.sin(ang) + d.dy * Math.cos(ang)) * reach;
+      this._sparks(px, py, '#bfe6ff', 6);
+    }
+
+    if (hovered) {
+      ctx.strokeStyle = 'rgba(190, 220, 230, 0.45)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, R + 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // a small status LED beside the module: amber when live
+    ctx.fillStyle = tile.powered ? '#e8a13a' : '#241c14';
+    ctx.save();
+    if (tile.powered) {
+      ctx.shadowColor = '#e8a13a';
+      ctx.shadowBlur = 6;
+    }
+    ctx.beginPath();
+    ctx.arc(x + TILE - 8, y + 8, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // ARIA's hint: the next switches to turn pulse with an amber ring and a turn arrow
+  _drawHint(ctx) {
+    if (!this.hint.length || this.time > this.hintUntil) return;
+    const fade = Math.min(1, (this.hintUntil - this.time) / 1.5);
+    const pulse = 0.55 + 0.45 * Math.sin(this.time * 6);
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        const t = this.tiles[y][x];
+        if (!this.hint.includes(t) || this._mask(t) === t.base) continue;   // (done already)
+        const cx = GX + x * TILE + TILE / 2;
+        const cy = GY + y * TILE + TILE / 2;
+        ctx.save();
+        ctx.strokeStyle = `rgba(255, 176, 64, ${0.9 * pulse * fade})`;
+        ctx.shadowColor = '#ffb040';
+        ctx.shadowBlur = 10;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 30, 0, Math.PI * 2);
+        ctx.stroke();
+        // a clockwise arrow round the top
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 36, -Math.PI * 0.8, -Math.PI * 0.2);
+        ctx.stroke();
+        const ax = cx + Math.cos(-Math.PI * 0.2) * 36;
+        const ay = cy + Math.sin(-Math.PI * 0.2) * 36;
+        ctx.beginPath();
+        ctx.moveTo(ax - 6, ay - 4);
+        ctx.lineTo(ax + 1, ay + 1);
+        ctx.lineTo(ax - 2, ay - 8);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
+  // Mark the next `count` switches on the solution that are not turned right yet
+  showHint(count, seconds) {
+    const order = [];
+    const seen = new Set();
+    const queue = [[0, this.sourceRow]];
+    while (queue.length) {
+      const [x, y] = queue.shift();
+      const k = y * COLS + x;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      const t = this.tiles[y]?.[x];
+      if (!t || t.kind !== 'path') continue;
+      order.push(t);
+      for (const d of DIRS) {
+        if (!(t.base & d.bit)) continue;
+        const n = this.tiles[y + d.dy]?.[x + d.dx];
+        if (n && n.kind === 'path' && (n.base & d.opposite)) queue.push([x + d.dx, y + d.dy]);
+      }
+    }
+    this.hint = order.filter((t) => this._mask(t) !== t.base).slice(0, count);
+    this.hintUntil = this.time + seconds;
+  }
+
+  // A heavy black power cable with a copper ring lug bolted down at the board end
+  _powerCable(ctx, x1, y, x2, live) {
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.lineWidth = 12;
+    ctx.beginPath();
+    ctx.moveTo(x1 + 2, y + 3);
+    ctx.lineTo(x2 + 2, y + 3);
+    ctx.stroke();
+    ctx.strokeStyle = '#0b0c0d';
+    ctx.lineWidth = 11;
+    ctx.beginPath();
+    ctx.moveTo(x1, y);
+    ctx.lineTo(x2, y);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(170, 180, 186, 0.2)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x1, y - 3);
+    ctx.lineTo(x2, y - 3);
+    ctx.stroke();
+    // printed rating on the jacket (where there is room for it)
+    if (Math.abs(x2 - x1) > 70) {
+    ctx.font = '7px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(200, 200, 190, 0.35)';
+    ctx.fillText('600V  6mm²', (x1 + x2) / 2, y + 1);
+    }
+    // the lug
+    const lx = x2;
+    const lug = ctx.createRadialGradient(lx - 1.5, y - 1.5, 0.5, lx, y, 7);
+    lug.addColorStop(0, live ? '#ffe2b0' : '#d39a5c');
+    lug.addColorStop(1, live ? '#c86a24' : '#5d3a1b');
+    ctx.fillStyle = lug;
+    ctx.beginPath();
+    ctx.arc(lx, y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    this._bolt(ctx, lx, y, 3.4);
+    if (live) {
+      const glow = ctx.createRadialGradient(lx, y, 2, lx, y, 16);
+      glow.addColorStop(0, `rgba(150, 215, 255, ${0.35 + 0.15 * Math.sin(this.time * 37)})`);
+      glow.addColorStop(1, 'rgba(150, 215, 255, 0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(lx - 16, y - 16, 32, 32);
+    }
   }
 
   // A ceramic fuse in a holder with hazard tape. Live, it glows and sputters.
@@ -968,14 +1135,14 @@ export class CircuitPuzzle {
     ctx.fill();
 
     // Fixed cable from the battery to the first tile: always live
-    this._cable(ctx, () => { ctx.beginPath(); ctx.moveTo(bx + 44, sy); ctx.lineTo(GX + 4, sy); }, '#56803f', true);
+    this._powerCable(ctx, bx + 44, sy, GX - 3, true);
 
     // The two indicator lamps on the right
     for (let i = 0; i < this.bulbRows.length; i++) {
       const row = this.bulbRows[i];
       const by = GY + row * TILE + TILE / 2;
       const lit = this.bulbLit[i];
-      this._cable(ctx, () => { ctx.beginPath(); ctx.moveTo(gridRight - 4, by); ctx.lineTo(gridRight + 34, by); }, '#a8862f', lit);
+      this._powerCable(ctx, gridRight + 38, by, gridRight + 3, lit);
 
       const lx = gridRight + 64;
       if (lit) {

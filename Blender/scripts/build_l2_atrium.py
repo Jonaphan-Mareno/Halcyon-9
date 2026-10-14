@@ -249,8 +249,17 @@ arc(sofa, 'accent', 3.95, 4.02, 0, 360, -0.585, -0.582, step=6)
 arc(sofa, 'accent', 2.68, 2.75, 0, 360, -0.585, -0.582, step=6)
 
 # ------------------------------------------------------------------ growing food: raised beds and wall beds
-# The crew grew their own food: tomatoes on stakes, rows of carrots, lettuce. Modelled here from
-# simple leaf blades (light on the GPU, and our own work).
+# The crew grew their own food: tomatoes on stakes, rows of carrots, lettuces and cabbages.
+# The plants are real models from Sketchfab (CC-BY 4.0, credited in CREDITS.md), downloaded into
+# Blender/assets/veg/<name>/: "Lettuce" by SirWyrm, "Tomato Plant" by zvanstone, "Cabbage" by
+# Meerschaum Digital and "Carrot Collection" by Adam.White.
+#
+# There are a few hundred plants, so they are not separate objects (one draw call each in the
+# game): the plantings are merged into one mesh per crop per AREA of the hall (a 30-degree slice,
+# inner or outer ring), so a bed you are not looking at is skipped by the game (frustum culling)
+# while the whole garden still draws in a few dozen calls. The models are thinned first
+# (decimated) to keep the triangle count down. Rotten plants use the
+# plain brown/yellow materials instead of the texture (the glTF exporter cannot tint a texture).
 kit.mat('veg_leaf', (0.08, 0.26, 0.06), 0.75, 0.0)
 kit.mat('veg_leaf_light', (0.15, 0.36, 0.09), 0.75, 0.0)
 kit.mat('carrot', (0.90, 0.40, 0.06), 0.6, 0.0)
@@ -262,6 +271,215 @@ kit.mat('tomato_rotten', (0.20, 0.09, 0.035), 0.95, 0.0)    # shrivelled, blacke
 for _nm in ('veg_leaf', 'veg_leaf_light', 'veg_dead', 'veg_yellow'):
     kit.MATS[_nm].use_backface_culling = False
 veg = A('PLANT_Vegetables')
+
+VEG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', 'veg')
+
+
+def load_veg(name, ratio=None):
+    """One downloaded model as a single mesh (not linked to the scene), with only its colour
+    texture kept (no normal / roughness / metal / emission maps: smaller, and the game draws
+    plants with plain Lambert lighting anyway)."""
+    path = os.path.join(VEG_DIR, name, 'scene.gltf')
+    if not os.path.exists(path):
+        print('MISSING vegetable model (download it into Blender/assets/veg/%s/):' % name)
+        return None
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=path)
+    new = [o for o in bpy.data.objects if o not in before]
+    meshes = [o for o in new if o.type == 'MESH']
+    for o in bpy.context.selected_objects:
+        o.select_set(False)
+    for o in meshes:
+        mw = o.matrix_world.copy()
+        o.parent = None
+        o.matrix_world = mw
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = meshes[0]
+    if len(meshes) > 1:
+        bpy.ops.object.join()
+    obj = bpy.context.view_layer.objects.active
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    for o in new:
+        if o.name in bpy.data.objects and o != obj:
+            bpy.data.objects.remove(o, do_unlink=True)
+    for slot in obj.material_slots:
+        m = slot.material
+        if not m or not m.node_tree:
+            continue
+        for link in list(m.node_tree.links):
+            if link.to_node.type == 'BSDF_PRINCIPLED' and link.to_socket.name != 'Base Color':
+                m.node_tree.links.remove(link)
+        for n in list(m.node_tree.nodes):
+            if n.type == 'NORMAL_MAP':
+                m.node_tree.nodes.remove(n)
+        for n in m.node_tree.nodes:
+            if n.type == 'BSDF_PRINCIPLED':
+                n.inputs['Roughness'].default_value = 0.8
+                n.inputs['Metallic'].default_value = 0.0
+                n.inputs['Emission Strength'].default_value = 0.0
+    if ratio:
+        mod = obj.modifiers.new('thin', 'DECIMATE')
+        mod.ratio = ratio
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+    for c in obj.users_collection:
+        c.objects.unlink(obj)
+    return obj
+
+
+def stand_up(obj, height, up='Z'):
+    """Centre the model on its base and scale it to `height` (its up axis becomes Z)."""
+    me = obj.data
+    if up == 'Y':
+        me.transform(Matrix.Rotation(rad(90), 4, 'X'))
+    zs = [v.co.z for v in me.vertices]
+    xs = [v.co.x for v in me.vertices]
+    ys = [v.co.y for v in me.vertices]
+    me.transform(Matrix.Translation((-(min(xs) + max(xs)) / 2, -(min(ys) + max(ys)) / 2, -min(zs))))
+    me.transform(Matrix.Scale(height / max(1e-6, max(zs) - min(zs)), 4))
+    return obj
+
+
+def carrot_templates(obj):
+    """The collection holds two whole carrots and some slices: keep the longest piece, stand it
+    root down, and also make a copy cut off just below the shoulder (a growing carrot only shows
+    its top above the soil)."""
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    # loose pieces
+    seen, pieces = set(), []
+    for v in bm.verts:
+        if v.index in seen:
+            continue
+        stack, part = [v], []
+        seen.add(v.index)
+        while stack:
+            a = stack.pop()
+            part.append(a)
+            for e in a.link_edges:
+                b = e.other_vert(a)
+                if b.index not in seen:
+                    seen.add(b.index)
+                    stack.append(b)
+        pieces.append(part)
+
+    def length(part):
+        pts = [p.co for p in part]
+        return max((pts[0] - q).length for q in pts) if pts else 0
+    keep = set(v.index for v in max(pieces, key=lambda p: (len(p), length(p))))
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.index not in keep], context='VERTS')
+    # its long axis: the two vertices furthest apart
+    pts = [v.co.copy() for v in bm.verts]
+    a = max(pts, key=lambda q: (q - pts[0]).length)
+    b = max(pts, key=lambda q: (q - a).length)
+    axis = (b - a).normalized()
+    centre = sum(pts, Vector()) / len(pts)
+
+    def girth(t0, t1):     # average distance from the axis in a band along it (0 = end a)
+        span = (b - a).length
+        rs = []
+        for q in pts:
+            t = (q - a).dot(axis) / span
+            if t0 <= t <= t1:
+                rs.append(((q - a) - axis * (q - a).dot(axis)).length)
+        return sum(rs) / max(1, len(rs))
+    top_is_b = girth(0.65, 0.85) > girth(0.15, 0.35)          # the shoulder is the thick end
+    up = axis if top_is_b else -axis
+    rot = up.rotation_difference(Vector((0, 0, 1))).to_matrix().to_4x4()
+    bmesh.ops.transform(bm, matrix=rot @ Matrix.Translation(-centre), verts=bm.verts)
+    bm.to_mesh(obj.data)
+    bm.free()
+    stand_up(obj, 0.2)                       # a 20 cm carrot
+    whole = obj
+    top = obj.copy()
+    top.data = obj.data.copy()
+    bm = bmesh.new()
+    bm.from_mesh(top.data)
+    bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, 0.145),
+                           plane_no=(0, 0, 1), clear_inner=True)
+    bm.to_mesh(top.data)
+    bm.free()
+    top.data.transform(Matrix.Translation((0, 0, -0.145)))    # the cut sits at the soil line
+    return whole, top
+
+
+class Batch:
+    """Every copy of one model, merged into one mesh (one draw call)."""
+    def __init__(self, name, material=None):
+        self.name, self.material, self.bm = name, material, bmesh.new()
+
+    def add(self, tpl, mx):
+        n0 = len(self.bm.verts)
+        self.bm.from_mesh(tpl.data)                 # appends
+        self.bm.verts.ensure_lookup_table()
+        bmesh.ops.transform(self.bm, matrix=mx, verts=self.bm.verts[n0:])
+
+    def flush(self, tpl):
+        if not len(self.bm.verts):
+            self.bm.free()
+            return None
+        me = bpy.data.meshes.new(self.name)
+        self.bm.to_mesh(me)
+        self.bm.free()
+        me.materials.clear()
+        if self.material:
+            me.materials.append(kit.MATS[self.material])
+            for p in me.polygons:
+                p.material_index = 0
+        else:
+            for slot in tpl.material_slots:
+                me.materials.append(slot.material)
+        for p in me.polygons:
+            p.use_smooth = True
+        ob = bpy.data.objects.new(self.name, me)
+        kit.VIS.objects.link(ob)
+        return ob
+
+
+VEG = {
+    'lettuce': load_veg('lettuce', 0.5),             # 476 triangles, halved
+    'tomato': load_veg('tomato', 0.25),
+    'cabbage': load_veg('cabbage', 0.15),
+    'carrot_src': load_veg('carrot', 0.1),          # only a few centimetres of it show
+}
+if VEG['lettuce']:
+    stand_up(VEG['lettuce'], 0.3)
+if VEG['tomato']:
+    stand_up(VEG['tomato'], 1.15)
+if VEG['cabbage']:
+    stand_up(VEG['cabbage'], 0.2)
+VEG['carrot'], VEG['carrot_top'] = carrot_templates(VEG['carrot_src']) if VEG['carrot_src'] else (None, None)
+BATCH = {}
+
+
+def area(p):
+    """Which area of the hall a point is in: a 30-degree slice, inner ring or outer ring."""
+    p = Vector(p)
+    a = math.degrees(math.atan2(p.y, p.x)) % 360
+    return '%02d%s' % (int(a // 30), 'i' if p.xy.length < 12.5 else 'o')
+
+
+def put(kind, p, yaw, scale=1.0, tilt=0.0, squash=1.0, rot_mat=None):
+    """One more copy of a vegetable model in its crop's mesh (rot_mat: rotten, flat colour)."""
+    tpl = VEG.get(kind)
+    if tpl is None:
+        return False
+    key = (kind, rot_mat, area(p))
+    if key not in BATCH:
+        BATCH[key] = Batch('PLANT_Veg_%s%s__%s' % (kind, '_' + rot_mat if rot_mat else '', key[2]), rot_mat)
+    mx = (Matrix.Translation(Vector(p)) @ Matrix.Rotation(rad(yaw), 4, 'Z') @ Matrix.Rotation(tilt, 4, 'X')
+          @ Matrix.Diagonal((scale, scale, scale * squash, 1.0)))
+    BATCH[key].add(tpl, mx)
+    return True
+
+
+def flush_veg():
+    for (kind, rot_mat, _), b in BATCH.items():
+        b.flush(VEG[kind])
+    names = {tpl.name for tpl in VEG.values() if tpl is not None}    # (the whole carrot is its source object)
+    for n in names:
+        if n in bpy.data.objects:
+            bpy.data.objects.remove(bpy.data.objects[n], do_unlink=True)
 
 
 def leaf_blade(acc, m, base, direction, length, width, droop):
@@ -276,39 +494,46 @@ def leaf_blade(acc, m, base, direction, length, width, droop):
 
 
 def carrot(acc, p, rot=False):
-    cyl(acc, 'carrot', (p.x, p.y, p.z + 0.02), 0.028, 0.05, 6)                 # orange top showing above the soil
-    for k in range(6):
-        ang = k / 6 * math.tau + random.uniform(-0.3, 0.3)
+    """The real carrot's shoulder showing above the soil, with feathery leaves."""
+    if not put('carrot_top', p + Vector((0, 0, -0.012)), random.uniform(0, 360), random.uniform(0.85, 1.15)):
+        cyl(acc, 'carrot', (p.x, p.y, p.z + 0.02), 0.028, 0.05, 6)
+    for k in range(5):
+        ang = k / 5 * math.tau + random.uniform(-0.3, 0.3)
         lift = 0.35 if rot else 1.0                                             # a rotten one's leaves flop over
-        d = Vector((math.cos(ang) * 0.35, math.sin(ang) * 0.35, lift)).normalized()
+        d = Vector((math.cos(ang) * 0.3, math.sin(ang) * 0.3, lift)).normalized()
         leaf_blade(acc, 'veg_dead' if rot else 'veg_leaf_light', p + Vector((0, 0, 0.04)), d,
-                   random.uniform(0.2, 0.3), 0.03, 0.1 if rot else 0.02)
+                   random.uniform(0.2, 0.3), 0.022, 0.1 if rot else 0.03)
 
 
 def lettuce(acc, p, rot=False):
-    for k in range(9):
-        ang = k / 9 * math.tau + random.uniform(-0.2, 0.2)
-        d = Vector((math.cos(ang), math.sin(ang), (0.05 if rot else 0.3) + (k % 3) * (0.08 if rot else 0.25))).normalized()
-        m = random.choice(['veg_dead', 'veg_yellow']) if rot else ('veg_leaf_light' if k % 2 else 'veg_leaf')
-        leaf_blade(acc, m, p + Vector((0, 0, 0.02)), d, 0.2, 0.09, 0.04 if rot else 0.0)
+    if rot:            # wilted: slumped flat, brown or yellow
+        put('lettuce', p, random.uniform(0, 360), random.uniform(0.8, 1.0), squash=0.45,
+            rot_mat=random.choice(['veg_dead', 'veg_yellow']))
+    else:
+        put('lettuce', p, random.uniform(0, 360), random.uniform(0.85, 1.2))
+
+
+def cabbage(acc, p, rot=False):
+    if rot:
+        put('cabbage', p, random.uniform(0, 360), random.uniform(0.75, 0.95), squash=0.8, rot_mat='veg_dead')
+    else:
+        put('cabbage', p, random.uniform(0, 360), random.uniform(0.85, 1.2))
 
 
 def tomato(acc, p, rot=False):
     cyl(acc, 'stake', (p.x, p.y, p.z + 0.65), 0.015, 1.3, 6)
-    for k in range(14):
-        ang = random.uniform(0, math.tau)
-        d = Vector((math.cos(ang), math.sin(ang), random.uniform(-0.6, 0.0) if rot else random.uniform(-0.2, 0.5))).normalized()
-        m = random.choice(['veg_dead', 'veg_yellow', 'veg_leaf']) if rot else 'veg_leaf'
-        leaf_blade(acc, m, p + Vector((0, 0, random.uniform(0.15, 1.15))), d, random.uniform(0.18, 0.28), 0.07, 0.04)
-    for k in range(5):
-        ang = random.uniform(0, math.tau)
-        q = p + Vector((math.cos(ang) * 0.12, math.sin(ang) * 0.12, random.uniform(0.3, 1.0)))
-        bad = rot and random.random() < 0.7
-        verts = bmesh.ops.create_uvsphere(acc.bm, u_segments=8, v_segments=6, radius=0.034 if bad else 0.045)['verts']
-        if bad:
-            bmesh.ops.scale(acc.bm, vec=(1.0, 0.85, 0.7), verts=verts)          # shrivelled
-        bmesh.ops.translate(acc.bm, vec=q, verts=verts)
-        acc.tag('tomato_rotten' if bad else 'tomato', _faces(verts))
+    if rot:            # dying: brown, sagging off its stake, a couple of blackened fruit left
+        put('tomato', p, random.uniform(0, 360), random.uniform(0.75, 0.95), tilt=rad(random.uniform(12, 25)),
+            squash=0.8, rot_mat='veg_dead')
+        for k in range(2):
+            ang = random.uniform(0, math.tau)
+            q = p + Vector((math.cos(ang) * 0.12, math.sin(ang) * 0.12, random.uniform(0.2, 0.6)))
+            verts = bmesh.ops.create_uvsphere(acc.bm, u_segments=8, v_segments=6, radius=0.034)['verts']
+            bmesh.ops.scale(acc.bm, vec=(1.0, 0.85, 0.7), verts=verts)
+            bmesh.ops.translate(acc.bm, vec=q, verts=verts)
+            acc.tag('tomato_rotten', _faces(verts))
+    else:
+        put('tomato', p, random.uniform(0, 360), random.uniform(0.9, 1.1))
 
 
 def plant_or_not(fn, p):
@@ -316,10 +541,10 @@ def plant_or_not(fn, p):
     roll = random.random()
     if roll < 0.22:
         return
-    fn(veg, p, roll < 0.42)
+    fn(A('PLANT_Vegetables__' + area(p)), p, roll < 0.42)      # the leaves and stakes, per area too
 
 
-CROPS = {'carrot': (carrot, 0.24), 'lettuce': (lettuce, 0.42), 'tomato': (tomato, 0.6)}
+CROPS = {'carrot': (carrot, 0.3), 'lettuce': (lettuce, 0.42), 'cabbage': (cabbage, 0.45), 'tomato': (tomato, 0.6)}
 
 
 def jitter():
@@ -349,7 +574,7 @@ def fill_arc_bed(r0, r1, a0, a1, top, crop):
 
 # raised beds on the floor, one crop each
 beds = A('Atrium_Planters')
-for a, crop in ((0, 'tomato'), (45, 'lettuce'), (135, 'carrot'), (225, 'tomato'), (315, 'lettuce')):
+for a, crop in ((0, 'tomato'), (45, 'lettuce'), (135, 'carrot'), (225, 'tomato'), (315, 'cabbage')):
     rbox(beds, 'hull_light', 10.2, a, 0.4, 1.8, 4.2, 0.8, col=True)
     rbox(beds, 'accent', 10.2, a, 0.81, 1.86, 4.26, 0.04)
     rbox(beds, 'soil', 10.2, a, 0.82, 1.6, 4.0, 0.04)
@@ -908,9 +1133,18 @@ for k in range(6):
 # carrots pulled up and dropped, roots and all; tomatoes splattered; rotten lettuces kicked out
 def pulled_carrot(p, yaw):
     d = Vector((math.cos(rad(yaw)), math.sin(rad(yaw)), 0))
-    verts = bmesh.ops.create_cone(chaos.bm, cap_ends=True, cap_tris=False, segments=8, radius1=0.028, radius2=0.004, depth=0.17)['verts']
-    xform(chaos, 'carrot', verts, Matrix.Translation(Vector(p) + d * 0.085 + Vector((0, 0, 0.028))) @
-          Matrix.Rotation(rad(yaw), 4, 'Z') @ Matrix.Rotation(rad(90), 4, 'Y'))
+    # the whole carrot lying on its side, root pointing away from its leaves
+    lying = (Matrix.Translation(Vector(p) + Vector((0, 0, 0.02))) @ Matrix.Rotation(rad(yaw), 4, 'Z')
+             @ Matrix.Rotation(rad(-90), 4, 'Y') @ Matrix.Translation((0, 0, -0.2)))
+    if VEG.get('carrot'):
+        key = ('carrot', None, area(p))
+        if key not in BATCH:
+            BATCH[key] = Batch('PLANT_Veg_carrot__' + key[2])
+        BATCH[key].add(VEG['carrot'], lying)
+    else:
+        verts = bmesh.ops.create_cone(chaos.bm, cap_ends=True, cap_tris=False, segments=8, radius1=0.028, radius2=0.004, depth=0.17)['verts']
+        xform(chaos, 'carrot', verts, Matrix.Translation(Vector(p) + d * 0.085 + Vector((0, 0, 0.028))) @
+              Matrix.Rotation(rad(yaw), 4, 'Z') @ Matrix.Rotation(rad(90), 4, 'Y'))
     for k in range(5):
         ang = rad(yaw + 180 + random.uniform(-35, 35))
         leaf_blade(veg, random.choice(['veg_leaf_light', 'veg_yellow']), Vector(p) + Vector((0, 0, 0.03)),
@@ -1086,6 +1320,8 @@ for spot in plant_spots:
 for kind, tpl in templates.items():     # a template nobody used would stand at the centre of the hall
     if tpl is not None and kind not in used and tpl.name in bpy.data.objects:
         bpy.data.objects.remove(tpl, do_unlink=True)
+
+flush_veg()                              # the vegetables' merged meshes
 
 # keep the download small: plant textures at most 512 px (the game does not need more)
 for img in bpy.data.images:

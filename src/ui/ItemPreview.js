@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createGLTFLoader } from '../core/loaders.js';
 
 // A slowly turning 3D preview of an inventory item (the torch), drawn with one
 // small off-screen renderer and copied onto whichever 2D canvases want it: the
@@ -42,7 +42,7 @@ export class ItemPreview {
   }
 
   async load() {
-    const gltf = await new GLTFLoader().loadAsync(this.url);
+    const gltf = await createGLTFLoader().loadAsync(this.url);
     const model = gltf.scene;
 
     // The model keeps its Blender offset: centre it and scale it to fit

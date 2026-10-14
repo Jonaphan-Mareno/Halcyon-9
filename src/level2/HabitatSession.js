@@ -30,6 +30,8 @@ import { Garden } from './Garden.js';
 import { PlayerStats, MAX_INTEGRITY } from '../player/PlayerStats.js';
 import { HUD } from '../ui/HUD.js';
 import { FightHelp } from '../ui/FightHelp.js';
+import { Readables } from './Readables.js';
+import { buildRoomProps } from './RoomProps.js';
 import '../ui/level2.css';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
@@ -76,6 +78,9 @@ const DAMAGED_BASE = 0.8;    // the mood's normal brightness on arrival (the pow
 const RESTORED_LIGHT = 0.6;  // how far towards clean the shade goes (uRestore)
 const RESTORED_BASE = 0.92;  // the mood's normal brightness after the restart (DAMAGED_BASE before)
 const HATCH_CODE = '471902'; // Kessler's override (placeholder, see the script's open decisions)
+const LOG_CLIPS = ['log-0', 'log-1', 'log-2', 'log-5', 'log-8'];   // Voss's personal log terminal
+const LAB_FILES = ['directive', 'research', 'subjects'];            // the lab terminal
+const IDLE_LINE = 50;        // seconds lingering in the bunk or the lab before ARIA's remark
 const DIRECT_HIT = 15;       // a drone's dive, straight into him (health is out of 100)
 const GRAZE = 5;             // a dive that only clips him
 const MANIFOLD_AT = { r: 14.6, angle: 30 };   // the garden's wall of pipes, behind the hatch
@@ -125,6 +130,22 @@ export class HabitatSession {
     this.player = new PlayerStats();
     this.hud = new HUD(root, { onRestart: () => {} });
     this.fightHelp = new FightHelp(root);
+    // everything he reads, hears or watches upstairs (the game waits while it is open)
+    this.reader = new Readables(root, {
+      onOpen: () => {
+        game.state = 'READING';
+        this.controls.instance.enabled = false;      // the view stays put behind the panel
+      },
+      onClose: () => {
+        game.state = 'PLAYING';
+        this.controls.instance.enabled = true;
+      },
+      onShown: (id) => this._readShown(id),
+      onFinished: (id) => this._readFinished(id)
+    });
+    this.flashEl = document.createElement('div');
+    this.flashEl.id = 'memory-flash';
+    root.appendChild(this.flashEl);
     this.loadingEl = document.createElement('div');
     this.loadingEl.id = 'level-loading';
     this.loadingEl.className = 'visible';
@@ -142,6 +163,11 @@ export class HabitatSession {
     window.addEventListener('keydown', (e) => {
       if (this.keypad?.isOpen) {
         if (e.code === 'Escape') this._closeKeypad();
+        return;
+      }
+      if (this.reader?.isOpen) {
+        if (e.code === 'Enter' || e.code === 'Escape' || e.code.startsWith('Arrow')) e.preventDefault();
+        this.reader.key(e);
         return;
       }
       if (game.state !== 'PLAYING' || !this.ready) return;
@@ -425,6 +451,9 @@ export class HabitatSession {
         when: () => !this.story.has('hatchOpen'), use: () => this._useHatch()
       });
     }
+    // the things to read upstairs (scenes 2.6 to 2.8)
+    this._buildReadables(scene, lab);
+
     this.keypad = new KeypadUI({ onSubmit: (code) => this._hatchCode(code), onCancel: () => this._closeKeypad() });
     this.keypad.root.querySelector('.keypad-brand').textContent = 'MAINTENANCE HATCH 4';
     this.keypad.root.querySelector('.keypad-instruction').textContent = 'EMERGENCY OVERRIDE: CREW LEADER KEY (DR. E. KESSLER)';
@@ -803,6 +832,8 @@ export class HabitatSession {
     }
     this.hud.setVisible(playing || g.state === 'KEYPAD');
     this.hud.update(this.player);
+    this.reader.update(dt);
+    this._idleLines(dt, playing, p);
     // the fight's controls, from ARIA's warning in the lift until the garden is clear
     const helpOn = this._fightHelpOn && playing && this.garden && this.garden.state !== 'done';
     this.fightHelp.setVisible(!!helpOn);
@@ -821,7 +852,7 @@ export class HabitatSession {
     // ARIA idles on every screen (not AriaManager.update, which shows her on the nearest one only)
     this.aria.ariaMaterial.uniforms.uTime.value += dt;
     if (this.aria.useHead) this.aria.head.update(dt);
-    g.reticle.classList.toggle('visible', this.controls.view === 'first');
+    g.reticle.classList.toggle('visible', this.controls.view === 'first' && g.state !== 'READING');
     if (playing && !this.story.has('leftLift') && p.z < LIFT_FRONT_Z) this.story.set('leftLift');
     this._guide(playing);
     this._perf(delta, playing);
@@ -878,7 +909,10 @@ export class HabitatSession {
   // ---------------------------------------------------------
   _onStory(flag) {
     console.log('Level 2 story:', flag);
-    if (flag === 'gardenCleared') this._powerReturns();
+    if (flag === 'gardenCleared') {
+      this.garden?.end();
+      this._powerReturns();
+    }
     if (flag === 'pipeTaken' && !this.garden?.holding) this.garden?.takePipe();   // (the debug key)
     if (flag === 'hatchOpen') {
       this.gates?.openHatch();
@@ -897,6 +931,90 @@ export class HabitatSession {
       this.gates?.setKeypadPowered(true);
     }, 700);
     setTimeout(() => this.say('bulkhead'), 2600);
+  }
+
+  // ---------------------------------------------------------
+  // Upstairs: the bunk's logs, the corkboard and the locker, Voss's personal log, the lab's
+  // terminal, Kessler's final log and the code card (scenes 2.6 to 2.8)
+  // ---------------------------------------------------------
+  _buildReadables(scene, lab) {
+    const spots = buildRoomProps(scene);
+    this.physics.addStaticObject(spots.lockerBody);
+    const r = this.reader;
+    const add = (id, position, radius, label, use, when) => this.interact.add({ id, position, radius, label, use, when, reach: 2.2 });
+    add('bunkLogA', spots.bunkLogA, 0.25, 'Play the crew log', () => r.read('bunkLogA'));
+    add('bunkLogB', spots.bunkLogB, 0.25, 'Play the crew log', () => r.read('bunkLogB'));
+    add('corkboard', spots.corkboard, 0.55, 'Look at the corkboard', () => r.read('rota', () => this.say('corkboard')));
+    add('locker', spots.locker, 0.4,
+      () => (this.story.has('cardTaken') ? 'Read the letter again' : "Search J. Voss's locker"),
+      () => {
+        if (this.story.has('cardTaken')) return r.read('letter');
+        r.read(['letter', 'lockerCard'], () => this._cardTaken());
+      });
+    add('personalLog', spots.personalLog, 0.3, "Use Voss's personal log", () => r.terminal('J. VOSS: PERSONAL LOG', LOG_CLIPS));
+    // the lab terminal is the workstation on the lab's west wall
+    const screen = lab.getObjectByName('PT_LabScreen_0');
+    if (screen) {
+      add('labTerminal', screen.getWorldPosition(new THREE.Vector3()), 0.45, 'Use the terminal',
+        () => r.terminal('B-LAB: RESTRICTED DIRECTORY', LAB_FILES));
+    }
+    add('kesslerLog', spots.kesslerLog, 0.3, 'Play the final log', () => r.read('kesslerLog'));
+    add('codeCard', spots.codeCard, 0.15, 'Read the card', () => r.read('codeCard', () => this.story.set('codeFound')));
+    this._idle = { bunk: 0, lab: 0 };
+  }
+
+  // the locker's card is his: a flash of memory, then the letter's line
+  _cardTaken() {
+    if (!this.story.set('cardTaken')) return;
+    this.game.ui.showToast("DR. KESSLER'S ACCESS CARD: TAKEN", 3500);
+    this._memoryFlash();
+    setTimeout(() => this.say('letter'), 1400);
+  }
+
+  // A short, wordless flash of memory (the letter; step 8 builds the full flashback)
+  _memoryFlash() {
+    this.game.mood?.flicker(0.5);
+    this.flashEl.classList.remove('on');
+    void this.flashEl.offsetWidth;          // restart the animation
+    this.flashEl.classList.add('on');
+  }
+
+  // an entry was opened: the lab's first file gets ARIA's longest pause
+  _readShown(id) {
+    if (id === 'directive' && !this._saidLabFiles) {
+      this._saidLabFiles = true;
+      this.say('labFiles');
+    }
+  }
+
+  // an entry was read or played to the end
+  _readFinished(id) {
+    if (id === 'log-8' && !this._saidInterrupt) {
+      this._saidInterrupt = true;
+      setTimeout(() => this.say('bunkInterrupt'), 900);
+    }
+    if (id === 'subjects' && !this._saidCycle9) {
+      this._saidCycle9 = true;
+      this.say('cycle9');
+    }
+    if (LAB_FILES.every((f) => this.reader.seen.has(f))) this.story.set('labDone');
+  }
+
+  // ARIA's remarks when he lingers: in the bunk without opening the locker, in the lab without
+  // using the terminal (once each)
+  _idleLines(dt, playing, p) {
+    if (!playing || !this._idle) return;
+    const inLab = p.y > 4.5 && p.z < -17.3 && Math.abs(p.x) < 7;
+    if (this.story._inBunk(p) && !this.story.has('cardTaken')) this._idle.bunk += dt;
+    if (inLab && !this.reader.seen.has('directive')) this._idle.lab += dt;
+    if (this._idle.bunk > IDLE_LINE && !this._idle.bunkSaid && !this._talking()) {
+      this._idle.bunkSaid = true;
+      this.say('bunkIdle');
+    }
+    if (this._idle.lab > IDLE_LINE && !this._idle.labSaid && !this._talking()) {
+      this._idle.labSaid = true;
+      this.say('labIdle');
+    }
   }
 
   // A drone's dive: a direct hit knocks him back; at zero ARIA restores him from backup

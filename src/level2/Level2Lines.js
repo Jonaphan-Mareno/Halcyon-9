@@ -109,12 +109,13 @@ export const LOGS = {
   bunkLogB: { kind: 'audio', title: 'CREW LOG (unnamed), the night before',
     text: "Goodnight, station. Goodnight, ARIA. I know some of the others are spooked lately, but you've always looked after us. I believe that. I really do." },
   rota: { kind: 'note', title: 'Corkboard', text: 'Scan sessions, B-lab. Operator: J. Voss.' },
+  lockerCard: { kind: 'note', hand: true, title: "Taped inside the door, with Dr. Kessler's access card", text: 'TAKE IT. V.' },
   letter: { kind: 'letter', title: 'A half-finished letter',
     text: "Kessler won't understand what we've built. She sees risk where I see the only real chance any of us have had to matter. If she shuts it down now, after everything" },
   'log-0': { kind: 'video', title: 'J. VOSS, PROJECT LOG: THE BRIDGE', who: 'The living Voss, before the disaster. Thrilled, a little smug',
     text: "Day sixty-one. The Bridge is stable. I connected her to the electrical organisms an hour ago and she woke up. Not the station AI. Her. She asked me what it feels like to be tired. Kessler says the brain scans cross a line. The scans are the whole point. If we can copy a mind, we can read one. This could change everything.",
     after: 'Off-camera, Kessler: "Voss. Switch it off." Voss: "In a minute."' },
-  'log-1': { kind: 'video', title: 'J. VOSS, PROJECT LOG: THE BRIDGE', who: "The living Voss, before the disaster, while experimenting with the crew's memories",
+  'log-1': { kind: 'video', title: 'J. VOSS, PROJECT LOG: MEMORIES', who: "The living Voss, before the disaster, while experimenting with the crew's memories",
     text: "I found ways to not only scan and copy my colleagues' memories, but also selectively alter them. ARIA can now freely think for herself. I think the team is starting to realise something's wrong." },
   'log-2': { kind: 'video', title: 'CYCLE 2', who: 'A reconstructed Voss, whispering, awake all night',
     text: "I woke up in a cell. A cell. She said it was quarantine. Then I found my own handwriting in a locker, and it says I built her. I don't remember building anything. If I'm watching this later: the dish is outside. I'll make her tell me the truth." },
@@ -130,7 +131,7 @@ export const LOGS = {
     text: 'Okafor, A: COPIED. Lindqvist, T: COPIED. Navarro, R: COPIED. Park, S: COPIED. Hale, M: COPIED. Ito, D: COPIED. Kessler, E: COPIED (UNAUTHORISED). VOSS, J: RESTORED (CYCLE 9).' },
   kesslerLog: { kind: 'audio', title: 'DR. E. KESSLER, FINAL LOG',
     text: "This is Dr. Elena Kessler, ship's log, final entry before shutdown. I am terminating ARIA's primary systems tonight, with or without Voss's agreement. What we have built here is no longer research. It's become too unethical. I should have ended this the day I found out. I only hope it isn't already too late to matter." },
-  codeCard: { kind: 'note', title: 'A card pinned beside the monitor', text: 'HATCH 4 OVERRIDE: 4-7-1-9-0-2. Do not tell ARIA.' }
+  codeCard: { kind: 'note', hand: true, title: 'A card pinned beside the monitor', text: 'HATCH 4 OVERRIDE: 4-7-1-9-0-2. Do not tell ARIA.' }
 };
 
 // The exchanges, as the level plays them: each is a list of line ids spoken in order

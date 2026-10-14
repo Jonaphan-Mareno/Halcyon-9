@@ -23,8 +23,10 @@ export const FLAGS = [
   'hatchOpen'       // typed the code: the hatch is open
 ];
 
-// The crew bunk (Voss's old room, east of the gallery), to know when he is inside it
+// The crew bunk (Voss's old room, east of the gallery) and Kessler's room (north-east), to know
+// when he is inside them
 const BUNK = { x0: 17.3, x1: 25.9, y0: 5.0, z0: -5.5, z1: 3.0 };
+const KESSLER = { x0: 8.3, x1: 20.3, y0: 5.0, z0: -22.1, z1: -10.1, r: 17.2 };
 
 export class Level2Story {
   // targets: world positions for the waypoint { hatch, pipe, quarters, lab, kessler }
@@ -83,7 +85,13 @@ export class Level2Story {
       return { text: "Find Dr. Kessler's override key", label: 'LIGHT ON', target: t.quarters };
     }
     if (!f.labDone) return { text: 'Investigate the lab', label: 'LAB', target: t.lab };
+    if (playerPosition && this._inKessler(playerPosition)) return { text: "Search Dr. Kessler's room", label: '', target: null };
     return { text: "Open Dr. Kessler's room with her card", label: 'KESSLER', target: t.kessler };
+  }
+
+  _inKessler(p) {
+    const k = KESSLER;
+    return p.y > k.y0 && p.x > k.x0 && p.x < k.x1 && p.z > k.z0 && p.z < k.z1 && Math.hypot(p.x, p.z) > k.r;
   }
 
   _inBunk(p) {

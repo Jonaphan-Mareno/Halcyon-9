@@ -438,6 +438,17 @@ export class Garden {
     this.hoseMesh.instanceMatrix.needsUpdate = true;
   }
 
+  // The fight skipped (the debug key set gardenCleared): the drones go and he lets go of the pipe
+  end() {
+    if (this.state === 'done') return;
+    for (const d of this.drones) if (d.alive) d.remove();
+    this.drones.length = 0;
+    this._teaser?.d.remove();
+    this._teaser = null;
+    this.state = 'done';
+    if (this.holding) this._dropPipe();
+  }
+
   // The fight is over: he lets go, and the nozzle drops to the floor and settles with its hose
   _dropPipe() {
     this.holding = false;

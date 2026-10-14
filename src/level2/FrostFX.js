@@ -45,6 +45,7 @@ export class FrostFX {
     this.grow = new Float32Array(MAX);      // size change per second
     this.gravity = new Float32Array(MAX);
     this.drag = new Float32Array(MAX);
+    this.isWater = new Uint8Array(MAX);     // water droplets can soak what they hit (waterHits)
     this.next = 0;
 
     const geo = new THREE.BufferGeometry();
@@ -70,6 +71,7 @@ export class FrostFX {
     this.life[i] = life; this.maxLife[i] = life;
     this.color[i * 3] = r; this.color[i * 3 + 1] = g; this.color[i * 3 + 2] = b;
     this.gravity[i] = gravity; this.drag[i] = drag;
+    this.isWater[i] = 0;
   }
 
   // The frost stream: fast, spreading, growing puffs from the nozzle along `dir`
@@ -109,18 +111,36 @@ export class FrostFX {
     for (let k = 0; k < 14; k++) this.mist(at, 0.2, 40);
   }
 
-  // A jet of water from the garden's pipe: heavier droplets that arc down
-  water(from, dir, dt, rate = 200) {
+  // A jet of water from the garden's pipe: a fast stream of droplets that reaches about 18 m,
+  // arcing down a little
+  water(from, dir, dt, rate = 220) {
     const n = Math.max(1, Math.round(rate * dt));
     for (let k = 0; k < n; k++) {
-      const spread = 0.05;
-      const speed = 13 + Math.random() * 3;
+      const spread = 0.035;
+      const speed = 20 + Math.random() * 3;
+      const i = this.next;
       this._spawn(from.x, from.y, from.z,
         (dir.x + (Math.random() - 0.5) * spread * 2) * speed,
-        (dir.y + (Math.random() - 0.5) * spread * 2) * speed + 1.2,
+        (dir.y + (Math.random() - 0.5) * spread * 2) * speed + 1.0,
         (dir.z + (Math.random() - 0.5) * spread * 2) * speed,
-        0.09, 0.35, 0.65 + Math.random() * 0.15, 0.42, 0.62, 0.85, -9, 0.4);
+        0.09, 0.3, 0.95 + Math.random() * 0.15, 0.42, 0.62, 0.85, -4, 0.15);
+      this.isWater[i] = 1;
     }
+  }
+
+  // How many water droplets are inside a sphere (a drone). They splash there and stop.
+  waterHits(at, radius) {
+    const r2 = radius * radius;
+    let n = 0;
+    for (let i = 0; i < MAX; i++) {
+      if (!this.isWater[i] || this.life[i] <= 0) continue;
+      const dx = this.pos[i * 3] - at.x, dy = this.pos[i * 3 + 1] - at.y, dz = this.pos[i * 3 + 2] - at.z;
+      if (dx * dx + dy * dy + dz * dz < r2) {
+        n++;
+        this.life[i] = 0;
+      }
+    }
+    return n;
   }
 
   // Water dripping off something wet

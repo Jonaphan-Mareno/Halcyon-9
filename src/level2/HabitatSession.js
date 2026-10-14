@@ -445,11 +445,18 @@ export class HabitatSession {
       when: () => this.gates.bulkheadsSealed, use: () => this.say('stairs')
     }));
     if (this.gates.keypadSpot) {
+      const hatchLabel = () => (this.story.has('gardenCleared') ? 'Use the hatch keypad' : 'Hatch keypad (no power)');
       this.interact.add({
         id: 'hatch', position: this.gates.keypadSpot, radius: 0.35, reach: 2.2,
-        label: () => (this.story.has('gardenCleared') ? 'Use the hatch keypad' : 'Hatch keypad (no power)'),
-        when: () => !this.story.has('hatchOpen'), use: () => this._useHatch()
+        label: hatchLabel, when: () => !this.story.has('hatchOpen'), use: () => this._useHatch()
       });
+      // the hatch itself works too (the keypad is just beside it)
+      if (this.gates.hatchCentre) {
+        this.interact.add({
+          id: 'hatchSlab', position: this.gates.hatchCentre.clone().add(new THREE.Vector3(0, 0.15, 0)), radius: 1.0, reach: 2.8,
+          label: hatchLabel, when: () => !this.story.has('hatchOpen'), use: () => this._useHatch()
+        });
+      }
     }
     // the things to read upstairs (scenes 2.6 to 2.8)
     this._buildReadables(scene, lab);
@@ -834,6 +841,14 @@ export class HabitatSession {
     this.hud.update(this.player);
     this.reader.update(dt);
     this._idleLines(dt, playing, p);
+    for (const k of this._markers || []) {
+      const show = !k.done() && k.m.position.distanceToSquared(p) < 100;
+      k.m.visible = show;
+      if (show) {
+        k.m.rotation.y += dt * 1.6;
+        k.m.position.y = k.y + Math.sin(performance.now() * 0.0025 + k.phase) * 0.04;
+      }
+    }
     // the fight's controls, from ARIA's warning in the lift until the garden is clear
     const helpOn = this._fightHelpOn && playing && this.garden && this.garden.state !== 'done';
     this.fightHelp.setVisible(!!helpOn);
@@ -929,6 +944,7 @@ export class HabitatSession {
       this._restoreTarget = 1;
       this.gates?.openBulkheads();
       this.gates?.setKeypadPowered(true);
+      g.ui.showToast('POWER RESTORED. THE STAIR BULKHEADS ARE OPEN.', 5000);
     }, 700);
     setTimeout(() => this.say('bulkhead'), 2600);
   }
@@ -939,11 +955,12 @@ export class HabitatSession {
   // ---------------------------------------------------------
   _buildReadables(scene, lab) {
     const spots = buildRoomProps(scene);
-    this.physics.addStaticObject(spots.lockerBody);
+    for (const body of spots.lockerBodies) this.physics.addStaticObject(body);
     const r = this.reader;
     const add = (id, position, radius, label, use, when) => this.interact.add({ id, position, radius, label, use, when, reach: 2.2 });
     add('bunkLogA', spots.bunkLogA, 0.25, 'Play the crew log', () => r.read('bunkLogA'));
     add('bunkLogB', spots.bunkLogB, 0.25, 'Play the crew log', () => r.read('bunkLogB'));
+    if (spots.myBunk) add('myBunk', spots.myBunk, 0.3, 'Read the name plate', () => this.say('myBunk'));
     add('corkboard', spots.corkboard, 0.55, 'Look at the corkboard', () => r.read('rota', () => this.say('corkboard')));
     add('locker', spots.locker, 0.4,
       () => (this.story.has('cardTaken') ? 'Read the letter again' : "Search J. Voss's locker"),
@@ -961,6 +978,27 @@ export class HabitatSession {
     add('kesslerLog', spots.kesslerLog, 0.3, 'Play the final log', () => r.read('kesslerLog'));
     add('codeCard', spots.codeCard, 0.15, 'Read the card', () => r.read('codeCard', () => this.story.set('codeFound')));
     this._idle = { bunk: 0, lab: 0 };
+    // where the objective's marker points inside the rooms
+    const t = this.story.targets;
+    t.locker = spots.locker;
+    t.personalLog = spots.personalLog;
+    t.labTerminal = screen ? screen.getWorldPosition(new THREE.Vector3()) : null;
+    t.kesslerLog = spots.kesslerLog;
+    t.codeCard = spots.codeCard;
+    this.story.seen = (id) => r.seen.has(id);
+    // a small glowing diamond floats over everything not read yet, so nothing is missed
+    const seen = (id) => () => r.seen.has(id);
+    this._markers = [
+      [spots.bunkLogA, seen('bunkLogA')], [spots.bunkLogB, seen('bunkLogB')], [spots.corkboard, seen('rota')],
+      [spots.locker, () => this.story.has('cardTaken')], [spots.personalLog, seen('log-8')],
+      [t.labTerminal, () => this.story.has('labDone')], [spots.kesslerLog, seen('kesslerLog')], [spots.codeCard, seen('codeCard')]
+    ].filter(([p]) => p).map(([p, done], i) => {
+      const m = new THREE.Mesh(this._markerGeo ??= new THREE.OctahedronGeometry(0.085), this._markerMat ??= new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 1.5, 1.8) }));
+      m.position.copy(p).add(new THREE.Vector3(0, 0.32, 0));
+      m.scale.set(1, 1.5, 1);
+      scene.add(m);
+      return { m, y: m.position.y, done, phase: i };
+    });
   }
 
   // the locker's card is his: a flash of memory, then the letter's line
@@ -991,6 +1029,7 @@ export class HabitatSession {
   _readFinished(id) {
     if (id === 'log-8' && !this._saidInterrupt) {
       this._saidInterrupt = true;
+      this.story.set('logWatched');
       setTimeout(() => this.say('bunkInterrupt'), 900);
     }
     if (id === 'subjects' && !this._saidCycle9) {
@@ -1065,27 +1104,26 @@ export class HabitatSession {
     this.keypad.open();
   }
 
-  _closeKeypad() {
+  // opened: the right code went in. Otherwise, the first time he walks away from it, ARIA explains
+  // whose lock it is and begs him not to go upstairs (scene 2.4)
+  _closeKeypad(opened = false) {
     if (!this.keypad.isOpen) return;
     this.keypad.close();
     this.game.state = 'PLAYING';
+    if (!opened && this.story.has('gardenCleared') && this.story.set('hatchTried')) this.say('hatchLocked');
   }
 
   _hatchCode(code) {
     if (code === HATCH_CODE) {
       this.keypad.setStatus('ACCESS GRANTED', 'success');
       setTimeout(() => {
-        this._closeKeypad();
+        this._closeKeypad(true);
         this.story.set('hatchOpen');
       }, 900);
       return;
     }
     this.keypad.setStatus('ACCESS DENIED', 'error');
-    setTimeout(() => {
-      this._closeKeypad();
-      // the first refusal: ARIA explains whose lock it is, and tells him not to go upstairs
-      if (this.story.set('hatchTried')) this.say('hatchLocked');
-    }, 1200);
+    setTimeout(() => this._closeKeypad(), 1200);
   }
 
   // Enter: skip ARIA's line, or move on from Voss's

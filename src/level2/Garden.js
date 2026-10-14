@@ -23,13 +23,14 @@ const MAX_ALIVE = 4;
 const WAKE_RADIUS = 8;           // he comes this close to the hatch: the drones drop
 const REST_SECONDS = 6;
 const COLD_SNAP_COOLDOWN = 5;
-const JET_RANGE = 9;
-const JET_WIDTH = 0.8;           // how close to the jet a drone must be to get wet: this, at the nozzle,
-const JET_SPREAD = 0.1;          //   plus this much more per metre out
-const SOAK_PER_SECOND = 2.2;     // a moment under the jet is enough
+const JET_RANGE = 18;            // the water reaches about this far
+const DRONE_HIT_RADIUS = 1.0;    // a water droplet this close to a drone soaks it (its whole width, arms and all)
+const SOAK_PER_DROP = 0.06;      // so five droplets make it wet enough to freeze
+const CLOSE_JET = 3;             // right in front of the nozzle (before the droplets spread out)
+const SOAK_PER_SECOND = 2.2;     //   a drone in the jet's path soaks this fast
 const ATTACK_GAP = [1.8, 3.2];   // seconds between one drone's dive and the next one's lock-on
 const HUNT_GAP = [3.5, 5.5];     // the same before he has the pipe (one drone hunting him, slowly)
-const HUNT_LEASH = 15;           // while hunting, a drone may follow him this far from the garden
+const LEASH = 15;                // drones follow him anywhere on the hall floor, this far from the garden
 const FIRST_DIVE = 3;            // seconds after he takes the pipe before the first dive
 const IDLE_SECONDS = 25;         // the drones are up and he still hasn't taken the pipe
 const HOSE_POINTS = 18;
@@ -65,6 +66,7 @@ export class Garden {
     this._right = new THREE.Vector3();
     this._tip = new THREE.Vector3();
     this._down = new THREE.Vector3(0, -1, 0);
+    this._facing = new THREE.Vector3(0, 0, -1);
     this._q2 = new THREE.Quaternion();
     this.remains = new Remains(this.scene);
     this._buildManifold();
@@ -259,9 +261,9 @@ export class Garden {
     }
   }
 
-  // a remark that waits until nobody is talking
-  _queue(talk) {
-    this._pending.push(talk);
+  // a remark that waits until nobody is talking (it is dropped if it waits too long to still make sense)
+  _queue(talk, wait = 8) {
+    this._pending.push({ talk, until: this._time + wait });
   }
 
   // ------------------------------------------------------------------ per frame
@@ -270,7 +272,8 @@ export class Garden {
     const { dt, head, playing } = ctx;
     this._time += dt;
     this.coldSnap = Math.max(0, this.coldSnap - dt);
-    if (this._pending.length && !this.isTalking?.()) this.say?.(this._pending.shift());
+    while (this._pending.length && this._pending[0].until < this._time) this._pending.shift();
+    if (this._pending.length && !this.isTalking?.()) this.say?.(this._pending.shift().talk);
     if (this.freezeHeld && this.coldSnap === 0) this.freeze(true);
 
     if ((this.state === 'idle' || this.state === 'hunt') && playing && ctx.canWake) {
@@ -308,6 +311,7 @@ export class Garden {
           this._queue('gardenRest');
         } else {
           this.state = 'done';
+          this._pending.length = 0;
           this._dropPipe();
           Promise.resolve(this.say?.('gardenWin')).then(() => this.onCleared?.());
         }
@@ -322,11 +326,19 @@ export class Garden {
       }
     }
 
-    const leash = this.state === 'hunt' ? HUNT_LEASH : 9;
+    // which way he faces (flat), so the drones keep in front of him and to the sides
+    this.camera.getWorldDirection(this._facing).setY(0);
+    if (this._facing.lengthSq() < 1e-4) this._facing.set(0, 0, -1);
+    this._facing.normalize();
     for (const d of this.drones) {
       if (!d.alive) continue;
+      // wet from the water droplets that reach it (anything the stream visibly hits)
+      if (d.state !== 'frozen') {
+        const drops = this.fx.waterHits(d.position, DRONE_HIT_RADIUS);
+        if (drops) d.soak(drops * SOAK_PER_DROP);
+      }
       d.update({
-        dt, player: head, centre: this.centre, leash,
+        dt, player: head, facing: this._facing, centre: this.centre, leash: LEASH,
         onHit: (kind) => this._hurt(kind, d.position),
         onShatter: (at) => this._shatter(at, d.floorY),
         onSpark: (at) => { this.fx.sparks(at, 4); if (Math.random() < 0.3) this.audio.crackle(); },
@@ -379,19 +391,14 @@ export class Garden {
     this.audio.hiss(spraying);
     if (spraying) {
       this.fx.water(this._tip, this._dir, ctx.dt);
-      // soak every drone near the jet: near the line he aims along, or near the arc the droplets
-      // actually fly (they drop with distance), so a drone the water visibly hits gets wet
+      // (the droplets soak whatever they reach, in update; this covers a drone right in front of
+      // the nozzle, before the stream has spread)
       for (const d of this.drones) {
         if (!d.alive || d.state === 'frozen') continue;
         this._w.subVectors(d.position, this._tip);
         const along = this._w.dot(this._dir);
-        if (along < 0 || along > JET_RANGE) continue;
-        const offLine = this._w.addScaledVector(this._dir, -along).length();
-        const t = along / 14.5;
-        this._v.copy(this._tip).addScaledVector(this._dir, along);
-        this._v.y += 1.2 * t - 4.5 * t * t;
-        const offArc = d.position.distanceTo(this._v);
-        if (Math.min(offLine, offArc) < JET_WIDTH + along * JET_SPREAD) d.soak(SOAK_PER_SECOND * ctx.dt);
+        if (along < 0 || along > CLOSE_JET) continue;
+        if (this._w.addScaledVector(this._dir, -along).length() < 0.9) d.soak(SOAK_PER_SECOND * ctx.dt);
       }
       const hit = this.physics.castRay(this._tip, this._dir, JET_RANGE);
       if (hit !== null && Math.random() < 0.5) this.fx.mist(this._w.copy(this._tip).addScaledVector(this._dir, hit), ctx.dt, 20);
@@ -446,6 +453,7 @@ export class Garden {
     this._teaser?.d.remove();
     this._teaser = null;
     this.state = 'done';
+    this._pending.length = 0;
     if (this.holding) this._dropPipe();
   }
 

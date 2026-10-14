@@ -62,6 +62,7 @@ export const LINES = {
   'l2-filament': aria('guarded', "Leftover coolant. Don't touch."),
   'l2-garden-idle': aria('sly', "The pipe's right there on the wall, Voss. I know you can see it. I'm the one with cameras, not you, and even I can see it."),
   'l2-garden-win': aria('relieved', "There. See? Nothing you can't handle."),
+  'v-power-back': voss("The lights are back... and the bulkheads on the stairs just opened."),
   'l2-bulkhead': aria('guarded', "That wasn't me."),
 
   // 2.4 The hatch
@@ -77,6 +78,7 @@ export const LINES = {
 
   // 2.6 The crew bunk
   'v-initials': voss('My initials. Again.'),
+  'v-my-bunk': voss("J. Voss. This was my bunk... I don't remember ever sleeping here."),
   'v-handwriting': voss("...That's my handwriting. Why does this sound like I already knew what was going on?"),
   'l2-bunk-interrupt': aria('guarded', "Voss? You've been in there a while. Everything alright?"),
   'l2-bunk-idle': aria('sly', "It's only bunks, Voss. I'd leave the lockers. Everyone's so private about their laundry."),
@@ -155,12 +157,13 @@ export const TALKS = {
   filament: ['v-filament', 'l2-filament'],
   gardenIdle: ['l2-garden-idle'],
   gardenWin: ['l2-garden-win'],
-  bulkhead: ['l2-bulkhead'],
+  bulkhead: ['v-power-back', 'l2-bulkhead'],
   hatchLocked: ['l2-hatch-1', 'v-hatch-how', 'l2-hatch-2'],
   galleryTop: ['l2-gallery-1'],
   sealedDoor: ['v-sealed'],
   galleryIdle: ['l2-gallery-idle'],
   corkboard: ['v-initials'],
+  myBunk: ['v-my-bunk'],
   letter: ['v-handwriting'],
   bunkInterrupt: ['l2-bunk-interrupt'],
   bunkIdle: ['l2-bunk-idle'],

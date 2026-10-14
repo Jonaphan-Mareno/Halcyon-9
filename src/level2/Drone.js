@@ -6,18 +6,24 @@ import { withHubLighting } from '../graphics/HubMaterials.js';
 // tracking smoothly, which is the first sign something is wrong with it.
 //
 // What it does (the Garden decides when it may attack):
-//   drop       descends from the grilles above the beds
-//   circle     orbits Voss at a few metres, bobbing
+//   drop       swoops down from the grilles above the beds to its place
+//   circle     keeps a place round Voss a few metres out at about head height, following him as
+//              he moves. It stays put while he can see it (so he can aim at it), drifting slowly;
+//              one that ends up behind him comes round to his side (never overhead or behind)
 //   telegraph  one second: it stops, the eye locks on and turns red
 //   dive       rushes his last position; a direct hit or a graze hurts
-//   recover    climbs back up and circles again
+//   recover    flies back out to its place and circles again
 //   frozen     ARIA froze it (only works when it is wet): it drops and shatters on the floor
 //
 // Wet (from the water jet) it darkens and glistens, drips, sparks and slows down: sparking means
 // ARIA can freeze it. Nothing here allocates per frame.
 
-const ORBIT_RADIUS = 4.6;
-const ORBIT_HEIGHT = 2.6;
+const RANGE = [4.2, 6.5];        // metres from Voss it keeps
+const HOVER = [2.0, 2.6];        // its height: a little above his eyes (1.6 m)
+const SPREAD = 0.9;              // how far round from straight ahead it starts (radians)
+const BEHIND = 1.1;              // further round than this from where he faces, it comes back round
+const COME_ROUND = 0.9;          //   at this many radians a second
+const DRIFT = 0.12;              // its slow wander round him, radians a second
 const TELEGRAPH = 1.2;
 const DIVE_SPEED = 9.5;
 const RECOVER = 0.9;
@@ -102,9 +108,11 @@ export class Drone {
     scene.add(this.group);
 
     this.state = 'drop';
-    this.hoverY = ORBIT_HEIGHT + (Math.random() - 0.5) * 0.8;
-    this.orbit = Math.random() * Math.PI * 2;      // where round Voss it circles
-    this.orbitDir = Math.random() < 0.5 ? 1 : -1;
+    this.hoverY = HOVER[0] + Math.random() * (HOVER[1] - HOVER[0]);
+    this.slot = (Math.random() * 2 - 1) * SPREAD;   // where it starts: this far round from where he faces
+    this.angle = null;                              // its place round him (world angle), set on arrival
+    this.slotPhase = Math.random() * 10;
+    this.range = RANGE[0] + Math.random() * (RANGE[1] - RANGE[0]);
     this.timer = 0;
     this.wet = 0;
     this.time = Math.random() * 10;
@@ -160,9 +168,9 @@ export class Drone {
     this.bodyMat.dispose();
   }
 
-  // ctx: { dt, player (Vector3, his head), centre (Vector3, the garden), leash (metres from the
-  //        centre it may circle, default 9), onHit(kind), onShatter(position), onSpark(position),
-  //        onDrip(position) }
+  // ctx: { dt, player (Vector3, his head), facing (Vector3, flat: the way he looks), centre
+  //        (Vector3, the garden), leash (metres from the centre it may go, default 15),
+  //        onHit(kind), onShatter(position), onSpark(position), onDrip(position) }
   update(ctx) {
     const { dt, player } = ctx;
     this.time += dt;
@@ -185,24 +193,14 @@ export class Drone {
 
     switch (this.state) {
       case 'drop': {
-        p.y += (this.hoverY - p.y) * Math.min(1, dt * 1.6);
-        if (Math.abs(p.y - this.hoverY) < 0.15) this.state = 'circle';
+        this._hold(ctx, dt, slow);
+        if (Math.abs(p.y - this.hoverY) < 0.3) this.state = 'circle';
         this._lookAt(player, dt);
         this._twitch(dt);
         break;
       }
       case 'circle': {
-        this.orbit += this.orbitDir * dt * 0.55 * slow;
-        // round Voss, but kept over the garden so the fight stays where it belongs
-        this._v.set(player.x + Math.cos(this.orbit) * ORBIT_RADIUS, 0, player.z + Math.sin(this.orbit) * ORBIT_RADIUS);
-        const leash = ctx.leash ?? 9;
-        this._w.subVectors(this._v, ctx.centre).setY(0);
-        if (this._w.length() > leash) this._v.copy(ctx.centre).addScaledVector(this._w.normalize(), leash);
-        this._v.y = this.hoverY + Math.sin(this.time * 1.7) * 0.25;
-        this._w.subVectors(this._v, p);
-        const gap = this._w.length();
-        const move = Math.min(gap * Math.min(1, dt * 1.4 * slow), MAX_SPEED * slow * dt);
-        if (gap > 1e-4) p.addScaledVector(this._w, move / gap);
+        this._hold(ctx, dt, slow);
         this._lookAt(player, dt);
         this._twitch(dt);
         break;
@@ -241,8 +239,9 @@ export class Drone {
         break;
       }
       case 'recover': {
+        // straight back out to its place (not up over his head)
         this.timer -= dt;
-        p.y += (this.hoverY - p.y) * Math.min(1, dt * 2.5);
+        this._hold(ctx, dt, slow * 1.4);
         if (p.y < 0.8) p.y = 0.8;
         if (this.timer <= 0) this.state = 'circle';
         break;
@@ -261,6 +260,27 @@ export class Drone {
         break;
       }
     }
+  }
+
+  // fly towards its place round him, a few metres out at about head height, kept within the hall
+  _hold(ctx, dt, speed) {
+    const { player, facing } = ctx;
+    const p = this.group.position;
+    const face = Math.atan2(facing.x, facing.z);
+    if (this.angle === null) this.angle = face + this.slot;
+    const rel = Math.atan2(Math.sin(this.angle - face), Math.cos(this.angle - face));
+    if (Math.abs(rel) > BEHIND) this.angle -= Math.sign(rel) * COME_ROUND * dt;
+    this.angle += Math.sin(this.time * 0.3 + this.slotPhase) * DRIFT * dt;
+    const a = this.angle;
+    this._v.set(player.x + Math.sin(a) * this.range, 0, player.z + Math.cos(a) * this.range);
+    const leash = ctx.leash ?? 15;
+    this._w.subVectors(this._v, ctx.centre).setY(0);
+    if (this._w.length() > leash) this._v.copy(ctx.centre).addScaledVector(this._w.normalize(), leash);
+    this._v.y = this.hoverY + Math.sin(this.time * 1.7) * 0.2;
+    this._w.subVectors(this._v, p);
+    const gap = this._w.length();
+    const move = Math.min(gap * Math.min(1, dt * 1.6 * speed), MAX_SPEED * speed * dt);
+    if (gap > 1e-4) p.addScaledVector(this._w, move / gap);
   }
 
   // turn to face a point (the body yaws, smoothly)

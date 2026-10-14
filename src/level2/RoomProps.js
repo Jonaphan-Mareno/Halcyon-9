@@ -2,10 +2,11 @@ import * as THREE from 'three';
 import { withHubLighting } from '../graphics/HubMaterials.js';
 
 // The things to read upstairs (scenes 2.6 to 2.8), placed on the furniture already in the
-// rooms: in the crew bunk (Voss's old room, east) two bunkside terminals with audio logs, a
-// corkboard with the scan rota, his personal log terminal and his locker, left ajar, with the
-// letter and Kessler's card inside; in Kessler's room (north-east) her desk monitor and the code
-// card pinned beside it. Smooth navy, soft black and orange, like the rest of the station.
+// rooms: in the crew bunk (Voss's old room, east) name plates on the bunks (one says J. VOSS),
+// two bunkside terminals with audio logs, a corkboard with the scan rota, his personal log
+// terminal, and a row of crew lockers, his left ajar with the letter and Kessler's card inside;
+// in Kessler's room (north-east) her desk monitor and the code card pinned beside it. Smooth
+// navy, soft black and orange, like the rest of the station.
 //
 // Returns where each one is, for the E spots. Positions are from the atrium model (floor 5.5 m).
 
@@ -85,9 +86,9 @@ function monitor(scene, x, y, z, yaw, lines, colour) {
 function wallScreen(scene, x, y, z, yaw, lines, colour) {
   const M = materials();
   const g = new THREE.Group();
-  g.add(box(0.36, 0.25, 0.04, M.black, 0, 0, 0));
-  g.add(box(0.36, 0.03, 0.05, M.orange, 0, -0.14, 0));
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.2), screenMaterial(lines, colour));
+  g.add(box(0.56, 0.38, 0.04, M.black, 0, 0, 0));
+  g.add(box(0.56, 0.03, 0.05, M.orange, 0, -0.205, 0));
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.52, 0.33), screenMaterial(lines, colour));
   screen.position.z = 0.021;
   g.add(screen);
   place(scene, g, x, y, z, yaw);
@@ -162,9 +163,27 @@ function corkboard(scene, x, y, z, yaw) {
   return face.getWorldPosition(new THREE.Vector3());
 }
 
-// Voss's locker, left ajar: navy, an orange name tag, a uniform and a manual inside, the letter on
-// the shelf and Kessler's card taped inside the door. Returns { spot, body (for a collider) }.
-function locker(scene, x, z, yaw) {
+// an orange name plate (on a locker door or a bunk's rail)
+function nameTag(name, w = 0.3, h = 0.075) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#f07a14';
+  g.fillRect(0, 0, 512, 128);
+  g.fillStyle = '#15181c';
+  g.font = 'bold 66px Courier New, monospace';
+  g.textAlign = 'center';
+  g.fillText(name, 256, 88);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, h), withHubLighting(new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5 })));
+}
+
+// A crew locker: navy, an orange name tag. Voss's is left ajar, with a uniform and a manual
+// inside, the letter on the shelf and Kessler's card taped inside the door.
+// Returns { spot, body (for a collider) }.
+function locker(scene, x, z, yaw, name = 'J. VOSS', ajar = true) {
   const M = materials();
   const W = 0.8, H = 1.95, D = 0.5, T = 0.025;
   const g = new THREE.Group();
@@ -176,12 +195,14 @@ function locker(scene, x, z, yaw) {
   body.add(box(W, 0.08, D, M.black, 0, 0.04, 0));
   body.add(box(W - 2 * T, T, D - T, M.navy, 0, 1.55, 0));
   g.add(body);
-  // inside: a uniform on its hanger, a dog-eared manual and the letter on the shelf
-  g.add(box(0.42, 0.85, 0.12, M.cloth, -0.08, 1.02, -0.05));
-  g.add(box(0.2, 0.04, 0.26, M.orange, 0.2, 1.585, -0.02));
-  const letter = box(0.21, 0.004, 0.28, M.paper, -0.18, 1.57, 0.02);
-  letter.rotation.y = 0.25;
-  g.add(letter);
+  if (ajar) {
+    // inside: a uniform on its hanger, a dog-eared manual and the letter on the shelf
+    g.add(box(0.42, 0.85, 0.12, M.cloth, -0.08, 1.02, -0.05));
+    g.add(box(0.2, 0.04, 0.26, M.orange, 0.2, 1.585, -0.02));
+    const letter = box(0.21, 0.004, 0.28, M.paper, -0.18, 1.57, 0.02);
+    letter.rotation.y = 0.25;
+    g.add(letter);
+  }
   // the door, hinged on its left edge and opened a hand's width
   const hinge = new THREE.Group();
   hinge.position.set(-W / 2, 0, D / 2);
@@ -189,24 +210,15 @@ function locker(scene, x, z, yaw) {
   hinge.add(door);
   // vents, the orange name tag, and the card taped inside
   for (let i = 0; i < 4; i++) hinge.add(box(0.4, 0.02, 0.005, M.black, W / 2, H - 0.25 - i * 0.05, T / 2 + 0.002));
-  const tag = document.createElement('canvas');
-  tag.width = 256;
-  tag.height = 64;
-  const tg = tag.getContext('2d');
-  tg.fillStyle = '#f07a14';
-  tg.fillRect(0, 0, 256, 64);
-  tg.fillStyle = '#15181c';
-  tg.font = 'bold 34px Courier New, monospace';
-  tg.fillText('J. VOSS', 52, 44);
-  const tagTex = new THREE.CanvasTexture(tag);
-  tagTex.colorSpace = THREE.SRGBColorSpace;
-  const tagMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.075), withHubLighting(new THREE.MeshStandardMaterial({ map: tagTex, roughness: 0.5 })));
+  const tagMesh = nameTag(name);
   tagMesh.position.set(W / 2, 1.45, T / 2 + 0.003);
   hinge.add(tagMesh);
-  const card = box(0.085, 0.054, 0.003, new THREE.MeshBasicMaterial({ color: 0x9fe8ff }), W / 2 + 0.1, 1.25, -T / 2 - 0.003);
-  hinge.add(card);
-  hinge.add(box(0.12, 0.05, 0.002, M.paper, W / 2 + 0.1, 1.18, -T / 2 - 0.003));
-  hinge.rotation.y = -0.55;
+  if (ajar) {
+    const card = box(0.085, 0.054, 0.003, new THREE.MeshBasicMaterial({ color: 0x9fe8ff }), W / 2 + 0.1, 1.25, -T / 2 - 0.003);
+    hinge.add(card);
+    hinge.add(box(0.12, 0.05, 0.002, M.paper, W / 2 + 0.1, 1.18, -T / 2 - 0.003));
+    hinge.rotation.y = -0.55;
+  }
   g.add(hinge);
   place(scene, g, x, FLOOR, z, yaw);
   return { spot: new THREE.Vector3(0, 1.4, D / 2).applyMatrix4(g.matrixWorld), body };
@@ -219,9 +231,21 @@ export function buildRoomProps(scene) {
   spots.bunkLogA = wallScreen(scene, 18.35, 7.0, -5.35, 0, ['CREW LOG', 'AUDIO  0:41'], '#7fd6ff');
   spots.bunkLogB = wallScreen(scene, 21.79, 6.55, -4.1, -Math.PI / 2, ['CREW LOG', 'AUDIO  0:22'], '#7fd6ff');
   spots.corkboard = corkboard(scene, 17.46, 7.25, -3.15, Math.PI / 2);   // (the wall's face is at x 17.42)
-  const lk = locker(scene, 19.9, 2.72, Math.PI);
-  spots.locker = lk.spot;
-  spots.lockerBody = lk.body;
+  // the crew lockers along the south wall, Voss's in the middle, ajar
+  spots.lockerBodies = [];
+  for (const [x, name] of [[18.85, 'A. OKAFOR'], [19.7, 'J. VOSS'], [20.55, 'T. LINDQVIST']]) {
+    const lk = locker(scene, x, 2.72, Math.PI, name, name === 'J. VOSS');
+    spots.lockerBodies.push(lk.body);
+    if (name === 'J. VOSS') spots.locker = lk.spot;
+  }
+  // name plates on the bunks' front rails (the bunk's open side faces south, at z -2.56): the
+  // lower bunks' bases and the upper bunks' rails, one bunk each end
+  for (const [x, y, name] of [[22.85, 5.86, 'J. VOSS'], [24.8, 5.86, 'R. NAVARRO'], [22.85, 7.38, 'S. PARK'], [24.8, 7.38, 'D. ITO']]) {
+    const tag = nameTag(name, 0.52, 0.13);
+    tag.position.set(x, y, -2.535);
+    scene.add(tag);
+    if (name === 'J. VOSS') spots.myBunk = tag.position.clone();
+  }
   // ---- Kessler's room: her monitor on the workbench, facing her door; the card pinned beside it
   const desk = new THREE.Vector3(17.8, BENCH, -14.7);
   const door = new THREE.Vector3(12.1, BENCH, -12.1);

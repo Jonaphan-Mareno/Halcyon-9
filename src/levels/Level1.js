@@ -1796,6 +1796,9 @@ onRingPuzzleComplete() {
     // Swing away from the player: out of the cell (towards -z)
     this._doorOpenAngle = Math.sign(freeX - hingeX) * (Math.PI / 2);
     this.door = door;
+    // Reached through the broken window, so the door between is not "in the way" (aim assist)
+    door.userData.noLineOfSight = true;
+    if (handle) handle.userData.noLineOfSight = true;
     this.doorPivot = pivot;
     this.doorHandle = handle || null;
     if (handle) new THREE.Box3().setFromObject(handle).getCenter(this._handleCentre);

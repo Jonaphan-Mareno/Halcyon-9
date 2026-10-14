@@ -34,9 +34,13 @@ const ELEVATOR_ACCESS_CODE = '123456';
 
 // Circuit puzzle timing: each failed attempt adds a little time, up to a cap,
 // so it never becomes frustrating
-const PUZZLE_BASE_SECONDS = 60;
+const PUZZLE_BASE_SECONDS = 40;
 const PUZZLE_BONUS_PER_FAILURE = 5;
-const PUZZLE_MAX_BONUS = 15;
+const PUZZLE_MAX_BONUS = 10;
+// After a failed attempt ARIA marks the next junctions to turn on the fresh circuit: how many,
+// and for how long (seconds)
+const PUZZLE_HINT_TILES = [0, 3, 5];
+const PUZZLE_HINT_SECONDS = 14;
 
 // What hurts Voss (health is out of 100), and what repairs him
 const OVERLOAD_DAMAGE = 34; // the generator trips: an electric shock. Three overloads in a row are fatal
@@ -58,6 +62,9 @@ const ARIA_PUZZLE_LINES = {
               text: "Oops! No harm done... let's try that again." },
   overload2:{ clip: 'overload-2', expression: 'sly',
               text: "Oh dear! Again! They say lightning never strikes twice. It was clearly lying. Here's a hint: start at the battery, follow the glow, and keep it away from the red fuses. They have very strong... current opinions." },
+  // (no recording yet: shown as a subtitle with her talking face)
+  hint1:    { clip: 'puzzle-hint', expression: 'bubbly',
+              text: "Let me help. I've marked the first junctions you need to turn. Start at the battery, follow my marks, and watch the copper light up." },
   zap1:     { clip: 'zap-1', expression: 'sly',
               text: "Ooh, that's a live fuse. Touching it is not recommended. Although I hear the shocks are free." },
   zap2:     { clip: 'zap-2', expression: 'bubbly',
@@ -793,7 +800,7 @@ export class Game {
       to.subVectors(centre, cam.position);
       const distance = to.length();
       if (distance < 0.01 || distance > this.raycaster.far) continue;
-      const allowed = Math.max(THREE.MathUtils.degToRad(6), Math.atan(radius / distance) + THREE.MathUtils.degToRad(3));
+      const allowed = Math.max(THREE.MathUtils.degToRad(8), Math.atan(radius / distance) + THREE.MathUtils.degToRad(4));
       const score = to.angleTo(dir) / allowed;
       if (score >= bestScore) continue;
       const reach = Math.max(0, distance - radius * 0.5);
@@ -801,8 +808,9 @@ export class Game {
       best = { object, distance: reach, point: centre.clone() };
       bestScore = score;
     }
-    // not through walls
-    if (best && level._clearLineTo && !level._clearLineTo(best.point, Math.max(0, best.distance - 0.1))) return null;
+    // not through walls (except things reached round an obstacle, like the cell door's handle)
+    if (best && !best.object.userData.noLineOfSight && level._clearLineTo &&
+        !level._clearLineTo(best.point, Math.max(0, best.distance - 0.1))) return null;
     return best;
   }
 
@@ -1159,6 +1167,12 @@ export class Game {
     level.setStress(0);
     this.puzzle.reset({ timeLimit: this._puzzleSeconds() });
     this.audio.startHum();
+
+    // ...and a hint on the new circuit: the first junctions to turn are marked. After the first
+    // failure ARIA explains it (the second time her line above already has the advice).
+    const marks = PUZZLE_HINT_TILES[Math.min(level.failures, PUZZLE_HINT_TILES.length - 1)];
+    if (marks) this.puzzle.showHint(marks, PUZZLE_HINT_SECONDS);
+    if (level.failures === 1) await this.ariaSays(ARIA_PUZZLE_LINES.hint1, { pauseCountdown: true });
   }
 
   // Called from the click that completed the circuit, so the mouse can be

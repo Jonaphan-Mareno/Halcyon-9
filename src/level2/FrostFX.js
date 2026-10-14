@@ -123,6 +123,12 @@ export class FrostFX {
     }
   }
 
+  // Water dripping off something wet
+  drip(at) {
+    this._spawn(at.x + (Math.random() - 0.5) * 0.5, at.y - 0.12, at.z + (Math.random() - 0.5) * 0.5,
+      0, -0.5, 0, 0.06, 0, 0.6, 0.4, 0.6, 0.85, -9, 0.1);
+  }
+
   // The organism's filaments glowing in shattered ice: mint and violet motes that drift and fade
   filaments(at, count = 26) {
     for (let k = 0; k < count; k++) {

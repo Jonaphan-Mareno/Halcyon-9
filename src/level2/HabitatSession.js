@@ -147,7 +147,14 @@ export class HabitatSession {
       if (game.state !== 'PLAYING' || !this.ready) return;
       if (e.code === 'KeyE' && !e.repeat) this.interact?.use();
       if (e.code === 'Enter') this.skipLine();
-      if (e.code === 'KeyQ' && !e.repeat) this.garden?.freeze();
+      if (e.code === 'KeyQ' && !e.repeat && this.garden) {
+        this.garden.freeze();
+        this.garden.freezeHeld = true;
+      }
+    });
+    // holding Q keeps asking ARIA: she freezes the moment one is wet enough
+    document.addEventListener('keyup', (e) => {
+      if (e.code === 'KeyQ' && this.garden) this.garden.freezeHeld = false;
     });
     // the left mouse button sprays the garden's water pipe while he holds it
     document.addEventListener('mousedown', (e) => {

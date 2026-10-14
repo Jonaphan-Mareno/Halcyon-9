@@ -2,27 +2,34 @@ import * as THREE from 'three';
 import { Drone } from './Drone.js';
 import { FrostFX } from './FrostFX.js';
 import { FrostAudio } from './FrostAudio.js';
+import { Remains } from './Remains.js';
 import { withHubLighting } from '../graphics/HubMaterials.js';
 
-// The garden fight (scene 2.3). Voss nears the hatch and the maintenance drones drop from the
-// grilles above the beds. At the back of the garden an irrigation manifold, a wall of big pipes,
+// The garden fight (scene 2.3). The drone glimpsed across the hall (the tease) turns and hunts
+// him on his way to the hatch: one attacker, slowly, until the rest drop from the grilles above the
+// beds as he nears the hatch. At the back of the garden an irrigation manifold, a wall of big pipes,
 // holds a heavy hose: E pulls it out, the left mouse button sprays. Wet drones crackle and slow;
-// Q asks ARIA to drop the temperature, and every wet drone freezes, falls and shatters, glowing
-// mint and violet inside the ice (the organism got into them).
+// Q asks ARIA to drop the temperature (holding Q freezes the moment one is wet enough), and every
+// wet drone freezes, falls and shatters, leaving glowing remains on the floor (the organism got
+// into them). When the fight ends he lets go and the nozzle drops to the floor with its hose.
 //
 // Two waves: two drones to learn it ("That's two. There are... a few more."), then six, never
-// more than four in the air. They circle without diving until he has the pipe in his hands. Only
-// one drone attacks at a time: a lock-on (its eye turns red), then a dive. When the last one
-// breaks, the level is told (onCleared).
+// more than four in the air. Until he has the pipe they dive only now and then. Only one drone
+// attacks at a time: a lock-on (its eye turns red), then a dive. When the last one breaks, the
+// level is told (onCleared).
 
 const WAVES = [2, 6];
 const MAX_ALIVE = 4;
 const WAKE_RADIUS = 8;           // he comes this close to the hatch: the drones drop
 const REST_SECONDS = 6;
-const COLD_SNAP_COOLDOWN = 8;
+const COLD_SNAP_COOLDOWN = 5;
 const JET_RANGE = 9;
-const SOAK_PER_SECOND = 1.3;     // under the jet for under a second soaks a drone
+const JET_WIDTH = 0.8;           // how close to the jet a drone must be to get wet: this, at the nozzle,
+const JET_SPREAD = 0.1;          //   plus this much more per metre out
+const SOAK_PER_SECOND = 2.2;     // a moment under the jet is enough
 const ATTACK_GAP = [1.8, 3.2];   // seconds between one drone's dive and the next one's lock-on
+const HUNT_GAP = [3.5, 5.5];     // the same before he has the pipe (one drone hunting him, slowly)
+const HUNT_LEASH = 15;           // while hunting, a drone may follow him this far from the garden
 const FIRST_DIVE = 3;            // seconds after he takes the pipe before the first dive
 const IDLE_SECONDS = 25;         // the drones are up and he still hasn't taken the pipe
 const HOSE_POINTS = 18;
@@ -47,6 +54,7 @@ export class Garden {
     this.holding = false;
     this.spraying = false;
     this.idleTime = 0;
+    this.freezeHeld = false;         // Q is held down
     this._said = {};
     this._pending = [];              // remarks waiting for a quiet moment, so none cuts another off
     this._lastCooldownLine = -99;
@@ -56,12 +64,23 @@ export class Garden {
     this._dir = new THREE.Vector3();
     this._right = new THREE.Vector3();
     this._tip = new THREE.Vector3();
+    this._down = new THREE.Vector3(0, -1, 0);
+    this._q2 = new THREE.Quaternion();
+    this.remains = new Remains(this.scene);
     this._buildManifold();
     this._buildHose();
+    this._floorY = 0;
+    this._floorY = this._groundBelow(this.reelOutlet);
+  }
+
+  // the height of whatever is under a point (the floor, or a bed)
+  _groundBelow(p) {
+    const hit = this.physics.castRay(this._v.copy(p), this._down, 12);
+    return hit === null ? this._floorY : p.y - hit;
   }
 
   get active() {
-    return this.state === 'fight' || this.state === 'rest';
+    return this.state === 'hunt' || this.state === 'fight' || this.state === 'rest';
   }
 
   get alive() {
@@ -191,21 +210,23 @@ export class Garden {
     this.fx.mist(start, 0.4, 40);
   }
 
-  // Q: ARIA drops the temperature. Every wet drone freezes and falls.
-  freeze() {
-    if (!this.active) return;
+  // Q: ARIA drops the temperature. Every wet drone freezes and falls. While Q is held this runs
+  // every frame, quietly, so it freezes the moment one is wet enough and she is ready.
+  freeze(quiet = false) {
+    if (!this.active) return false;
     if (this.coldSnap > 0) {
-      if (this._time - this._lastCooldownLine > 10) {
+      if (!quiet && this._time - this._lastCooldownLine > 10) {
         this._lastCooldownLine = this._time;
         this.say?.('cooldown');
       }
-      return;
+      return false;
     }
     const frozen = this.drones.filter((d) => d.freeze());
     if (!frozen.length) {
-      this.toast?.('Nothing is wet enough to freeze. Spray them first.');
-      return;
+      if (!quiet) this.toast?.('Nothing is wet enough to freeze. Spray them first: they spark when they are ready.');
+      return false;
     }
+    for (const d of frozen) d.floorY = this._groundBelow(d.position);
     this.coldSnap = COLD_SNAP_COOLDOWN;
     this.idleTime = 0;
     this.audio.crackle();
@@ -214,6 +235,7 @@ export class Garden {
       this._said.firstFreeze = true;
       this._queue('firstFreeze');
     }
+    return true;
   }
 
   _hurt(kind, from) {
@@ -226,9 +248,10 @@ export class Garden {
     }
   }
 
-  _shatter(at) {
+  _shatter(at, floorY) {
     this.fx.shatter(at, 70);
     this.fx.filaments(at);
+    this.remains.add(at, floorY ?? this._floorY);
     this.audio.shatter();
     if (!this._said.filament) {
       this._said.filament = true;
@@ -248,13 +271,16 @@ export class Garden {
     this._time += dt;
     this.coldSnap = Math.max(0, this.coldSnap - dt);
     if (this._pending.length && !this.isTalking?.()) this.say?.(this._pending.shift());
+    if (this.freezeHeld && this.coldSnap === 0) this.freeze(true);
 
-    if (this.state === 'idle' && playing && ctx.canWake) {
+    if ((this.state === 'idle' || this.state === 'hunt') && playing && ctx.canWake) {
       this._v.copy(ctx.feet).setY(0);
       if (this._v.distanceTo(this._w.copy(this.centre).setY(0)) < WAKE_RADIUS) this._wake();
     }
 
     this._updateNozzle(ctx);
+    this._updateDropped(dt);
+    this.remains.update(dt);
 
     if (this.state === 'fight') {
       // more drones join until this wave's are all out, never more than four up at once
@@ -265,16 +291,7 @@ export class Garden {
           this.spawnTimer = rand(0.6, 1.4);
         }
       }
-      // one attacker at a time
-      const busy = this.drones.some((d) => d.state === 'telegraph' || d.state === 'dive');
-      this.attackTimer -= dt;
-      if (!busy && this.attackTimer <= 0 && playing && this.holding) {
-        const ready = this.drones.filter((d) => d.state === 'circle' && this._sees(d, head));
-        if (ready.length) {
-          ready[Math.floor(Math.random() * ready.length)].attack(head);
-          this.attackTimer = rand(ATTACK_GAP[0], ATTACK_GAP[1]);
-        }
-      }
+      this._attacks(dt, head, playing);
       if (playing && !this.holding) {
         this.idleTime += dt;
         if (this.idleTime > IDLE_SECONDS && !this._said.idle) {
@@ -291,11 +308,12 @@ export class Garden {
           this._queue('gardenRest');
         } else {
           this.state = 'done';
-          this.holding = false;
-          this.audio.hiss(false);
+          this._dropPipe();
           Promise.resolve(this.say?.('gardenWin')).then(() => this.onCleared?.());
         }
       }
+    } else if (this.state === 'hunt') {
+      this._attacks(dt, head, playing);
     } else if (this.state === 'rest') {
       this.restTimer -= dt;
       if (this.restTimer <= 0) {
@@ -304,16 +322,31 @@ export class Garden {
       }
     }
 
+    const leash = this.state === 'hunt' ? HUNT_LEASH : 9;
     for (const d of this.drones) {
       if (!d.alive) continue;
       d.update({
-        dt, player: head, centre: this.centre,
+        dt, player: head, centre: this.centre, leash,
         onHit: (kind) => this._hurt(kind, d.position),
-        onShatter: (at) => this._shatter(at),
-        onSpark: (at) => { this.fx.sparks(at, 4); if (Math.random() < 0.3) this.audio.crackle(); }
+        onShatter: (at) => this._shatter(at, d.floorY),
+        onSpark: (at) => { this.fx.sparks(at, 4); if (Math.random() < 0.3) this.audio.crackle(); },
+        onDrip: (at) => this.fx.drip(at)
       });
     }
     this.fx.update(dt);
+  }
+
+  // One attacker at a time: when the last has finished and the gap is up, a drone that can see him
+  // locks on. Slowly until he has the pipe, then the fight's pace.
+  _attacks(dt, head, playing) {
+    const busy = this.drones.some((d) => d.state === 'telegraph' || d.state === 'dive');
+    this.attackTimer -= dt;
+    if (busy || this.attackTimer > 0 || !playing) return;
+    const ready = this.drones.filter((d) => d.state === 'circle' && this._sees(d, head));
+    if (!ready.length) return;
+    ready[Math.floor(Math.random() * ready.length)].attack(head);
+    const gap = this.holding ? ATTACK_GAP : HUNT_GAP;
+    this.attackTimer = rand(gap[0], gap[1]);
   }
 
   // line of sight from the drone to Voss (columns and the beds hide him)
@@ -346,14 +379,19 @@ export class Garden {
     this.audio.hiss(spraying);
     if (spraying) {
       this.fx.water(this._tip, this._dir, ctx.dt);
-      // soak every drone inside the jet's cone
+      // soak every drone near the jet: near the line he aims along, or near the arc the droplets
+      // actually fly (they drop with distance), so a drone the water visibly hits gets wet
       for (const d of this.drones) {
         if (!d.alive || d.state === 'frozen') continue;
         this._w.subVectors(d.position, this._tip);
         const along = this._w.dot(this._dir);
         if (along < 0 || along > JET_RANGE) continue;
-        const off = this._w.addScaledVector(this._dir, -along).length();
-        if (off < 0.55 + along * 0.07) d.soak(SOAK_PER_SECOND * ctx.dt);
+        const offLine = this._w.addScaledVector(this._dir, -along).length();
+        const t = along / 14.5;
+        this._v.copy(this._tip).addScaledVector(this._dir, along);
+        this._v.y += 1.2 * t - 4.5 * t * t;
+        const offArc = d.position.distanceTo(this._v);
+        if (Math.min(offLine, offArc) < JET_WIDTH + along * JET_SPREAD) d.soak(SOAK_PER_SECOND * ctx.dt);
       }
       const hit = this.physics.castRay(this._tip, this._dir, JET_RANGE);
       if (hit !== null && Math.random() < 0.5) this.fx.mist(this._w.copy(this._tip).addScaledVector(this._dir, hit), ctx.dt, 20);
@@ -385,7 +423,8 @@ export class Garden {
         if (i > 0) a.addScaledVector(this._v, diff);
         if (i + 1 < n - 1) b.addScaledVector(this._v, -diff);
       }
-      for (let i = 1; i < n - 1; i++) if (pts[i].y < 0.08) pts[i].y = 0.08;   // it lies on the floor
+      const floor = this._floorY + 0.075;
+      for (let i = 1; i < n - 1; i++) if (pts[i].y < floor) pts[i].y = floor;   // it lies on the floor
     }
     for (let i = 0; i < n - 1; i++) {
       const a = pts[i], b = pts[i + 1];
@@ -397,6 +436,43 @@ export class Garden {
       this.hoseMesh.setMatrixAt(i, this._m);
     }
     this.hoseMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // The fight is over: he lets go, and the nozzle drops to the floor and settles with its hose
+  _dropPipe() {
+    this.holding = false;
+    this.spraying = false;
+    this.freezeHeld = false;
+    this.audio.hiss(false);
+    this._fall = { v: 0, down: false, settle: 0, floor: this._groundBelow(this.nozzle.position) };
+  }
+
+  _updateDropped(dt) {
+    const f = this._fall;
+    if (!f) return;
+    const n = this.nozzle;
+    if (!f.down) {
+      // fall, tipping over onto its side (grip out) as it goes
+      f.v += 9.8 * dt;
+      n.position.y -= f.v * dt;
+      this._dir.set(0, 0, 1).applyQuaternion(n.quaternion).setY(0);
+      if (this._dir.lengthSq() < 1e-4) this._dir.set(1, 0, 0);
+      this._q.copy(n.quaternion);
+      n.lookAt(this._v.copy(n.position).add(this._dir.normalize()));
+      n.rotateZ(Math.PI / 2);
+      this._q2.copy(n.quaternion);
+      n.quaternion.copy(this._q).slerp(this._q2, Math.min(1, dt * 6));
+      if (n.position.y <= f.floor + 0.09) {
+        n.position.y = f.floor + 0.09;
+        n.quaternion.copy(this._q2);
+        f.down = true;
+      }
+    } else {
+      f.settle += dt;
+    }
+    this._dir.set(0, 0, 1).applyQuaternion(n.quaternion);
+    this._updateHose(dt);
+    if (f.settle > 4) this._fall = null;     // at rest: the hose stops being simulated
   }
 
   // A drone glimpsed far off across the hall, before the fight (scene 2.2's tease)
@@ -418,8 +494,18 @@ export class Garden {
     t.d._twitch();
     t.d.time += dt;
     if (k >= 1) {
-      t.d.remove();
       this._teaser = null;
+      if (this.state === 'done') {
+        t.d.remove();
+        return;
+      }
+      // it has seen him: it turns and hunts him on his way to the hatch, and joins the first wave
+      t.d.state = 'circle';
+      this.drones.push(t.d);
+      if (this.state === 'idle') {
+        this.state = 'hunt';
+        this.attackTimer = 2.5;
+      }
     }
   }
 }

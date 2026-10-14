@@ -13,23 +13,26 @@ import { withHubLighting } from '../graphics/HubMaterials.js';
 //   recover    climbs back up and circles again
 //   frozen     ARIA froze it (only works when it is wet): it drops and shatters on the floor
 //
-// Wet (from the water jet) it crackles, sparks and slows down. Nothing here allocates per frame.
+// Wet (from the water jet) it darkens and glistens, drips, sparks and slows down: sparking means
+// ARIA can freeze it. Nothing here allocates per frame.
 
 const ORBIT_RADIUS = 4.6;
 const ORBIT_HEIGHT = 2.6;
 const TELEGRAPH = 1.2;
 const DIVE_SPEED = 9.5;
 const RECOVER = 0.9;
-const DRY_SECONDS = 6;           // a soaked drone dries out again in this long
+const DRY_SECONDS = 9;           // a soaked drone dries out again in this long
+const FREEZE_WET = 0.3;          // this wet (a third of a second under the jet) and it can be frozen
+const MAX_SPEED = 6;             // metres a second while circling (so one far off comes in, not teleports)
+const YELLOW = new THREE.Color(0xb8952a);
 
 let shared = null;
 function parts() {
   if (shared) return shared;
-  const yellow = withHubLighting(new THREE.MeshStandardMaterial({ color: 0xb8952a, roughness: 0.62, metalness: 0.25 }));
   const grime = withHubLighting(new THREE.MeshStandardMaterial({ color: 0x3a3a32, roughness: 0.8, metalness: 0.3 }));
   const steel = withHubLighting(new THREE.MeshStandardMaterial({ color: 0x9aa1a8, roughness: 0.3, metalness: 0.85 }));
   shared = {
-    yellow, grime, steel,
+    grime, steel,
     body: new THREE.BoxGeometry(0.62, 0.22, 0.62),
     top: new THREE.BoxGeometry(0.4, 0.1, 0.4),
     arm: new THREE.BoxGeometry(0.95, 0.05, 0.08),
@@ -49,7 +52,10 @@ export class Drone {
     const P = parts();
     this.group = new THREE.Group();
     this.group.name = 'Drone';
-    this.group.add(new THREE.Mesh(P.body, P.yellow));
+    // its own body material, so it can darken and glisten when wet
+    this.bodyMat = withHubLighting(new THREE.MeshStandardMaterial({ color: YELLOW, roughness: 0.62, metalness: 0.25 }));
+    this.group.add(new THREE.Mesh(P.body, this.bodyMat));
+    this._shownWet = 0;
     const top = new THREE.Mesh(P.top, P.grime);
     top.position.y = 0.15;
     this.group.add(top);
@@ -134,9 +140,13 @@ export class Drone {
     this.wet = Math.min(1, this.wet + amount);
   }
 
+  get freezable() {
+    return this.wet >= FREEZE_WET && this.state !== 'frozen' && this.state !== 'dead' && this.state !== 'scripted';
+  }
+
   // ARIA's cold snap: only a wet drone freezes. Returns true if it froze.
   freeze() {
-    if (this.wet < 0.5 || this.state === 'frozen' || this.state === 'dead') return false;
+    if (!this.freezable) return false;
     this.state = 'frozen';
     this.fallV = 0;
     this.ice.visible = true;
@@ -147,20 +157,29 @@ export class Drone {
   remove() {
     this.state = 'dead';
     this.group.removeFromParent();
+    this.bodyMat.dispose();
   }
 
-  // ctx: { dt, player (Vector3, his head), centre (Vector3, the garden), seen (bool: line of sight),
-  //        onHit(kind), onShatter(position), onSpark(position) }
+  // ctx: { dt, player (Vector3, his head), centre (Vector3, the garden), leash (metres from the
+  //        centre it may circle, default 9), onHit(kind), onShatter(position), onSpark(position),
+  //        onDrip(position) }
   update(ctx) {
     const { dt, player } = ctx;
     this.time += dt;
     const p = this.group.position;
-    const slow = this.wet > 0.5 ? 0.6 : 1;
+    const slow = this.wet >= FREEZE_WET ? 0.6 : 1;
     if (this.state !== 'frozen') {
       for (const b of this.blades) b.rotation.y += dt * 38 * slow;
       if (this.wet > 0) {
         this.wet = Math.max(0, this.wet - dt / DRY_SECONDS);
-        if (this.wet > 0.5 && Math.random() < dt * 6) ctx.onSpark?.(p);
+        if (this.wet >= FREEZE_WET && Math.random() < dt * 6) ctx.onSpark?.(p);
+        if (Math.random() < dt * 14 * this.wet) ctx.onDrip?.(p);
+      }
+      // wet: darker and glossier
+      if (Math.abs(this.wet - this._shownWet) > 0.03) {
+        this._shownWet = this.wet;
+        this.bodyMat.color.copy(YELLOW).multiplyScalar(1 - 0.5 * this.wet);
+        this.bodyMat.roughness = 0.62 - 0.45 * this.wet;
       }
     }
 
@@ -176,10 +195,14 @@ export class Drone {
         this.orbit += this.orbitDir * dt * 0.55 * slow;
         // round Voss, but kept over the garden so the fight stays where it belongs
         this._v.set(player.x + Math.cos(this.orbit) * ORBIT_RADIUS, 0, player.z + Math.sin(this.orbit) * ORBIT_RADIUS);
+        const leash = ctx.leash ?? 9;
         this._w.subVectors(this._v, ctx.centre).setY(0);
-        if (this._w.length() > 9) this._v.copy(ctx.centre).addScaledVector(this._w.normalize(), 9);
+        if (this._w.length() > leash) this._v.copy(ctx.centre).addScaledVector(this._w.normalize(), leash);
         this._v.y = this.hoverY + Math.sin(this.time * 1.7) * 0.25;
-        p.lerp(this._v, Math.min(1, dt * 1.4 * slow));
+        this._w.subVectors(this._v, p);
+        const gap = this._w.length();
+        const move = Math.min(gap * Math.min(1, dt * 1.4 * slow), MAX_SPEED * slow * dt);
+        if (gap > 1e-4) p.addScaledVector(this._w, move / gap);
         this._lookAt(player, dt);
         this._twitch(dt);
         break;
@@ -225,11 +248,13 @@ export class Drone {
         break;
       }
       case 'frozen': {
+        // falls to whatever is under it (the Garden sets floorY when it freezes)
         this.fallV += 14 * dt;
         p.y -= this.fallV * dt;
         this.group.rotation.x += dt * 1.5;
-        if (p.y <= 0.3) {
-          p.y = 0.3;
+        const ground = (this.floorY ?? 0) + 0.3;
+        if (p.y <= ground) {
+          p.y = ground;
           ctx.onShatter?.(p);
           this.remove();
         }

@@ -255,10 +255,6 @@ export class Garden {
     this.fx.filaments(at);
     this.remains.add(at, floorY ?? this._floorY);
     this.audio.shatter();
-    if (!this._said.filament) {
-      this._said.filament = true;
-      this._queue('filament');
-    }
   }
 
   // a remark that waits until nobody is talking (it is dropped if it waits too long to still make sense)

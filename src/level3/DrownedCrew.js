@@ -119,6 +119,7 @@ export class DrownedCrew {
     this.time = 0;
     this.closeness = 0;            // 0..1: the body nearest the glass coming up against it
     this.ready = createGLTFLoader().loadAsync(MODEL).then((gltf) => {
+      this.gltf = gltf;            // (the dive suit on the rack is built from the same model)
       CREW.forEach((c, i) => {
         if (!spots[i]) return;
         const model = cloneSkinned(gltf.scene);

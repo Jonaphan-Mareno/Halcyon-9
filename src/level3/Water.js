@@ -8,20 +8,24 @@ import { deckUniforms } from './DeckMaterials.js';
 // dark green-brown, more opaque where you look across it than straight down into it.
 //
 // The water line is shared with the deck's materials (deckUniforms.uWaterLevel), so walls darken
-// below it and a wet tide mark sits above it; raising it later (the rising water) moves both.
+// below it and a wet tide mark sits above it; raising it later (the rising water) moves both. The
+// water lock has its own water ({ shared: false }), seen from below as well, that rises on its own.
 
 const RINGS = 8;
 
 export class Water {
-  // bounds: { minX, maxX, minZ, maxZ } in world metres
-  constructor(scene, bounds) {
+  // bounds: { minX, maxX, minZ, maxZ } in world metres; shared: moves the deck's water line too
+  constructor(scene, bounds, { shared = true, level = deckUniforms.uWaterLevel.value } = {}) {
+    this.shared = shared;
+    this._level = level;
     const w = bounds.maxX - bounds.minX, d = bounds.maxZ - bounds.minZ;
     const geo = new THREE.PlaneGeometry(w, d, 1, 1);
     geo.rotateX(-Math.PI / 2);
     this.rings = Array.from({ length: RINGS }, () => new THREE.Vector4(0, 0, -100, 0));
     this.next = 0;
     this.mat = new THREE.MeshStandardMaterial({
-      color: 0x1f3026, roughness: 0.22, metalness: 0.0, transparent: true, opacity: 0.86, depthWrite: false, envMapIntensity: 0.3
+      color: 0x1f3026, roughness: 0.22, metalness: 0.0, transparent: true, opacity: 0.86, depthWrite: false, envMapIntensity: 0.3,
+      side: shared ? THREE.FrontSide : THREE.DoubleSide
     });
     this.mat.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = deckUniforms.uTime;
@@ -64,17 +68,18 @@ export class Water {
           #include <opaque_fragment>`);
     };
     this.mesh = new THREE.Mesh(geo, this.mat);
-    this.mesh.position.set((bounds.minX + bounds.maxX) / 2, deckUniforms.uWaterLevel.value, (bounds.minZ + bounds.maxZ) / 2);
+    this.mesh.position.set((bounds.minX + bounds.maxX) / 2, level, (bounds.minZ + bounds.maxZ) / 2);
     this.mesh.renderOrder = 2;
     scene.add(this.mesh);
   }
 
   get level() {
-    return deckUniforms.uWaterLevel.value;
+    return this._level;
   }
 
   set level(y) {
-    deckUniforms.uWaterLevel.value = y;
+    this._level = y;
+    if (this.shared) deckUniforms.uWaterLevel.value = y;
     this.mesh.position.y = y;
   }
 

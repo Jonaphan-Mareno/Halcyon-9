@@ -19,6 +19,8 @@ import { sleep } from '../core/PauseClock.js';
 import { deckMaterial, deckUniforms, withMurk } from './DeckMaterials.js';
 import { Water } from './Water.js';
 import { DrownedCrew } from './DrownedCrew.js';
+import { PrepRoom } from './PrepRoom.js';
+import '../ui/level3.css';
 import { LINES, TALKS } from './Level3Lines.js';
 import { disposeScene } from '../core/disposeScene.js';
 
@@ -27,13 +29,15 @@ import { disposeScene } from '../core/disposeScene.js';
 // water to his waist. ARIA, in his earpiece now, sends him straight ahead, then left. Straight
 // ahead, at the end of the corridor, is the engine room door; through its window, the engine room
 // is flooded to the ceiling and four of the crew, locked in, float in it. The way on turns left, to
-// a sealed bulkhead (the first gate of the flooded hall, built next).
+// a sealed bulkhead that ARIA opens; past it, stairs climb out of the water to the EVA prep room,
+// where he puts on the dive suit, takes the uplink cable and goes out through the water lock
+// (PrepRoom.js). (The flooded hall's other gates and its logs are still to come.)
 //
 // Its own renderer settings, physics world, player and HUD, like Level 2's session; the game keeps
 // whichever session is running in game.level2 and calls update() on it every frame.
 
 const WATER_LEVEL = 0.9;                // metres over the floor: to Voss's waist
-const WATER_BOUNDS = { minX: -9.4, maxX: 3.2, minZ: -24.0, maxZ: 3.2 };
+const WATER_BOUNDS = { minX: -12.4, maxX: 3.2, minZ: -24.0, maxZ: 3.2 };   // (to the stairwell's top)
 const LAMP_LIGHT = 4;                   // a working caged lamp (candela): soft, and it carries far
 const GLOW_SCALE = 0.35;                // the lamp lenses and strips glow, but do not glare
 const FLICKER_LAMP = 2;                 // the corridor lamp that stutters
@@ -73,11 +77,24 @@ export class DeckSession {
     };
     this._onKey = (e) => {
       if (this.disposed || game.state !== 'PLAYING' || !this.ready) return;
-      if (e.code === 'KeyE' && !e.repeat) this.interact?.use();
+      if (e.code === 'KeyE' && !e.repeat) {
+        // some things take a moment (hold E: the suit); the rest happen at once
+        const spot = this.interact?.current;
+        if (spot?.hold) this._hold = { spot, t: 0 };
+        else this.interact?.use();
+      }
       if (e.code === 'Enter') this.skipLine();
+    };
+    this._onKeyUp = (e) => {
+      if (e.code === 'KeyE') this._hold = null;
     };
     document.addEventListener('click', this._onClick);
     window.addEventListener('keydown', this._onKey);
+    window.addEventListener('keyup', this._onKeyUp);
+    this.holdEl = document.createElement('div');
+    this.holdEl.id = 'l3-hold';
+    this.holdEl.innerHTML = '<div></div>';
+    root.appendChild(this.holdEl);
 
     Physics.create().then(async (physics) => {
       if (this.disposed) return;
@@ -190,10 +207,9 @@ export class DeckSession {
     if (this.windowPos) {
       this.interact.add({ id: 'window', position: this.windowPos, radius: 0.6, label: 'Look through the window', use: () => this._seeCrew() });
     }
-    if (this.gatePos) {
-      this.interact.add({ id: 'gate1', position: this.gatePos, radius: 0.9, label: 'Sealed bulkhead', use: () => this.say('sealedGate') });
-    }
     await this.crew.ready;
+    // through the gate: the stairs, the EVA prep room, the suit, the cable and the water lock
+    this.prep = new PrepRoom(this, deck, at);
   }
 
   // the window's glass: a faint green tint with a brighter rim, so the room behind reads as water
@@ -327,14 +343,17 @@ export class DeckSession {
     this.time += dt;
     deckUniforms.uTime.value = this.time;
     const p = this.controls.position;
-    // in the water he wades (slower), and every few steps the water rings round his legs
-    const inWater = p.y < this.water.level - 0.15;
+    // in the water he wades (slower), and every few steps the water rings round his legs (in the
+    // water lock, its own water)
+    const lockLevel = this.prep?.waterAt(p) ?? null;
+    const level = lockLevel ?? this.water.level;
+    const inWater = p.y < level - 0.15;
     this.controls.surface = inWater ? 'wade' : 'normal';
     if (playing || g.state === 'WAKING') this.controls.update(dt, playing);
     const moving = Math.hypot(this.controls.velocity.x, this.controls.velocity.z) > 0.6;
     this._stepRing = (this._stepRing || 0) - dt;
     if (inWater && moving && this._stepRing <= 0) {
-      this.water.ring(p.x, p.z, 0.8);
+      (lockLevel !== null && this.prep?._inLock(p) ? this.prep.lockWater : this.water).ring(p.x, p.z, 0.8);
       this._stepRing = 0.45;
     }
     // the splash as he lands from the shaft
@@ -349,8 +368,10 @@ export class DeckSession {
     for (const l of this.lamps) {
       if (l.i === FLICKER_LAMP) l.light.intensity = Math.random() < 0.07 ? 0.2 : LAMP_LIGHT * (0.85 + 0.15 * Math.sin(this.time * 31));
     }
-    if (this.beacon) this.beacon.intensity = 1.2 + 1.6 * Math.max(0, Math.sin(this.time * 3.2));
-    if (this.roomLight) this.roomLight.intensity = 16 * (0.85 + 0.15 * Math.sin(this.time * 0.7));
+    // (up in the prep room these two are lighting it instead: PrepRoom drives them)
+    const below = !this.prep || this.prep.zone === 'deck';
+    if (this.beacon && below) this.beacon.intensity = 1.2 + 1.6 * Math.max(0, Math.sin(this.time * 3.2));
+    if (this.roomLight && below) this.roomLight.intensity = 16 * (0.85 + 0.15 * Math.sin(this.time * 0.7));
 
     // the crew: one comes up to the glass while he stands at the window
     const nearWindow = this.windowPos && p.distanceTo(this.windowPos) < WINDOW_NEAR;
@@ -358,6 +379,8 @@ export class DeckSession {
     this.crew.approach(dt, nearWindow);
     this.crew.update(dt);
     this._driftSilt(dt);
+    this.prep?.update(dt, p, playing);
+    this._holding(dt, playing);
 
     this.hud.setVisible(playing);
     this.hud.update(this.player);
@@ -366,6 +389,22 @@ export class DeckSession {
     g.reticle.classList.toggle('visible', this.controls.view === 'first' && playing);
     this._guide(playing);
     this._perf(delta, playing);
+  }
+
+  // holding E on something that takes a moment: a bar fills under the crosshair; looking away or
+  // letting go stops it
+  _holding(dt, playing) {
+    const h = this._hold;
+    if (h && (!playing || this.interact?.current !== h.spot)) this._hold = null;
+    if (this._hold) {
+      h.t += dt;
+      if (h.t >= h.spot.hold) {
+        this._hold = null;
+        h.spot.use();
+      }
+    }
+    this.holdEl.classList.toggle('on', !!this._hold);
+    if (this._hold) this.holdEl.firstChild.style.width = Math.min(100, (h.t / h.spot.hold) * 100).toFixed(1) + '%';
   }
 
   _driftSilt(dt) {
@@ -398,11 +437,14 @@ export class DeckSession {
     }
     const p = this.controls.position;
     const hit = this.interact ? this.interact.update(this._head.set(p.x, p.y + 1.6, p.z)) : null;
-    ui.setPrompt(hit ? 'E   ' + (typeof hit.label === 'function' ? hit.label() : hit.label) : null);
-    ui.setObjective('Reach the airlock');
-    const target = this._crewSeen ? this.gatePos : this.windowPos;
-    if (!target) return ui.setWaypoint(null);
-    ui.setWaypoint(projectWaypoint(this.game.camera.instance, target, this._crewSeen ? 'LEFT' : 'AHEAD', this._wpInfo));
+    const label = hit && (typeof hit.label === 'function' ? hit.label() : hit.label);
+    ui.setPrompt(hit ? (hit.hold ? 'Hold E   ' : 'E   ') + label : null);
+    // the window, the gate, then the prep room's steps (PrepRoom.guide)
+    const step = this.prep ? this.prep.guide(this._crewSeen, this.windowPos)
+      : { text: 'Reach the airlock', target: this._crewSeen ? this.gatePos : this.windowPos, label: this._crewSeen ? 'LEFT' : 'AHEAD' };
+    ui.setObjective(step.text);
+    if (!step.target) return ui.setWaypoint(null);
+    ui.setWaypoint(projectWaypoint(this.game.camera.instance, step.target, step.label, this._wpInfo));
   }
 
   // ARIA and Voss speak (as in Level 2): a list of line ids or the name of an exchange
@@ -485,7 +527,10 @@ export class DeckSession {
     this.ready = false;
     document.removeEventListener('click', this._onClick);
     window.removeEventListener('keydown', this._onKey);
+    window.removeEventListener('keyup', this._onKeyUp);
     window.removeEventListener('resize', this._onResize);
+    this.prep?.dispose();
+    this.holdEl?.remove();
     this.controls.instance.unlock?.();
     this.controls.instance.dispose?.();
     this.aria?.dispose?.();

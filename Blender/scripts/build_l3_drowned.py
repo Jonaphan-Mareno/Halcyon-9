@@ -15,11 +15,17 @@ Layout (metres; x east, y north, z up; the floor is z 0 and the water stands ove
   - at its end, facing you, the door to the engine room with a big window: behind it the engine
     room, flooded to the ceiling, where the crew were locked in and drowned (x -5..5, y 24.3..34)
   - the way on turns left (west) at the door, to a sealed bulkhead at x -9 (the first gate)
+  - through it, a stairwell climbs west out of the water to the dry EVA prep room (x -21..-12.4,
+    y 19.5..25.5, floor 1.5 m up): the dive suits, the uplink cable on its reel, a status console
+  - past the prep room's west wall, the water lock (x -25..-21.2) and the outer hatch to the sea
 
 Names the game reads: COL_ collision; FLOOD_ the flooded engine room (drawn murky, as seen
 through water); GLASS_ the door's window; SPAWN_L3 where he lands; PT_Shaft the shaft opening; LAMP_<n>
 caged lamps (a light each); PT_Window, PT_CrewSign (the plate over the door), PT_Gate1, PT_Beacon,
-PT_EngineRoom; PT_Body_<n> where the drowned crew float.
+PT_EngineRoom; PT_Body_<n> where the drowned crew float. DOOR_<name> doors the game moves (Gate1 and
+its wheel, LockInner, LockOuter); PROP_CableEnd the cable's free end; PREP_LIGHT_<n> the prep room's
+and the lock's lights; PT_Suit, PT_Cable, PT_Screen, PT_LockPanel, PT_LockBeacon, PT_LockMid,
+PT_PrepDoor, PT_Outside and the PT_*Sign plates.
 """
 import sys, os, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -47,6 +53,14 @@ M('l3_led', (0.3, 0.8, 1.0), 0.4, 0, (0.35, 0.85, 1.0), 2.5)       # the shaft's
 M('l3_alarm', (1.0, 0.1, 0.05), 0.4, 0, (1.0, 0.08, 0.04), 2.5)    # red beacons
 M('l3_glass', (0.45, 0.6, 0.55), 0.05, 0.0, alpha=0.3)
 M('l3_gauge', (0.85, 0.9, 0.8), 0.3, 0, (0.75, 0.85, 0.65), 0.5)  # a gauge's dial, faintly lit
+# the EVA prep room: as rusted as the rest of the deck, but its kit still works (orange paint, steel,
+# the cable, lit panels and the console's screen)
+M('l3_orange', (0.62, 0.24, 0.07), 0.7, 0.1)         # faded safety orange: stripes, plates, the reel
+M('l3_soft', (0.035, 0.037, 0.042), 0.75, 0.0)       # soft black: rubber, cushions, frames
+M('l3_steel', (0.55, 0.58, 0.6), 0.3, 0.85)          # bare steel: the axle, the connector
+M('l3_cable', (0.85, 0.62, 0.06), 0.55, 0.0)         # the uplink cable's yellow jacket
+M('l3_panel', (0.85, 0.92, 1.0), 0.4, 0, (0.8, 0.9, 1.0), 3.0)    # ceiling light panels
+M('l3_screen', (0.05, 0.12, 0.16), 0.3, 0, (0.3, 0.75, 0.95), 1.2)  # the console's screen
 
 shell = A('L3_Shell')       # floors, walls, ceilings
 struct = A('L3_Struct')     # ribs, pipes, brackets, frames
@@ -101,19 +115,20 @@ def strip(x, y0, y1, z, gaps=()):
         y = max(y, g1)
 
 
-def wheel(c, r, axis='Y'):
+def wheel(c, r, axis='Y', acc=None):
     """A valve wheel facing along an axis (Y or X): a hub, six spokes and a ring of short beams."""
+    acc = acc or props
     cx, cy, cz = c
     def at(a, rr):
         if axis == 'X':
             return (cx, cy + rr * math.cos(a), cz + rr * math.sin(a))
         return (cx + rr * math.cos(a), cy, cz + rr * math.sin(a))
-    cyl(props, 'l3_rust', c, r * 0.18, 0.08, seg=10, axis=axis)
+    cyl(acc, 'l3_rust', c, r * 0.18, 0.08, seg=10, axis=axis)
     n = 14
     for i in range(n):
-        beam(props, 'l3_rust', at(2 * math.pi * i / n, r), at(2 * math.pi * (i + 1) / n, r), 0.035, 0.035)
+        beam(acc, 'l3_rust', at(2 * math.pi * i / n, r), at(2 * math.pi * (i + 1) / n, r), 0.035, 0.035)
     for i in range(6):
-        beam(props, 'l3_rust', c, at(2 * math.pi * i / 6, r), 0.025, 0.025)
+        beam(acc, 'l3_rust', c, at(2 * math.pi * i / 6, r), 0.025, 0.025)
 
 
 def pipe_y(x, y0, y1, z, r, m='l3_rust', every=2.0, acc=None):
@@ -297,7 +312,12 @@ box(shell, 'l3_wall', (-1.0, NY, 2.3), (1.0, NY + D, 3.0), col=True)
 floor(-9.2, 21.0, -1.5, 24.0)
 wall((-9.2, 21.0 - T, 0), (-1.5, 21.0, 3.0))
 ceiling(-9.4, 20.8, -1.5, 24.2, 3.0)
-wall((-9.2 - T, 20.8, 0), (-9.2, 24.2, 3.0))
+# the west wall, with the gate's doorway (y 21.6..23.4, up to 2.4) and above it the taller stairwell
+G0, G1, GZ = 21.6, 23.4, 2.4
+wall((-9.2 - T, 20.8, 0), (-9.2, G0, 3.0))
+wall((-9.2 - T, G1, 0), (-9.2, 24.2, 3.0))
+wall((-9.2 - T, G0, GZ), (-9.2, G1, 3.0), band=False)
+wall((-9.2 - T, G0 - T, 3.2), (-9.2, G1 + T, 4.6), band=False)
 for x in (-4.5, -7.5):
     box(struct, 'l3_rust', (x - 0.1, 21.0, 0.0), (x + 0.1, 21.14, 3.0))
     box(struct, 'l3_rust', (x - 0.1, NY - 0.14, 0.0), (x + 0.1, NY, 3.0))
@@ -306,13 +326,18 @@ cyl(struct, 'l3_rust', (-5.35, 21.2, 2.62), 0.11, 7.7, seg=10, axis='X')
 empty('LAMP_4', (-6.0, 22.6, 2.3))
 box(glow, 'l3_lamp', (-6.15, 23.86, 2.4), (-5.85, 24.0, 2.5))
 # (no strip lights on this stretch: they are dead)
-# the sealed bulkhead at the end of the west branch: a heavy door in a hazard-striped frame
-box(props, 'l3_rust', (-9.2, 21.6, 0.0), (-9.05, 23.4, 2.4), col=True)
-for z0, z1 in ((0.0, 0.12), (2.28, 2.4)):
-    box(props, 'l3_hazard', (-9.05, 21.5, z0), (-9.0, 23.5, z1))
+# the sealed bulkhead at the end of the west branch: a heavy door in a hazard-striped frame. The
+# door and its wheel are their own objects (DOOR_Gate1, DOOR_Gate1Wheel): the game turns the wheel,
+# then lifts the door into the ceiling, and gives the door its own collider while it is shut.
+gate = A('DOOR_Gate1', origin=(-9.12, 22.5, 0.0))
+gate_wheel = A('DOOR_Gate1Wheel', origin=(-8.98, 22.5, 1.3))
+box(gate, 'l3_rust', (-9.2, G0, 0.0), (-9.05, G1, GZ))
+for z in (0.6, 1.8):
+    box(gate, 'l3_dark', (-9.06, G0 + 0.1, z - 0.04), (-9.03, G1 - 0.1, z + 0.04))
+wheel((-8.98, 22.5, 1.3), 0.3, axis='X', acc=gate_wheel)
 for y0, y1 in ((21.5, 21.62), (23.38, 23.5)):
-    box(props, 'l3_hazard', (-9.05, y0, 0.0), (-9.0, y1, 2.4))
-wheel((-8.98, 22.5, 1.3), 0.3, axis='X')
+    box(props, 'l3_hazard', (-9.05, y0, 0.0), (-9.0, y1, GZ))
+box(props, 'l3_hazard', (-9.05, 21.5, GZ - 0.04), (-9.0, 23.5, GZ + 0.08))
 cyl(glow, 'l3_alarm', (-9.0, 22.5, 2.62), 0.07, 0.12, seg=10)
 empty('PT_Gate1', (-8.8, 22.5, 1.2))
 
@@ -398,10 +423,209 @@ empty('PT_EngineRoom', (0.0, 28.6, 2.2))
 for i, p in enumerate([(0.15, 25.0, 0.82), (-0.6, 27.4, 2.3), (0.9, 28.6, 1.5), (-0.2, 30.8, 3.0)]):
     empty(f'PT_Body_{i}', p)
 
+# ------------------------------------------------------------------ through the gate: up out of the water
+# A stairwell climbs west out of the flood to the EVA prep room, which is dry: the suits, the uplink
+# cable on its reel, a status console, and at the far end the water lock out to the sea.
+FZ = 1.5                    # the prep room's floor, well above the water
+SX0, SX1 = -12.4, -9.4      # the stairwell, x
+floor(-9.6, G0, -9.2, G1)
+STEPS = 6
+RUN = (SX1 - 0.2 - (SX0 + 0.1)) / STEPS
+for k in range(1, STEPS + 1):
+    x1 = SX1 - 0.2 - RUN * (k - 1)
+    top = FZ * k / STEPS
+    box(shell, 'l3_concrete', (x1 - RUN, G0, -0.2), (x1, G1, top), col=True)
+    box(props, 'l3_hazard', (x1 - 0.06, G0 + 0.05, top), (x1, G1 - 0.05, top + 0.005))
+box(shell, 'l3_grate', (SX0 - 0.05, G0, FZ - 0.2), (SX0 + 0.1, G1, FZ), col=True)
+wall((SX0, G0 - T, 0), (SX1, G0, 4.6))
+wall((SX0, G1, 0), (SX1, G1 + T, 4.6))
+ceiling(SX0, G0 - T, SX1, G1 + T, 4.6)
+# a pipe up each side of the stairwell, rising with the steps, and a handrail on the right
+beam(struct, 'l3_rust', (SX1, G0 + 0.12, 2.4), (SX0, G0 + 0.12, 2.4 + FZ), 0.14, 0.14)
+beam(struct, 'l3_dark', (SX1, G1 - 0.1, 3.4), (SX0, G1 - 0.1, 3.4 + 0.6), 0.08, 0.08)
+beam(props, 'l3_dark', (SX1 - 0.2, G1 - 0.08, 0.95), (SX0 + 0.1, G1 - 0.08, 0.95 + FZ), 0.05, 0.05)
+for x in (SX1 - 0.4, (SX0 + SX1) / 2, SX0 + 0.3):
+    h = FZ * (SX1 - 0.2 - x) / (SX1 - 0.2 - (SX0 + 0.1))
+    beam(props, 'l3_dark', (x, G1 - 0.02, h + 0.95), (x, G1 - 0.13, h + 0.95), 0.04, 0.04)
+# a caged lamp high on the stairwell's north wall
+box(props, 'l3_dark', (-11.05, G1 - 0.06, 3.7), (-10.75, G1, 3.9))
+box(glow, 'l3_lamp', (-11.0, G1 - 0.14, 3.72), (-10.8, G1 - 0.06, 3.86))
+empty('PREP_LIGHT_0', (-10.9, 22.6, 3.6))
+
+# ------------------------------------------------------------------ the EVA prep room
+PX0, PX1, PY0, PY1, PZ = -21.0, -12.4, 19.5, 25.5, FZ + 3.0
+room = A('L3_Prep')         # the prep room's walls and fittings
+box(room, 'l3_grate', (PX0, PY0, FZ - 0.2), (PX1, PY1, FZ), col=True)
+box(room, 'l3_wall', (PX0 - T, PY0 - T, FZ), (PX1 + T, PY0, PZ), col=True)          # south
+box(room, 'l3_wall', (PX0 - T, PY1, FZ), (PX1 + T, PY1 + T, PZ), col=True)          # north
+box(room, 'l3_wall', (PX1, PY0, FZ - 0.2), (PX1 + T, G0, PZ), col=True)             # east, by the door
+box(room, 'l3_wall', (PX1, G1, FZ - 0.2), (PX1 + T, PY1, PZ), col=True)
+box(room, 'l3_wall', (PX1, G0, FZ + 2.5), (PX1 + T, G1, 4.6), col=True)
+L0, L1, LZ = 21.8, 23.2, FZ + 2.1       # the lock's hatchways, y and height
+box(room, 'l3_wall', (PX0 - T, PY0, FZ), (PX0, L0, PZ), col=True)                   # west, by the hatch
+box(room, 'l3_wall', (PX0 - T, L1, FZ), (PX0, PY1, PZ), col=True)
+box(room, 'l3_wall', (PX0 - T, L0, LZ), (PX0, L1, PZ), col=True)
+box(room, 'l3_rust', (PX0 - T, PY0 - T, PZ), (PX1 + T, PY1 + T, PZ + 0.2), col=True)   # ceiling
+# a soft black skirting and an orange stripe round the walls at hip height
+for (lo, hi) in (((PX0, PY0, FZ), (PX1, PY0 + 0.03, FZ + 0.12)), ((PX0, PY1 - 0.03, FZ), (PX1, PY1, FZ + 0.12)),
+                 ((PX0, PY0, FZ + 1.0), (PX1, PY0 + 0.015, FZ + 1.07)), ((PX0, PY1 - 0.015, FZ + 1.0), (PX1, PY1, FZ + 1.07))):
+    box(room, 'l3_soft' if lo[2] == FZ else 'l3_orange', lo, hi)
+for (y0, y1) in ((PY0, G0), (G1, PY1)):
+    box(room, 'l3_soft', (PX1 - 0.03, y0, FZ), (PX1, y1, FZ + 0.12))
+    box(room, 'l3_orange', (PX1 - 0.015, y0, FZ + 1.0), (PX1, y1, FZ + 1.07))
+for (y0, y1) in ((PY0, L0), (L1, PY1)):
+    box(room, 'l3_soft', (PX0, y0, FZ), (PX0 + 0.03, y1, FZ + 0.12))
+    box(room, 'l3_orange', (PX0, y0, FZ + 1.0), (PX0 + 0.015, y1, FZ + 1.07))
+# the doorway in from the stairwell: an orange frame
+for (y0, y1) in ((G0 - 0.12, G0), (G1, G1 + 0.12)):
+    box(room, 'l3_orange', (PX1 - 0.03, y0, FZ), (PX1 + T + 0.02, y1, FZ + 2.5))
+box(room, 'l3_orange', (PX1 - 0.03, G0 - 0.12, FZ + 2.5), (PX1 + T + 0.02, G1 + 0.12, FZ + 2.62))
+empty('PT_PrepSign', (PX1 + T + 0.03, 22.5, FZ + 2.85))
+empty('PT_PrepDoor', (PX1 - 0.6, 22.5, FZ + 1.2))
+
+# two ceiling light panels
+for i, x in enumerate((-18.6, -14.8)):
+    box(room, 'l3_soft', (x - 1.0, 22.15, PZ - 0.07), (x + 1.0, 22.85, PZ))
+    box(glow, 'l3_panel', (x - 0.92, 22.22, PZ - 0.08), (x + 0.92, 22.78, PZ - 0.07))
+    empty(f'PREP_LIGHT_{i + 1}', (x, 22.5, PZ - 0.6))
+# pipes and a cable tray along the top of the north and south walls
+cyl(struct, 'l3_soft', ((PX0 + PX1) / 2, PY1 - 0.18, PZ - 0.3), 0.07, PX1 - PX0, seg=12, axis='X')
+cyl(struct, 'l3_rust', ((PX0 + PX1) / 2, PY1 - 0.38, PZ - 0.22), 0.05, PX1 - PX0, seg=10, axis='X')
+box(struct, 'l3_soft', (PX0, PY0 + 0.05, PZ - 0.42), (PX1, PY0 + 0.35, PZ - 0.38))
+
+# the suit racks on the north wall (rusted frames, steel yokes): EVA 1 (empty) and EVA 2 (the suit hangs here)
+for i, x in enumerate((-18.4, -16.0)):
+    box(room, 'l3_rust', (x - 0.6, PY1 - 0.06, FZ + 0.12), (x + 0.6, PY1, FZ + 2.6))
+    for dx in (-0.55, 0.55):
+        box(room, 'l3_soft', (x + dx - 0.04, PY1 - 0.35, FZ), (x + dx + 0.04, PY1 - 0.06, FZ + 2.6))
+    box(room, 'l3_soft', (x - 0.59, PY1 - 0.35, FZ + 2.52), (x + 0.59, PY1 - 0.06, FZ + 2.6))
+    box(room, 'l3_soft', (x - 0.59, PY1 - 0.4, FZ), (x + 0.59, PY1 - 0.06, FZ + 0.06))         # its foot plate
+    # the shoulder yoke the suit hangs from, on an arm out from the wall
+    box(room, 'l3_steel', (x - 0.03, PY1 - 0.35, FZ + 1.95), (x + 0.03, PY1 - 0.06, FZ + 2.0))
+    box(room, 'l3_steel', (x - 0.24, PY1 - 0.38, FZ + 1.9), (x + 0.24, PY1 - 0.3, FZ + 1.96))
+    box(room, 'l3_orange', (x - 0.32, PY1 - 0.07, FZ + 2.66), (x + 0.32, PY1 - 0.03, FZ + 2.9))
+    empty(f'PT_RackSign_{i + 1}', (x, PY1 - 0.075, FZ + 2.78))
+empty('PT_Suit', (-16.0, PY1 - 0.5, FZ + 0.07))
+
+# the uplink cable on its reel, on the east wall north of the door: a drum on an axle out from the
+# wall, its flanges orange, wound with the yellow cable; the free end hangs down to a wall clip
+RY, RZ, RR = 24.55, FZ + 1.45, 0.42
+cyl(room, 'l3_steel', (PX1 - 0.4, RY, RZ), 0.05, 0.8, seg=12, axis='X')
+box(room, 'l3_soft', (PX1 - 0.08, RY - 0.25, RZ - 0.25), (PX1, RY + 0.25, RZ + 0.25))
+for x in (PX1 - 0.16, PX1 - 0.74):
+    cyl(room, 'l3_orange', (x, RY, RZ), RR + 0.08, 0.04, seg=28, axis='X')
+cyl(room, 'l3_cable', (PX1 - 0.45, RY, RZ), RR, 0.54, seg=28, axis='X')
+for k in range(9):
+    cyl(room, 'l3_soft', (PX1 - 0.2 - k * 0.06, RY, RZ), RR + 0.004, 0.006, seg=28, axis='X')
+cyl(room, 'l3_soft', (PX1 - 0.79, RY, RZ), 0.1, 0.06, seg=14, axis='X')        # the crank's hub
+beam(room, 'l3_soft', (PX1 - 0.82, RY, RZ), (PX1 - 0.82, RY + 0.22, RZ + 0.18), 0.04, 0.03)
+# (the free end is its own object, so it can go with him: PROP_CableEnd)
+cable_end = A('PROP_CableEnd')
+beam(cable_end, 'l3_cable', (PX1 - 0.45, RY - RR + 0.02, RZ - 0.1), (PX1 - 0.45, RY - 0.55, FZ + 0.75), 0.035, 0.035)
+cyl(cable_end, 'l3_soft', (PX1 - 0.45, RY - 0.55, FZ + 0.68), 0.04, 0.14, seg=12)
+cyl(cable_end, 'l3_steel', (PX1 - 0.45, RY - 0.55, FZ + 0.57), 0.032, 0.09, seg=12)
+box(room, 'l3_soft', (PX1 - 0.06, RY - 0.62, FZ + 0.6), (PX1, RY - 0.48, FZ + 0.76))
+beam(room, 'l3_soft', (PX1 - 0.06, RY - 0.55, FZ + 0.68), (PX1 - 0.4, RY - 0.55, FZ + 0.68), 0.03, 0.03)
+empty('PT_Cable', (PX1 - 0.45, RY - 0.1, RZ - 0.15))
+empty('PT_ReelSign', (PX1 - 0.005, RY, RZ + 0.72))
+
+# lockers along the south wall, with a bench in front
+for k in range(6):
+    x0 = -20.8 + k * 0.62
+    box(room, 'l3_wall', (x0, PY0, FZ), (x0 + 0.6, PY0 + 0.5, FZ + 2.0), col=(k == 0))
+    box(room, 'l3_soft', (x0 + 0.08, PY0 + 0.5, FZ + 1.7), (x0 + 0.52, PY0 + 0.51, FZ + 1.86))     # its vent
+    box(room, 'l3_orange', (x0 + 0.22, PY0 + 0.5, FZ + 1.5), (x0 + 0.38, PY0 + 0.512, FZ + 1.58))  # its number tab
+    box(room, 'l3_steel', (x0 + 0.48, PY0 + 0.5, FZ + 0.95), (x0 + 0.51, PY0 + 0.53, FZ + 1.15))   # its handle
+col_box((-20.8, PY0, FZ), (-20.8 + 6 * 0.62, PY0 + 0.5, FZ + 2.0))
+box(room, 'l3_soft', (-20.5, 20.25, FZ + 0.38), (-17.4, 20.65, FZ + 0.48), col=True)
+for x in (-20.3, -17.6):
+    box(room, 'l3_rust', (x - 0.05, 20.3, FZ), (x + 0.05, 20.6, FZ + 0.38))
+
+# the status console in the south-east corner: a desk, a sloped panel and a screen
+box(room, 'l3_wall', (-15.9, PY0, FZ), (-13.3, PY0 + 0.75, FZ + 0.85), col=True)
+beam(room, 'l3_rust', (-15.85, PY0 + 0.45, FZ + 0.92), (-13.35, PY0 + 0.45, FZ + 0.92), 0.5, 0.12)
+for k in range(8):
+    box(glow, 'l3_led' if k % 3 else 'l3_alarm', (-15.6 + k * 0.28, PY0 + 0.55, FZ + 0.97), (-15.5 + k * 0.28, PY0 + 0.62, FZ + 1.0))
+box(room, 'l3_soft', (-15.3, PY0, FZ + 1.15), (-13.9, PY0 + 0.1, FZ + 2.0))
+box(glow, 'l3_screen', (-15.22, PY0 + 0.1, FZ + 1.22), (-13.98, PY0 + 0.105, FZ + 1.93))
+empty('PT_Screen', (-14.6, PY0 + 0.11, FZ + 1.575))
+
+# hazard stripes on the floor before the lock's hatch
+for k in range(7):
+    y = L0 + k * 0.2
+    box(room, 'l3_hazard' if k % 2 == 0 else 'l3_soft', (PX0, y, FZ), (PX0 + 0.6, y + 0.2, FZ + 0.004))
+empty('PT_LockSign', (PX0 + 0.005, 22.5, LZ + 0.42))
+
+# ------------------------------------------------------------------ the water lock
+# A small steel chamber between the prep room and the sea. In: the inner hatch slides shut, the lock
+# floods from the floor vents until its pressure matches the sea's, and the outer hatch opens.
+# Back in, it is pumped dry before the inner hatch will open.
+KX0, KX1, KY0, KY1, KZ = -25.0, PX0 - T, 21.0, 24.0, FZ + 2.8
+lock = A('L3_Lock')
+box(lock, 'l3_grate', (KX0, KY0, FZ - 0.06), (KX1, KY1, FZ), col=True)
+box(lock, 'l3_dark', (KX0, KY0, FZ - 0.45), (KX1, KY1, FZ - 0.4))                     # the sump below
+box(lock, 'l3_wall', (KX0, KY0 - T, FZ - 0.45), (KX1, KY0, KZ), col=True)
+box(lock, 'l3_wall', (KX0, KY1, FZ - 0.45), (KX1, KY1 + T, KZ), col=True)
+box(lock, 'l3_wall', (KX0 - T, KY0 - T, KZ), (KX1, KY1 + T, KZ + 0.2), col=True)
+box(lock, 'l3_wall', (KX0 - T, KY0 - T, FZ - 0.45), (KX0, L0, KZ), col=True)        # the outer wall
+box(lock, 'l3_wall', (KX0 - T, L1, FZ - 0.45), (KX0, KY1 + T, KZ), col=True)
+box(lock, 'l3_wall', (KX0 - T, L0, LZ), (KX0, L1, KZ), col=True)
+box(lock, 'l3_wall', (KX1, KY0 - T, FZ - 0.45), (PX0 - T, KY1 + T, FZ))              # under the inner sill
+# ribs, the flood vents along the foot of each side, and hazard paint round both hatchways
+for x in (-24.0, -22.6):
+    box(lock, 'l3_rust', (x - 0.08, KY0, FZ), (x + 0.08, KY0 + 0.1, KZ))
+    box(lock, 'l3_rust', (x - 0.08, KY1 - 0.1, FZ), (x + 0.08, KY1, KZ))
+    box(lock, 'l3_rust', (x - 0.08, KY0, KZ - 0.1), (x + 0.08, KY1, KZ))
+for (y0, y1) in ((KY0, KY0 + 0.05), (KY1 - 0.05, KY1)):
+    for k in range(4):
+        x0 = -24.7 + k * 0.85
+        box(lock, 'l3_dark', (x0, y0, FZ + 0.08), (x0 + 0.5, y1, FZ + 0.3))
+for xf in (KX0, PX0 - T):
+    sx = 0.04 if xf == KX0 else -0.04
+    for (y0, y1) in ((L0 - 0.12, L0), (L1, L1 + 0.12)):
+        box(lock, 'l3_hazard', (xf, y0, FZ), (xf + sx, y1, LZ))
+    box(lock, 'l3_hazard', (xf, L0 - 0.12, LZ), (xf + sx, L1 + 0.12, LZ + 0.12))
+# the panel that floods it, by the inner hatch, and a red beacon in the ceiling
+box(lock, 'l3_dark', (-22.35, KY1 - 0.12, FZ + 0.95), (-21.75, KY1, FZ + 1.65))
+box(glow, 'l3_alarm', (-22.2, KY1 - 0.14, FZ + 1.4), (-22.05, KY1 - 0.12, FZ + 1.52))
+box(glow, 'l3_led', (-21.98, KY1 - 0.14, FZ + 1.4), (-21.88, KY1 - 0.12, FZ + 1.52))
+box(glow, 'l3_screen', (-22.25, KY1 - 0.13, FZ + 1.08), (-21.85, KY1 - 0.12, FZ + 1.3))
+empty('PT_LockPanel', (-22.05, KY1 - 0.2, FZ + 1.3))
+cyl(lock, 'l3_dark', (-23.0, 22.5, KZ - 0.05), 0.12, 0.1, seg=12)
+cyl(glow, 'l3_alarm', (-23.0, 22.5, KZ - 0.15), 0.09, 0.12, seg=12)
+empty('PT_LockBeacon', (-23.0, 22.5, KZ - 0.45))
+box(props, 'l3_dark', (-24.2, KY0, KZ - 0.5), (-23.9, KY0 + 0.06, KZ - 0.3))
+box(glow, 'l3_lamp', (-24.15, KY0 + 0.06, KZ - 0.48), (-23.95, KY0 + 0.12, KZ - 0.32))
+empty('PREP_LIGHT_3', (-24.0, 21.6, KZ - 0.6))
+empty('PT_LockMid', (-23.1, 22.5, FZ + 1.2))
+
+# the hatches: rusted steel slabs in orange frames, each with a porthole and a handle. They slide north into
+# the wall (DOOR_LockInner, DOOR_LockOuter); the game moves them and gives each a collider.
+def hatch(name, x):
+    acc = A(name, origin=(x, (L0 + L1) / 2, FZ))
+    box(acc, 'l3_wall', (x - 0.05, L0, FZ), (x + 0.05, L1, LZ))
+    for s in (-1, 1):
+        fx = x + s * 0.05
+        box(acc, 'l3_orange', (fx, L0 + 0.05, FZ + 0.05), (fx + s * 0.015, L1 - 0.05, FZ + 0.12))
+        box(acc, 'l3_orange', (fx, L0 + 0.05, LZ - 0.12), (fx + s * 0.015, L1 - 0.05, LZ - 0.05))
+        cyl(acc, 'l3_soft', (fx + s * 0.012, 22.5, FZ + 1.5), 0.2, 0.03, seg=20, axis='X')
+        cyl(acc, 'l3_glass', (fx + s * 0.03, 22.5, FZ + 1.5), 0.15, 0.01, seg=20, axis='X')
+        box(acc, 'l3_steel', (fx, L1 - 0.3, FZ + 0.95), (fx + s * 0.05, L1 - 0.24, FZ + 1.25))
+hatch('DOOR_LockInner', PX0 - 0.1)
+hatch('DOOR_LockOuter', KX0 - 0.1)
+
+# outside: a short black throat of hull past the outer hatch, open to the sea
+box(lock, 'l3_dark', (-29.0, L0 - 0.6, FZ - 0.4), (KX0 - T, L1 + 0.6, FZ - 0.2), col=True)
+box(lock, 'l3_dark', (-29.0, L0 - 0.8, FZ - 0.4), (KX0 - T, L0 - 0.6, LZ + 0.6), col=True)
+box(lock, 'l3_dark', (-29.0, L1 + 0.6, FZ - 0.4), (KX0 - T, L1 + 0.8, LZ + 0.6), col=True)
+box(lock, 'l3_dark', (-29.0, L0 - 0.8, LZ + 0.6), (KX0 - T, L1 + 0.8, LZ + 0.8), col=True)
+col_box((-29.2, L0 - 0.8, FZ - 0.4), (-29.0, L1 + 0.8, LZ + 0.8))   # (the level ends before here)
+empty('PT_Outside', (-26.6, 22.5, FZ + 1.0))
+
 
 def post(objs):
     for ob in objs:
-        if ob.name.startswith(('L3_Props', 'FLOOD_Room', 'L3_Door')):
+        if ob.name.startswith(('L3_Props', 'FLOOD_Room', 'L3_Door', 'L3_Prep', 'DOOR_', 'PROP_')):
             kit.polish(ob, 0.008)
 
 

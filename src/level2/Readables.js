@@ -143,7 +143,7 @@ export class Readables {
     t.ids.forEach((id, i) => {
       const row = document.createElement('div');
       row.className = 'rd-item' + (i === t.pick ? ' on' : '') + (this.seen.has(id) ? ' seen' : '');
-      row.textContent = (i + 1) + '   ' + LOGS[id].title;
+      row.textContent = (i + 1) + '   ' + LOGS[id].title + (LOGS[id].author ? '   (' + LOGS[id].author + ')' : '');
       this.listEl.appendChild(row);
     });
     this.footEl.textContent = '1-' + t.ids.length + ' or arrows + Enter: open      E: close';
@@ -167,7 +167,7 @@ export class Readables {
       this.videoEl.src = LOG_VIDEO + id + '.mp4';
       this._tryMedia(this.videoEl, true);
     } else if (log.kind === 'file') {
-      this.subEl.textContent = 'RESTRICTED DIRECTORY';
+      this.subEl.textContent = 'RESTRICTED DIRECTORY' + (log.author ? '   |   WRITTEN BY ' + log.author : '');
     }
     if (log.kind === 'note' || log.kind === 'letter') this._finish();   // paper is read at a glance
     this._footer();

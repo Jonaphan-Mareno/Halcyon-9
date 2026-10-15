@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createGLTFLoader } from '../core/loaders.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -23,17 +24,18 @@ import { disposeScene } from '../core/disposeScene.js';
 
 // Level 3, the drowned deck (Blender/scripts/build_l3_drowned.py): the lowest deck, flooded.
 // Voss drops in through the shaft from the hatch in the garden and lands in the pump room, in
-// water to his knees. ARIA, in his earpiece now, sends him straight ahead, then left. Straight
-// ahead, at the end of the corridor, is the door to crew quarters C; through its window, the room
-// beyond is flooded to the ceiling and four of the crew float in it. The way on turns left, to a
-// sealed bulkhead (the first gate of the flooded hall, built next).
+// water to his waist. ARIA, in his earpiece now, sends him straight ahead, then left. Straight
+// ahead, at the end of the corridor, is the engine room door; through its window, the engine room
+// is flooded to the ceiling and four of the crew, locked in, float in it. The way on turns left, to
+// a sealed bulkhead (the first gate of the flooded hall, built next).
 //
 // Its own renderer settings, physics world, player and HUD, like Level 2's session; the game keeps
 // whichever session is running in game.level2 and calls update() on it every frame.
 
-const WATER_LEVEL = 0.55;               // metres over the floor: to Voss's knees
+const WATER_LEVEL = 0.9;                // metres over the floor: to Voss's waist
 const WATER_BOUNDS = { minX: -9.4, maxX: 3.2, minZ: -24.0, maxZ: 3.2 };
-const LAMP_LIGHT = 7;                   // a working caged lamp (candela)
+const LAMP_LIGHT = 4;                   // a working caged lamp (candela): soft, and it carries far
+const GLOW_SCALE = 0.35;                // the lamp lenses and strips glow, but do not glare
 const FLICKER_LAMP = 2;                 // the corridor lamp that stutters
 const DEAD_LAMPS = [4];                 // no light left in them
 const WINDOW_NEAR = 3.0;                // this close to the window, the crew are seen
@@ -93,7 +95,7 @@ export class DeckSession {
     const g = this.game;
     const webgl = g.renderer.instance;
     webgl.toneMapping = THREE.ACESFilmicToneMapping;
-    webgl.toneMappingExposure = 1.05;
+    webgl.toneMappingExposure = 1.0;
     webgl.shadowMap.enabled = false;
     webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
     const size = new THREE.Vector2();
@@ -101,7 +103,7 @@ export class DeckSession {
     const pr = webgl.getPixelRatio();
     this.composer = new EffectComposer(webgl, new THREE.WebGLRenderTarget(size.x * pr, size.y * pr, { type: THREE.HalfFloatType }));
     this.composer.addPass(new RenderPass(g.scene, g.camera.instance));
-    this.bloom = new UnrealBloomPass(size.clone().multiplyScalar(0.5), 0.35, 0.5, 0.9);
+    this.bloom = new UnrealBloomPass(size.clone().multiplyScalar(0.5), 0.12, 0.35, 1.0);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.fxaa = new ShaderPass(FXAAShader);
@@ -115,8 +117,12 @@ export class DeckSession {
     };
     window.addEventListener('resize', this._onResize);
     g.scene.background = new THREE.Color(0x000000);
-    g.scene.environment = null;
-    g.scene.fog = new THREE.FogExp2(0x060908, 0.045);
+    // a soft environment for the metal to reflect (without it, rusted metal reads as black)
+    const pmrem = new THREE.PMREMGenerator(webgl);
+    g.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    g.scene.environmentIntensity = 0.35;
+    pmrem.dispose();
+    g.scene.fog = new THREE.FogExp2(0x0a0e0d, 0.028);
   }
 
   _fitFxaa() {
@@ -175,7 +181,7 @@ export class DeckSession {
     this.water.level = WATER_LEVEL;
     const bodies = [0, 1, 2, 3].map((i) => at('PT_Body_' + i)).filter(Boolean);
     this.crew = new DrownedCrew(scene, bodies);
-    this._sediment(at('PT_CrewRoom'));
+    this._sediment(at('PT_EngineRoom'));
     this._signs(at);
 
     // ARIA, in his earpiece (no screens down here: her voice and her subtitles)
@@ -192,7 +198,7 @@ export class DeckSession {
 
   // the window's glass: a faint green tint with a brighter rim, so the room behind reads as water
   _glass(src) {
-    const m = new THREE.MeshStandardMaterial({ color: 0x5f8f80, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.18, depthWrite: false });
+    const m = new THREE.MeshStandardMaterial({ color: 0x5f8f80, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.18, depthWrite: false, envMapIntensity: 0.1 });
     m.onBeforeCompile = (shader) => {
       shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
         float rim = pow(1.0 - abs(dot(normalize(vViewPosition), normal)), 2.5);
@@ -206,20 +212,20 @@ export class DeckSession {
   // the crew room door and the sick green glow inside the flooded room
   _lights(deck, at) {
     const scene = this.game.scene;
-    this.hemi = new THREE.HemisphereLight(0x5d6a74, 0x1c1610, 0.5);
+    this.hemi = new THREE.HemisphereLight(0x75838c, 0x2a2219, 1.0);
     scene.add(this.hemi);
     this.lamps = [];
     for (let i = 0; i < 8; i++) {
       const p = at('LAMP_' + i);
       if (!p || DEAD_LAMPS.includes(i)) continue;
-      const light = new THREE.PointLight(0xffc48a, LAMP_LIGHT, 10, 2);
+      const light = new THREE.PointLight(0xffc48a, LAMP_LIGHT, 13, 1.3);
       light.position.copy(p);
       scene.add(light);
       this.lamps.push({ light, i });
     }
     const shaft = at('PT_Shaft');
     if (shaft) {
-      this.shaftLight = new THREE.PointLight(0x7fd2ff, 3.5, 7, 2);
+      this.shaftLight = new THREE.PointLight(0x7fd2ff, 2.5, 8, 1.4);
       this.shaftLight.position.copy(shaft).add(new THREE.Vector3(0, -0.3, 0));
       scene.add(this.shaftLight);
     }
@@ -230,31 +236,34 @@ export class DeckSession {
       this.beacon.position.copy(beacon).add(new THREE.Vector3(0, -0.2, 0.9));
       scene.add(this.beacon);
     }
-    const room = at('PT_CrewRoom');
+    const room = at('PT_EngineRoom');
     if (room) {
-      this.roomLight = new THREE.PointLight(0x7affd0, 16, 11, 1.4);
-      this.roomLight.position.copy(room).add(new THREE.Vector3(0, 0.9, 0));
+      this.roomLight = new THREE.PointLight(0x7affd0, 16, 13, 1.3);
+      this.roomLight.position.copy(room).add(new THREE.Vector3(0, 1.3, 0));
       scene.add(this.roomLight);
     }
     this.glowMats = [];
     deck.traverse((o) => {
       if (!o.isMesh) return;
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
-        if (m.emissive && m.emissiveIntensity > 0 && !this.glowMats.includes(m)) this.glowMats.push(m);
+        if (m.emissive && m.emissiveIntensity > 0 && !this.glowMats.includes(m)) {
+          m.emissiveIntensity *= GLOW_SCALE;
+          this.glowMats.push(m);
+        }
       }
     });
   }
 
-  // silt and specks hanging in the flooded room, drifting
+  // silt and specks hanging in the flooded engine room, drifting
   _sediment(centre) {
     if (!centre) return;
     const n = 260;
     const pos = new Float32Array(n * 3);
     this._silt = { pos, n, centre };
     for (let i = 0; i < n; i++) {
-      pos[i * 3] = centre.x + (Math.random() - 0.5) * 7.6;
-      pos[i * 3 + 1] = Math.random() * 3.3;
-      pos[i * 3 + 2] = centre.z + (Math.random() - 0.5) * 6.2;
+      pos[i * 3] = centre.x + (Math.random() - 0.5) * 9.6;
+      pos[i * 3 + 1] = Math.random() * 4.5;
+      pos[i * 3 + 2] = centre.z + (Math.random() - 0.5) * 9.4;
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -265,7 +274,7 @@ export class DeckSession {
     this.game.scene.add(this.silt);
   }
 
-  // the stencilled plate over the crew room door
+  // the stencilled plate over the engine room door
   _signs(at) {
     const p = at('PT_CrewSign');
     if (!p) return;
@@ -278,10 +287,10 @@ export class DeckSession {
     g.fillStyle = '#d8c79a';
     g.font = 'bold 50px Courier New, monospace';
     g.textAlign = 'center';
-    g.fillText('CREW QUARTERS C', 256, 58);
+    g.fillText('ENGINE ROOM 2', 256, 58);
     g.font = 'bold 30px Courier New, monospace';
     g.fillStyle = '#ff6b4a';
-    g.fillText('FLOODED: DO NOT OPEN', 256, 104);
+    g.fillText('LOCKDOWN: DO NOT OPEN', 256, 104);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     const plate = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.35), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 }));
@@ -366,7 +375,7 @@ export class DeckSession {
     for (let i = 0; i < n; i++) {
       pos[i * 3] += Math.sin(t * 0.3 + i) * 0.02 * dt;
       pos[i * 3 + 1] += (Math.sin(t * 0.2 + i * 0.7) * 0.03 - 0.008) * dt;
-      if (pos[i * 3 + 1] < 0.02) pos[i * 3 + 1] = 3.3;
+      if (pos[i * 3 + 1] < 0.02) pos[i * 3 + 1] = 4.5;
     }
     this.silt.geometry.attributes.position.needsUpdate = true;
   }

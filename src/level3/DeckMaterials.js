@@ -134,7 +134,7 @@ export function deckMaterial(name, { murk = false } = {}) {
         roughnessFactor *= orm.g;
         roughnessFactor = mix(roughnessFactor, 0.15, wet);`)
       .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
-        metalnessFactor *= orm.b * (1.0 - uPaint);`)
+        metalnessFactor *= orm.b * 0.6 * (1.0 - uPaint);`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           // triplanar normal mapping, "whiteout" blend, in world space, then into view space

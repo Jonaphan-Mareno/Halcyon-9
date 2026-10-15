@@ -21,7 +21,7 @@ export class Water {
     this.rings = Array.from({ length: RINGS }, () => new THREE.Vector4(0, 0, -100, 0));
     this.next = 0;
     this.mat = new THREE.MeshStandardMaterial({
-      color: 0x1a2a20, roughness: 0.06, metalness: 0.0, transparent: true, opacity: 0.86, depthWrite: false
+      color: 0x1f3026, roughness: 0.22, metalness: 0.0, transparent: true, opacity: 0.86, depthWrite: false, envMapIntensity: 0.3
     });
     this.mat.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = deckUniforms.uTime;

@@ -3,7 +3,7 @@ import { createGLTFLoader } from '../core/loaders.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { deckUniforms, MURK_GLSL } from './DeckMaterials.js';
 
-// Four of Voss's crewmates, drowned, floating in the flooded crew room behind the door's window
+// Four of Voss's crewmates, drowned, floating in the flooded engine room behind the door's window
 // (Okafor, Lindqvist, Navarro and Park, from the lab's subject list). Built from the same rigged
 // model as Voss: each is posed by holding one of his animation clips at a moment (arms adrift,
 // limbs hanging) and turned to float face down, on its back or on its side, then drifts slowly.

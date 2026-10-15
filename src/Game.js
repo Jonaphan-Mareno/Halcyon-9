@@ -17,6 +17,7 @@ import { IntroSequence } from './story/IntroSequence.js';
 import { AudioManager } from './audio/AudioManager.js';
 import { Soundtrack } from './audio/Soundtrack.js';
 import { PauseMenu } from './ui/PauseMenu.js';
+import { DeckSession } from './level3/DeckSession.js';
 import { settings } from './core/Settings.js';
 import { pauseClock } from './core/PauseClock.js';
 import { MoodLight } from './graphics/MoodLight.js';
@@ -204,7 +205,7 @@ export class Game {
       if (e.code === 'F8') { e.preventDefault(); this.ariaAnger(5); }
     });
 
-    if (this.startLevel === '2' || this.startLevel === 'hose' || this.startLevel === 'reactor') {
+    if (this.startLevel === '2' || this.startLevel === '3' || this.startLevel === 'hose' || this.startLevel === 'reactor') {
       this._initLevel2();
       return;
     }
@@ -285,7 +286,8 @@ export class Game {
     this.level2Mode = true;
     this.ui = new UIManager();
     this.reticle = document.getElementById('reticle');
-    // ?level=2: the NEW level 2, the habitat atrium (environment preview for now)
+    // ?level=2: level 2, the habitat atrium
+    // ?level=3: level 3, the drowned deck
     // ?level=hose: the coolant hose test room
     // ?level=reactor: the old cargo atrium, kept to become Level 3's reactor room
     this._mountLevel2(this.startLevel);
@@ -299,10 +301,37 @@ export class Game {
   // second time (startLoop is a recursive rAF with no way to cancel it, and
   // UIManager's constructor appends DOM).
   _mountLevel2(kind) {
-    const sessions = { '2': HabitatSession, hose: HoseTestSession, reactor: Level2Session };
+    const sessions = { '2': HabitatSession, '3': DeckSession, hose: HoseTestSession, reactor: Level2Session };
     this.startLevel = kind;
-    this.music?.setLevel(2);
+    this.music?.setLevel(kind === '3' ? 3 : 2);
     this.level2 = new sessions[kind](this);
+  }
+
+  // ---------------------------------------------------------
+  // Leaving level 2: Voss dropped through the hatch (the screen is already black). Level 2 is
+  // torn down (its scene, physics, listeners and screens) and level 3 is built in its place.
+  // (game.level2 holds whichever session is running: from here on, level 3's.)
+  // ---------------------------------------------------------
+  enterLevel3() {
+    if (this._toLevel3) return;
+    this._toLevel3 = true;
+    this.state = 'DEPARTING';
+    this.level2?.dispose?.();
+    this.level2 = null;
+    const keep = [
+      document.getElementById('welcome-screen'),
+      this.reticle,
+      this.ui.blink, this.ui.prompt, this.ui.toast,
+      this.ui.objective, this.ui.waypoint, this.ui.overloadBanner, this.ui.dialogue
+    ].filter(Boolean);
+    document.getElementById('ui-layer').replaceChildren(...keep);
+    this.ui.hideDialogue();
+    this.ui.hideToast();
+    this.ui.setObjective(null);
+    this.ui.setWaypoint(null);
+    this.ui.setPrompt(null);
+    this.state = 'PLAYING';
+    this._mountLevel2('3');
   }
 
   // ---------------------------------------------------------

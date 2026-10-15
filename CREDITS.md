@@ -1,9 +1,24 @@
 # Credits: third-party assets
 
-Everything not listed here (the station, rooms, furniture, props, the organism, shaders, the
-procedural textures, the vegetables in the garden beds, the music and sound effects) is our own
-work. The score and the sound effects are synthesised in the browser (src/audio), so there are
-no audio files to credit.
+Everything not listed here (the station, rooms, furniture, props, the organism, the drowned deck,
+shaders, the procedural textures and the sound effects) is our own work. The sound effects are
+synthesised in the browser (src/audio). The background music is the team's own choice of tracks
+(public/assets/audio/music): credit every track here when it is added.
+
+## ambientCG (CC0 1.0, public domain)
+
+Used in Level 3 (the drowned deck). CC0 needs no credit, but we credit the site anyway. The
+1K-JPG packs were downloaded from ambientcg.com and packed into small WebP files in
+`public/assets/textures/l3/` (colour, normal, and occlusion/roughness/metalness).
+
+| Material | Used for | Link |
+|---|---|---|
+| Metal 021 | rusted grey metal walls and ceilings | https://ambientcg.com/view?id=Metal021 |
+| Metal 022 | heavy rust: the ribs, pipes, frames and the pump | https://ambientcg.com/view?id=Metal022 |
+| Concrete 042 C | cracked concrete with rusty mesh: the floors and the foot of every wall | https://ambientcg.com/view?id=Concrete042C |
+| Metal Walkway 014 | the rusty perforated catwalk in the pump room | https://ambientcg.com/view?id=MetalWalkway014 |
+
+Suggested credits-screen line: *"Rust and concrete textures from ambientCG (ambientcg.com, CC0)."*
 
 ## Poly Haven (CC0 1.0, public domain)
 

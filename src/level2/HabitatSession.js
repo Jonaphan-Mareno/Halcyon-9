@@ -35,6 +35,7 @@ import { Flashback } from './Flashback.js';
 import { Inventory } from '../ui/Inventory.js';
 import { sleep, pauseClock } from '../core/PauseClock.js';
 import { buildRoomProps } from './RoomProps.js';
+import { disposeScene } from '../core/disposeScene.js';
 import '../ui/level2.css';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
@@ -161,6 +162,7 @@ export class HabitatSession {
     root.appendChild(this.loadingEl);
 
     document.addEventListener('click', () => {
+      if (this.disposed) return;
       if (game.state === 'PLAYING' && !this.controls.instance.isLocked) this.controls.lock();
     });
 
@@ -169,6 +171,7 @@ export class HabitatSession {
     this._head = new THREE.Vector3();
     this._talkToken = 0;
     window.addEventListener('keydown', (e) => {
+      if (this.disposed) return;
       if (this.keypad?.isOpen) {
         if (e.code === 'Escape') this._closeKeypad();
         return;
@@ -196,11 +199,12 @@ export class HabitatSession {
     });
     // holding Q keeps asking ARIA: she freezes the moment one is wet enough
     document.addEventListener('keyup', (e) => {
+      if (this.disposed) return;
       if (e.code === 'KeyQ' && this.garden) this.garden.freezeHeld = false;
     });
     // the left mouse button sprays the garden's water pipe while he holds it
     document.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || this.disposed) return;
       this.garden?.audio.start();
       if (game.state === 'PLAYING' && this.controls.instance.isLocked && this.garden?.holding) this.garden.spraying = true;
     });
@@ -214,7 +218,7 @@ export class HabitatSession {
     if (new URLSearchParams(window.location.search).has('debug')) {
       let nextTalk = 0;
       window.addEventListener('keydown', (e) => {
-        if (!this.story) return;
+        if (!this.story || this.disposed) return;
         if (e.code === 'BracketRight') {
           e.preventDefault();
           const flag = this.story.next();
@@ -278,6 +282,7 @@ export class HabitatSession {
       this.composer.render();
     };
     window.addEventListener('resize', () => {
+      if (this.disposed) return;
       this.composer.setSize(window.innerWidth, window.innerHeight);
       fitFxaa();
     });
@@ -474,6 +479,11 @@ export class HabitatSession {
         this.interact.add({
           id: 'hatchSlab', position: this.gates.hatchCentre.clone().add(new THREE.Vector3(0, 0.15, 0)), radius: 1.0, reach: 2.8,
           label: hatchLabel, when: () => !this.story.has('hatchOpen'), use: () => this._useHatch()
+        });
+        // once it is open: down into the shaft, and on to Level 3
+        this.interact.add({
+          id: 'shaft', position: this.gates.hatchCentre.clone().add(new THREE.Vector3(0, 0.15, 0)), radius: 1.0, reach: 2.8,
+          label: 'Climb down into the shaft', when: () => this.story.has('hatchOpen'), use: () => this._climbDown()
         });
       }
     }
@@ -817,6 +827,13 @@ export class HabitatSession {
     const g = this.game;
     const dt = Math.min(delta, 0.05);
     const playing = g.state === 'PLAYING';
+    // dropping into the shaft: the view sinks into the hole while the screen fades
+    if (this._dropping) g.camera.instance.position.y -= dt * 3.5;
+    // stepping onto the open hatch drops him in too
+    if (playing && this.story?.has('hatchOpen') && this.gates?.hatchCentre && !this._leaving) {
+      const c = this.gates.hatchCentre, q = this.controls.position;
+      if (Math.hypot(q.x - c.x, q.z - c.z) < 0.6) this._climbDown();
+    }
     if (playing || g.state === 'WAKING') this.controls.update(dt, playing);
     // the lift: ARIA welcomes Voss on the way down, the doors open once she has finished, and
     // they shut behind him once he is a step out (scene 2.1)
@@ -944,6 +961,7 @@ export class HabitatSession {
   // her colour. Starting a new exchange cuts the current one short. Resolves true when finished,
   // false when cut short.
   async say(talk) {
+    if (this.disposed) return false;
     const ids = Array.isArray(talk) ? talk : TALKS[talk];
     if (!ids) {
       console.warn('Level 2: no exchange called "' + talk + '".');
@@ -1299,6 +1317,46 @@ export class HabitatSession {
     this.controls.instance.enabled = true;
     this.onResume();
     g.state = 'PLAYING';
+  }
+
+  // Through the hatch, the end of Level 2: Voss drops into the shaft, the screen goes black, and
+  // the game builds Level 3 in this level's place (game.enterLevel3, which calls dispose below)
+  _climbDown() {
+    if (this._leaving) return;
+    this._leaving = true;
+    const g = this.game;
+    g.state = 'DEPARTING';
+    this.controls.stop?.();
+    this.onPause();
+    g.ui.hideDialogue();
+    g.ui.setPrompt(null);
+    g.ui.setWaypoint(null);
+    this.codeNote.classList.remove('visible');
+    const fade = document.createElement('div');
+    fade.id = 'level-fade';
+    document.getElementById('ui-layer').appendChild(fade);
+    void fade.offsetWidth;
+    fade.classList.add('on');
+    this._dropping = true;
+    setTimeout(() => g.enterLevel3?.(), 1500);
+  }
+
+  // Torn down on the way to Level 3: everything this level put in the scene, its physics world,
+  // its screens, its video and its sounds go, so memory does not climb from level to level. (Its
+  // listeners stay attached but do nothing once disposed is set.)
+  dispose() {
+    this.disposed = true;
+    this.ready = false;
+    this.controls.instance.unlock?.();
+    this.controls.instance.dispose?.();
+    this.sea?.dispose?.();
+    this.aria?.dispose?.();
+    try { this.garden?.audio?.ctx?.close(); } catch (e) { /* already closed */ }
+    for (const el of [this.codeNote, this.fpsEl, this.keypad?.root, this.flashback?.el]) el?.remove();
+    this.composer?.dispose?.();
+    disposeScene(this.game.scene);
+    this.physics?.world?.free?.();
+    pauseClock.paused = false;
   }
 
   // The pause menu opened or closed: hold ARIA's line and let go of the pipe

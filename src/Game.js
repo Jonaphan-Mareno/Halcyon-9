@@ -259,6 +259,9 @@ export class Game {
     this.level2Mode = true;
     this.ui = new UIManager();
     this.reticle = document.getElementById('reticle');
+    // ?level=2 previews the real level 2, so it gets the game's background
+    // music (the habitat track); the single-room test harnesses stay silent
+    if (this.startLevel === '2') this.audio = new AudioManager();
     // ?level=2: the NEW level 2, the habitat atrium (environment preview for now)
     // ?level=hose: the coolant hose test room
     // ?level=reactor: the old cargo atrium, kept to become Level 3's reactor room
@@ -338,6 +341,7 @@ export class Game {
     this.level2Mode = true;
     this.state = 'PLAYING';
     this._mountLevel2('2');
+    this.audio?.startMusic('l2'); // the habitat deck gets its own song
     this._departing = false;
   }
 
@@ -381,6 +385,7 @@ export class Game {
     if (this.controls) {
       this.controls.lock();
       this.reticle.classList.add('visible');
+      this.audio?.startMusic(this.level2Mode ? 'l2' : 'l1'); // the first click unlocks the AudioContext
 
       // Voss wakes up: eyes open and close before the player can move
       this.state = 'WAKING';

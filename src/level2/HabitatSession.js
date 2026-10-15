@@ -198,11 +198,14 @@ export class HabitatSession {
     document.addEventListener('keyup', (e) => {
       if (e.code === 'KeyQ' && this.garden) this.garden.freezeHeld = false;
     });
-    // the left mouse button sprays the garden's water pipe while he holds it
+    // the left mouse button sprays the garden's water pipe while he holds it; with nothing in
+    // hand Voss just reaches out, so the click is acknowledged
     document.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       this.garden?.audio.start();
-      if (game.state === 'PLAYING' && this.controls.instance.isLocked && this.garden?.holding) this.garden.spraying = true;
+      if (game.state !== 'PLAYING' || !this.controls.instance.isLocked) return;
+      if (this.garden?.holding) this.garden.spraying = true;
+      else this.controls.character.reach();
     });
     document.addEventListener('mouseup', (e) => {
       if (e.button === 0 && this.garden) this.garden.spraying = false;

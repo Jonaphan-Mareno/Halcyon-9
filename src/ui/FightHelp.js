@@ -8,7 +8,7 @@ export class FightHelp {
     this.el.innerHTML = `
       <div class="fh-title">THE DRONES</div>
       <div class="fh-row" data-row="pipe"><span class="fh-key">E</span><span>Pull the water pipe off the wall by the hatch</span></div>
-      <div class="fh-row"><span class="fh-key">HOLD LEFT MOUSE</span><span>Spray them with water</span></div>
+      <div class="fh-row"><span class="fh-key">HOLD LEFT CLICK</span><span>Spray them with water</span></div>
       <div class="fh-row"><span class="fh-key">Q</span><span>ARIA freezes the wet ones</span><span class="fh-state"></span></div>
       <div class="fh-tip">A red eye means it is about to dive: step aside.</div>`;
     root.appendChild(this.el);

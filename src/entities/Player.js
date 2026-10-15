@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createGLTFLoader } from '../core/loaders.js';
+import { createGLTFLoader, createFBXLoader } from '../core/loaders.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 // Voss, the scientist (human_scientist.glb, built in Blender from cvg.blend).
@@ -8,6 +8,7 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 //   Idle, Walk, Run, Jump, Jump_Up, Fall, Land  - the full body, all in place
 //   Crouch                                      - a pose, layered additively over Idle/Walk
 //   FP_Idle, FP_Walk, FP_Run, FP_Jump           - the arms only, posed for the first-person view
+// A Mixamo export of the same rig, Sprint.fbx, replaces the glb's Run (see _mixamoClip)
 // Body parts are separate meshes so a view can show just some of them:
 //   Coat_Torso, Sleeves, Hands, Shirt, Pants, Head, Hair, Glasses
 //
@@ -18,6 +19,7 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 // the near plane.
 
 const MODEL = './assets/models/human_scientist.glb';
+const RUN_FBX = './assets/models/Sprint.fbx';
 
 // The model is authored at 1.39 m; the game's Voss is 1.8 m
 const MODEL_HEIGHT = 1.394;
@@ -25,14 +27,17 @@ const MODEL_HEIGHT = 1.394;
 // Between the eyes, in model space (glTF axes, before the half turn below)
 const EYE = new THREE.Vector3(0, 1.300, 0.051);
 
-// How fast a planted foot travels at model scale: game speed / (this * scale) = clip speed
+// How fast a planted foot travels at model scale: game speed / (this * scale) = clip speed.
+// Measured from each clip: the planted foot's backward speed while it is on the ground.
 const WALK_STRIDE_SPEED = 1.356;
-const RUN_STRIDE_SPEED = 2.463;
+const RUN_STRIDE_SPEED = 4.2;          // Sprint.fbx
+const GLB_RUN_STRIDE_SPEED = 2.463;    // the glb's Run (the fallback), and FP_Run, made to match it
 // The run plays while the run key is held and the body is moving at least this fast (m/s)
 const RUN_MIN_SPEED = 4.0;
 // Where each gait's cycle starts relative to the other (left foot about to plant), so
 // switching between walk and run keeps the feet in step
-const GAIT_PHASE = { Walk: 0.32, Run: 0.0 };
+const GAIT_PHASE = { Walk: 0.32, Run: 0.3 };
+const GLB_RUN_PHASE = 0.0;
 
 const FIRST_PERSON_PARTS = ['Sleeves', 'Hands'];
 
@@ -44,6 +49,16 @@ const NECK_SHARE = 0.4;
 const LOOK_SMOOTHING = 10;
 
 const FADE = 0.2;
+
+// A click with nothing in hand: the right arm reaches out and back, Minecraft style
+const REACH_TIME = 0.28;                          // seconds, out and back
+const REACH_FORWARD = 0.24;                       // first person: the arm pushes forward this far (m)
+const REACH_IN = 0.1;                             // first person: and turns a little toward the middle (radians)
+const REACH_RAISE = 1.1;                          // third person: the arm lifts forward (radians)
+
+// The first-person arms sit a little back and down from where the model's eyes put them, so less
+// of the forearms covers the screen (view space, metres: +z is back, toward the player)
+const FP_ARMS_OFFSET = new THREE.Vector3(0, -0.05, 0.05);
 
 // The team's toon banding (level 1's shader used it before the habitat restyle): three hard steps of light
 export function makeToonRamp() {
@@ -169,6 +184,8 @@ export class Player {
     this._airTime = 0;
     this._wasGrounded = true;
     this._landTimer = 0;
+    this.runStride = RUN_STRIDE_SPEED;
+    this.gaitPhase = GAIT_PHASE;
 
     // Smoothed head look, relative to the body (radians)
     this.lookYaw = 0;
@@ -182,10 +199,15 @@ export class Player {
     this._axisY = new THREE.Vector3(0, 1, 0);
     this._right = new THREE.Vector3();
     this._eyeOffset = new THREE.Vector3();
+    this._reachT = REACH_TIME;          // time into the current reach; finished when >= REACH_TIME
+    this._reachUndo = [];               // the arm moves of the last frame, undone before the mixer runs
+    this._qReach = new THREE.Quaternion();
+    this._axis = new THREE.Vector3();
+    this._reachMove = new THREE.Vector3();
   }
 
   async load() {
-    const gltf = await createGLTFLoader().loadAsync(MODEL);
+    const [gltf, runFbx] = await Promise.all([createGLTFLoader().loadAsync(MODEL), this._loadFBX(RUN_FBX)]);
     const ramp = makeToonRamp();
     const materials = new Map();
     const toon = (m) => {
@@ -218,14 +240,21 @@ export class Player {
     fpRoot.rotation.set(0, Math.PI, 0); // set all three: the clone carries this turn as (-pi, 0, -pi)
     // Put the model's eyes on the camera
     this._eyeOffset.copy(EYE).applyAxisAngle(this._axisY, Math.PI).multiplyScalar(this.scale);
-    fpRoot.position.copy(this._eyeOffset).negate();
+    fpRoot.position.copy(this._eyeOffset).negate().add(FP_ARMS_OFFSET);
     const fpParts = this._partsOf(fpRoot);
     for (const [name, objs] of Object.entries(fpParts)) {
       for (const o of objs) o.visible = FIRST_PERSON_PARTS.includes(name);
     }
     this.viewModel.add(fpRoot);
 
-    this.anim = new Animator(bodyRoot, clips.filter((c) => !c.name.startsWith('FP_') && c.name !== 'Crouch'));
+    // The Mixamo run. Without Sprint.fbx the glb's own Run stays, with its own stride and phase.
+    const run = this._mixamoClip(runFbx, 'Run', RUN_FBX);
+    if (!run) {
+      this.runStride = GLB_RUN_STRIDE_SPEED;
+      this.gaitPhase = { ...GAIT_PHASE, Run: GLB_RUN_PHASE };
+    }
+    const bodyClips = clips.filter((c) => !c.name.startsWith('FP_') && c.name !== 'Crouch' && !(run && c.name === 'Run'));
+    this.anim = new Animator(bodyRoot, [...bodyClips, run].filter(Boolean));
     // Crouch is a pose made additive against its first frame (the rest pose), held at its
     // last frame; its weight sinks Voss into a crouch on top of whatever else is playing
     const crouch = clips.find((c) => c.name === 'Crouch');
@@ -242,10 +271,105 @@ export class Player {
     this.fpAnim = new Animator(fpRoot, clips.filter((c) => c.name.startsWith('FP_')));
     this.anim.play('Idle', { fade: 0 });
     this.fpAnim.play('FP_Idle', { fade: 0 });
+    this.rightArm = this._bone(bodyRoot, /R_UpperArm/);
+    this.fpRightArm = this._bone(fpRoot, /R_UpperArm/);
+    this.fpRightShoulder = this._bone(fpRoot, /R_Clavicle/);
 
     this.ready = true;
     this.setMode(this.mode);
     return this;
+  }
+
+  // An animation-only FBX, or null (with a warning) if it is missing or broken
+  async _loadFBX(url) {
+    try {
+      return await createFBXLoader().loadAsync(url);
+    } catch (e) {
+      console.warn('Player: could not load', url, e);
+      return null;
+    }
+  }
+
+  // The Mixamo exports animate Voss's own rig, so the bone tracks bind as they are. The hips'
+  // motion sits on the FBX's top node instead, mixed with the FBX's axis turn; it is rebuilt here
+  // as the rig's root joint track, in place: horizontal travel dropped, the pelvis centred over
+  // the origin, the vertical bob kept. Any turn over the cycle and the average sideways lean come
+  // out too, so the cycle loops on the spot facing straight ahead. The FBX's own scene and meshes
+  // are thrown away, never added to the game.
+  _mixamoClip(fbx, name, url) {
+    if (!fbx) return null;
+    try {
+      const src = fbx.animations[0];
+      const pelvis = this._bone(this.bodyRoot, /Pelvis/);
+      const rootJoint = pelvis?.parent;
+      const fbxRoot = rootJoint && fbx.getObjectByName(rootJoint.name);
+      if (!src || !fbxRoot) throw new Error('not an animation of the scientist rig');
+
+      // The root joint's pose in the FBX's world at every keyframe
+      const times = src.tracks.reduce((a, t) => (t.times.length > a.length ? t.times : a), []);
+      const mixer = new THREE.AnimationMixer(fbx);
+      const action = mixer.clipAction(src).play();
+      const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+      const e = new THREE.Euler(0, 0, 0, 'YXZ');
+      const angles = [], heights = [];
+      for (const t of times) {
+        action.time = t;
+        mixer.update(0);
+        fbx.updateMatrixWorld(true);
+        fbxRoot.matrixWorld.decompose(p, q, s);
+        e.setFromQuaternion(q, 'YXZ');
+        const prev = angles[angles.length - 1];
+        const yaw = prev ? prev[1] + Math.atan2(Math.sin(e.y - prev[1]), Math.cos(e.y - prev[1])) : e.y;
+        angles.push([e.x, yaw, e.z]);
+        heights.push(p.y / s.y); // the FBX world is in centimetres, the rig in metres
+      }
+      mixer.uncacheRoot(fbx);
+
+      const n = times.length;
+      const span = times[n - 1] - times[0] || 1;
+      const turn = angles[n - 1][1] - angles[0][1];
+      const yaws = angles.map((a, i) => a[1] - (turn * (times[i] - times[0])) / span);
+      const meanYaw = yaws.reduce((a, b) => a + b, 0) / n;
+      const meanLean = angles.reduce((a, b) => a + b[2], 0) / n;
+      const quats = new Float32Array(n * 4);
+      const centre = new THREE.Vector3();
+      for (let i = 0; i < n; i++) {
+        q.setFromEuler(e.set(angles[i][0], yaws[i] - meanYaw, angles[i][2] - meanLean, 'YXZ'));
+        q.toArray(quats, i * 4);
+        centre.add(p.copy(pelvis.position).applyQuaternion(q));
+      }
+      centre.divideScalar(n);
+      const positions = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        positions[i * 3] = pelvis.position.x - centre.x;
+        positions[i * 3 + 1] = heights[i];
+        positions[i * 3 + 2] = pelvis.position.z - centre.z;
+      }
+
+      const bones = new Set();
+      this.bodyRoot.traverse((o) => { if (o.isBone) bones.add(o.name); });
+      const tracks = src.tracks.filter((t) => {
+        const [node, prop] = t.name.split('.');
+        return prop === 'quaternion' && bones.has(node) && node !== rootJoint.name;
+      });
+      tracks.push(
+        new THREE.QuaternionKeyframeTrack(rootJoint.name + '.quaternion', times, quats),
+        new THREE.VectorKeyframeTrack(rootJoint.name + '.position', times, positions)
+      );
+      return new THREE.AnimationClip(name, src.duration, tracks);
+    } catch (err) {
+      console.warn('Player: could not use the animation in', url, err);
+      return null;
+    } finally {
+      fbx.traverse((o) => {
+        o.geometry?.dispose();
+        o.skeleton?.dispose();
+        for (const m of [].concat(o.material || [])) {
+          for (const v of Object.values(m)) if (v?.isTexture) v.dispose();
+          m.dispose();
+        }
+      });
+    }
   }
 
   _prepare(root, toon, { castShadow }) {
@@ -296,6 +420,11 @@ export class Player {
     this.viewModel.visible = !third;
   }
 
+  // A click with nothing in hand: reach out with the right hand (restarts if already reaching)
+  reach() {
+    if (this.ready) this._reachT = 0;
+  }
+
   // A jump has just started (the controller pushed the body upward)
   jumped() {
     if (!this.ready) return;
@@ -317,6 +446,11 @@ export class Player {
       this.neck.quaternion.copy(this._neckBase);
       this.head.quaternion.copy(this._headBase);
     }
+    for (const [bone, q, pos] of this._reachUndo) {
+      bone.quaternion.copy(q);
+      bone.position.copy(pos);
+    }
+    this._reachUndo.length = 0;
     const moving = speed > 0.4;
     const running = runKey && speed > RUN_MIN_SPEED && crouch < 0.5;
     const gait = !moving ? 'Idle' : running && this.anim.has('Run') ? 'Run' : 'Walk';
@@ -348,25 +482,27 @@ export class Player {
       if (moving && this._landTimer < 0.18) this._landTimer = 0; // moving off quickly: blend straight into the walk
     } else {
       this.state = 'ground';
-      this.anim.play(gait, { fade: moving ? 0.18 : 0.25, phaseFrom: GAIT_PHASE });
+      this.anim.play(gait, { fade: moving ? 0.18 : 0.25, phaseFrom: this.gaitPhase });
     }
     this.crouchAction?.setEffectiveWeight(THREE.MathUtils.clamp(crouch, 0, 1));
 
     // Walk and run speeds follow the ground speed so the feet keep (roughly) planted
     const walkRate = THREE.MathUtils.clamp(speed / (WALK_STRIDE_SPEED * this.scale), 0.6, 2.4);
-    const runRate = THREE.MathUtils.clamp(speed / (RUN_STRIDE_SPEED * this.scale), 0.8, 1.8);
+    const runRate = THREE.MathUtils.clamp(speed / (this.runStride * this.scale), 0.8, 1.8);
+    const fpRunRate = THREE.MathUtils.clamp(speed / (GLB_RUN_STRIDE_SPEED * this.scale), 0.8, 1.8);
     if (this.anim.actions.Walk) this.anim.actions.Walk.timeScale = walkRate;
     if (this.anim.actions.Run) this.anim.actions.Run.timeScale = runRate;
 
     // ---------- first-person arms ----------
-    const fpGait = gait === 'Run' && this.fpAnim.has('FP_Run') ? 'FP_Run' : moving ? 'FP_Walk' : 'FP_Idle';
+    const fast = gait === 'Run';
+    const fpGait = fast && this.fpAnim.has('FP_Run') ? 'FP_Run' : moving ? 'FP_Walk' : 'FP_Idle';
     if (grounded && !this.fpAnim.is('FP_Jump')) {
       this.fpAnim.play(fpGait, { fade: 0.25 });
     } else if (grounded && this.fpAnim.finished('FP_Jump')) {
       this.fpAnim.play(fpGait, { fade: 0.2 });
     }
     if (this.fpAnim.actions.FP_Walk) this.fpAnim.actions.FP_Walk.timeScale = walkRate;
-    if (this.fpAnim.actions.FP_Run) this.fpAnim.actions.FP_Run.timeScale = runRate;
+    if (this.fpAnim.actions.FP_Run) this.fpAnim.actions.FP_Run.timeScale = fpRunRate;
 
     this.anim.update(dt);
     this.fpAnim.update(dt);
@@ -378,6 +514,40 @@ export class Player {
     camera.updateMatrixWorld();
     this.viewModel.position.copy(camera.position);
     this.viewModel.quaternion.copy(camera.quaternion);
+    this._applyReach(dt, camera);
+  }
+
+  // The reach, on top of whatever the clips did: the first-person arm pushes forward from the
+  // shoulder (the shoulder itself is never on screen), the third-person arm lifts forward. Both
+  // ease out and back over REACH_TIME.
+  _applyReach(dt, camera) {
+    if (this._reachT >= REACH_TIME) return;
+    this._reachT += dt;
+    const e = Math.sin(Math.PI * Math.min(this._reachT / REACH_TIME, 1));
+    if (this.fpRightShoulder) {
+      const shoulder = this.fpRightShoulder;
+      this._reachUndo.push([shoulder, shoulder.quaternion.clone(), shoulder.position.clone()]);
+      const target = shoulder.getWorldPosition(this._axis)
+        .add(this._reachMove.set(0, 0, -e * REACH_FORWARD).applyQuaternion(camera.quaternion));
+      shoulder.position.copy(shoulder.parent.worldToLocal(target));
+      shoulder.updateWorldMatrix(false, true);
+    }
+    if (this.fpRightArm) {
+      this._turnWorld(this.fpRightArm, this._qReach.setFromAxisAngle(this._axis.set(0, 1, 0).applyQuaternion(camera.quaternion), e * REACH_IN));
+    }
+    if (this.rightArm) {
+      this.body.getWorldQuaternion(this._qBody);
+      this._turnWorld(this.rightArm, this._qReach.setFromAxisAngle(this._axis.set(1, 0, 0).applyQuaternion(this._qBody), e * REACH_RAISE));
+    }
+  }
+
+  // Rotate a bone about its own pivot by a world-space rotation; undone at the start of the next update
+  _turnWorld(bone, rotation) {
+    this._reachUndo.push([bone, bone.quaternion.clone(), bone.position.clone()]);
+    bone.parent.getWorldQuaternion(this._qParent);
+    const pInv = this._qParent.clone().invert();
+    bone.quaternion.premultiply(this._qParent).premultiply(rotation).premultiply(pInv);
+    bone.updateWorldMatrix(false, true);
   }
 
   _applyLook(dt, camera, bodyYaw) {

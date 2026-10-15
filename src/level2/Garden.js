@@ -185,7 +185,7 @@ export class Garden {
     this.hoseMesh.visible = true;
     this.onPipe?.();
     if (this.state === 'fight') this.attackTimer = Math.max(this.attackTimer, FIRST_DIVE);
-    this.toast?.('Hold the left mouse button to spray. When they are wet, press Q and ARIA freezes them.');
+    this.toast?.('Hold left click to spray. When they are wet, press Q and ARIA freezes them.');
   }
 
   // ------------------------------------------------------------------ the fight

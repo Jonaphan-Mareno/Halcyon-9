@@ -17,8 +17,8 @@ export const FLAGS = [
   'pipeTaken',      // he pulled the water pipe off the wall by the hatch
   'gardenCleared',  // the last drone shattered: the pumps restart and the stair bulkheads lift
   'hatchTried',     // tried the hatch keypad: it wants Kessler's override
-  'cardTaken',      // took Kessler's access card from Voss's locker
-  'logWatched',     // watched the last of Voss's personal logs (Cycle 8)
+  'cardTaken',      // has Kessler's access card (Voss remembers it, at the end of his logs)
+  'logWatched',     // watched Voss's personal logs, through to Cycle 8
   'labDone',        // opened the lab's files (the subject list: CYCLE 9)
   'codeFound',      // found the override code in Kessler's room
   'hatchOpen'       // typed the code: the hatch is open
@@ -32,7 +32,7 @@ const LAB = { y0: 4.5, z1: -17.3, halfWidth: 7 };
 
 export class Level2Story {
   // targets: world positions for the waypoint { hatch, pipe, quarters, lab, kessler } and, inside
-  // the rooms, the things to use { locker, personalLog, labTerminal, kesslerLog, codeCard }
+  // the rooms, the things to use { personalLog, labTerminal, kesslerLog, codeCard }
   constructor(targets) {
     this.targets = targets;
     this.seen = () => false;       // (id) => has he read that entry (the level sets this)
@@ -82,15 +82,11 @@ export class Level2Story {
       return { text: 'Open the hatch', label: 'HATCH', target: t.hatch };
     }
     const p = playerPosition;
-    // the crew bunk: his locker (Kessler's card) and his personal logs (the last one, Cycle 8)
-    if (!f.cardTaken || !f.logWatched) {
-      if (p && this._inBunk(p)) {
-        if (!f.cardTaken) return { text: "Search the crew quarters: find J. Voss's locker", label: 'LOCKER', target: t.locker };
-        return { text: "Watch Voss's personal logs", label: 'LOGS', target: t.personalLog };
-      }
+    // the crew bunk: his personal logs play as a run of memories, and end with Kessler's card
+    if (!f.logWatched) {
+      if (p && this._inBunk(p)) return { text: "Watch Voss's personal logs", label: 'LOGS', target: t.personalLog };
       // the lit door in the dead gallery is the pull: the marker names the light, not the room
-      if (!f.cardTaken) return { text: "Find Dr. Kessler's override key", label: 'LIGHT ON', target: t.quarters };
-      return { text: "Go back and watch Voss's personal logs", label: 'LOGS', target: t.personalLog };
+      return { text: "Find Dr. Kessler's override key", label: 'LIGHT ON', target: t.quarters };
     }
     if (!f.labDone) {
       if (p && this._inLab(p)) return { text: 'Read the files on the lab terminal', label: 'TERMINAL', target: t.labTerminal };

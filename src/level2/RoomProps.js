@@ -4,7 +4,7 @@ import { withHubLighting } from '../graphics/HubMaterials.js';
 // The things to read upstairs (scenes 2.6 to 2.8), placed on the furniture already in the
 // rooms: in the crew bunk (Voss's old room, east) name plates on the bunks (one says J. VOSS),
 // two bunkside terminals with audio logs, a corkboard with the scan rota, his personal log
-// terminal, and a row of crew lockers, his left ajar with the letter and Kessler's card inside;
+// terminal, and a row of crew lockers (shut);
 // in Kessler's room (north-east) her desk monitor and the code card pinned beside it. Smooth
 // navy, soft black and orange, like the rest of the station.
 //
@@ -227,16 +227,14 @@ function locker(scene, x, z, yaw, name = 'J. VOSS', ajar = true) {
 export function buildRoomProps(scene) {
   const spots = {};
   // ---- the crew bunk (x 17.3 to 25.9, z -5.4 to 3.0): south wall z 3, north wall z -5.4
-  spots.personalLog = monitor(scene, 24.05, BENCH, 2.3, Math.PI, ['J. VOSS', 'PERSONAL LOG', '5 ENTRIES'], '#00e5ff');
+  spots.personalLog = monitor(scene, 24.05, BENCH, 2.3, Math.PI, ['J. VOSS', 'PERSONAL LOG', 'PLAY MEMORIES >'], '#00e5ff');
   spots.bunkLogA = wallScreen(scene, 18.35, 7.0, -5.35, 0, ['CREW LOG', 'AUDIO  0:41'], '#7fd6ff');
   spots.bunkLogB = wallScreen(scene, 21.79, 6.55, -4.1, -Math.PI / 2, ['CREW LOG', 'AUDIO  0:22'], '#7fd6ff');
   spots.corkboard = corkboard(scene, 17.46, 7.25, -3.15, Math.PI / 2);   // (the wall's face is at x 17.42)
-  // the crew lockers along the south wall, Voss's in the middle, ajar
+  // the crew lockers along the south wall, shut (nothing in them to find)
   spots.lockerBodies = [];
   for (const [x, name] of [[18.85, 'A. OKAFOR'], [19.7, 'J. VOSS'], [20.55, 'T. LINDQVIST']]) {
-    const lk = locker(scene, x, 2.72, Math.PI, name, name === 'J. VOSS');
-    spots.lockerBodies.push(lk.body);
-    if (name === 'J. VOSS') spots.locker = lk.spot;
+    spots.lockerBodies.push(locker(scene, x, 2.72, Math.PI, name, false).body);
   }
   // name plates on the bunks' front rails (the bunk's open side faces south, at z -2.56): the
   // lower bunks' bases and the upper bunks' rails, one bunk each end

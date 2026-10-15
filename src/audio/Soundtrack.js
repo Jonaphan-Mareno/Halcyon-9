@@ -22,6 +22,8 @@ export class Soundtrack {
     this.mood = 'calm';
     this.muted = false;
     this.ducked = false;
+    this.volume = 1;           // the player's music volume (Options)
+    this.paused = false;       // the pause menu is open: the music drops low
     this.tracks = {};          // name -> { el, vol, missing }
     window.addEventListener('aria-speaking', (e) => { this.ducked = !!e.detail; });
     setInterval(() => this._tick(), TICK * 1000);
@@ -35,6 +37,14 @@ export class Soundtrack {
   // fades everything out, anything else plays the level's own track
   setMood(mood) {
     this.mood = mood;
+  }
+
+  setVolume(v) {
+    this.volume = v;
+  }
+
+  setPaused(on) {
+    this.paused = on;
   }
 
   toggleMute() {
@@ -67,7 +77,7 @@ export class Soundtrack {
 
   _tick() {
     const wanted = this._wanted();
-    const loud = this.muted ? 0 : VOLUME * (this.ducked ? DUCKED : 1);
+    const loud = this.muted ? 0 : VOLUME * this.volume * (this.ducked ? DUCKED : 1) * (this.paused ? 0.3 : 1);
     const step = VOLUME * TICK / FADE_SECONDS;
     for (const [name, t] of Object.entries(this.tracks)) {
       if (t.missing) continue;

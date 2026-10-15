@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { AriaHead } from './AriaHead.js';
+import { settings } from '../core/Settings.js';
 
 const ARIA_VIDEO_PATH = './assets/textures/aria_components/';
 const ARIA_AUDIO_PATH = './assets/audio/aria/';
@@ -223,6 +224,37 @@ export class AriaManager {
     return this._endSpeech !== null;
   }
 
+  // The pause menu: hold her line where it is (the voice, or the subtitle's timer), and carry on
+  pause() {
+    const c = this._cur;
+    if (!c || this._held) return;
+    this._held = true;
+    c.wasPlaying = !c.audio.paused;
+    c.audio.pause();
+    if (c.timer) {
+      clearTimeout(c.timer);
+      c.timer = null;
+      c.left = Math.max(0, c.due - performance.now());
+    }
+  }
+
+  resume() {
+    const c = this._cur;
+    this._held = false;
+    if (!c) return;
+    if (c.wasPlaying) c.audio.play().catch(() => {});
+    if (c.left > 0 && this._endSpeech) {
+      c.due = performance.now() + c.left;
+      c.timer = setTimeout(this._endSpeech, c.left);
+      c.left = 0;
+    }
+  }
+
+  // the player moved the voice volume (Options)
+  applyVolume() {
+    if (this._cur) this._cur.audio.volume = settings.get('voice');
+  }
+
   // Cut her current line short (the player pressed skip). The line's promise
   // resolves as if it had finished, so the conversation carries straight on.
   skip() {
@@ -239,8 +271,10 @@ export class AriaManager {
 
     return new Promise((resolve) => {
       let finished = false;
-      let timer = null;
       const audio = new Audio(ARIA_AUDIO_PATH + clipName + '.mp3');
+      audio.volume = settings.get('voice');
+      // what pause() needs to hold and resume her line
+      const cur = this._cur = { audio, timer: null, due: 0, left: 0, wasPlaying: false };
 
       // the music ducks while she speaks (see Soundtrack)
       window.dispatchEvent(new CustomEvent('aria-speaking', { detail: true }));
@@ -249,7 +283,8 @@ export class AriaManager {
         if (finished) return;
         finished = true;
         window.dispatchEvent(new CustomEvent('aria-speaking', { detail: false }));
-        clearTimeout(timer);
+        clearTimeout(cur.timer);
+        if (this._cur === cur) this._cur = null;
         audio.pause();
         this.video.onerror = null;
         this._endSpeech = null;
@@ -260,7 +295,10 @@ export class AriaManager {
       this._endSpeech = finish;
 
       const startFallbackTimer = () => {
-        if (!timer && !finished) timer = setTimeout(finish, fallbackSeconds * 1000);
+        if (!cur.timer && !finished) {
+          cur.due = performance.now() + fallbackSeconds * 1000;
+          cur.timer = setTimeout(finish, fallbackSeconds * 1000);
+        }
       };
       // No usable audio: time the subtitle, and let the face talk on its own
       // (a failed file would otherwise leave the lip sync reading silence)

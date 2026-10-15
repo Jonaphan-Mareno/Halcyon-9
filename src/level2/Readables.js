@@ -16,10 +16,15 @@ import { LOGS } from './Level2Lines.js';
 //
 // It works from the keyboard while the mouse stays captured: Enter skips to the end or moves on,
 // number keys or the arrows pick from a list, E or Escape goes back and closes.
+//
+// montage(ids) plays entries one after another by themselves, with a cut between them, like
+// memories coming back (Voss's personal logs). Enter skips to the next snippet, E skips them all.
 
 const LOG_AUDIO = './assets/audio/logs/';
 const LOG_VIDEO = './assets/video/logs/';
 const READ_RATE = 15;            // characters a second a transcript reveals at without a recording
+const MONTAGE_RATE = 26;         // the same, in the memory montage (it keeps moving)
+const MONTAGE_HOLD = 2.2;        // seconds a snippet stays up once its words are out (a letter: 5)
 const TYPE_RATE = 70;            // characters a second a terminal file types out at
 const TITLE_CARD = 1.8;          // seconds a video log's title card shows before the words
 const STATIC_FPS = 15;
@@ -70,15 +75,29 @@ export class Readables {
     this.term = null;
     this.pages = Array.isArray(ids) ? ids : [ids];
     this.page = 0;
+    this.isMontage = false;
     this.onDone = onDone || null;
     this._open();
     this._show(this.pages[0]);
+  }
+
+  // Play entries one after another with no choosing: play, cut, play, cut
+  montage(ids, onDone) {
+    this.term = null;
+    this.pages = ids;
+    this.page = 0;
+    this.isMontage = true;
+    this.onDone = onDone || null;
+    this._open();
+    this.el.classList.add('montage');
+    this._show(ids[0]);
   }
 
   // A terminal: a numbered list of entries to open one at a time
   terminal(title, ids, onDone) {
     this.term = { title, ids, pick: 0 };
     this.pages = null;
+    this.isMontage = false;
     this.onDone = onDone || null;
     this._open();
     this._showList();
@@ -88,7 +107,8 @@ export class Readables {
     if (!this.isOpen) return;
     this._stopMedia();
     this.isOpen = false;
-    this.el.classList.remove('visible');
+    this.isMontage = false;
+    this.el.classList.remove('visible', 'montage');
     const done = this.onDone;
     this.onDone = null;
     this.hooks.onClose?.();
@@ -123,7 +143,7 @@ export class Readables {
     t.ids.forEach((id, i) => {
       const row = document.createElement('div');
       row.className = 'rd-item' + (i === t.pick ? ' on' : '') + (this.seen.has(id) ? ' seen' : '');
-      row.textContent = (i + 1) + '   ' + LOGS[id].title;
+      row.textContent = (i + 1) + '   ' + LOGS[id].title + (LOGS[id].author ? '   (' + LOGS[id].author + ')' : '');
       this.listEl.appendChild(row);
     });
     this.footEl.textContent = '1-' + t.ids.length + ' or arrows + Enter: open      E: close';
@@ -147,7 +167,7 @@ export class Readables {
       this.videoEl.src = LOG_VIDEO + id + '.mp4';
       this._tryMedia(this.videoEl, true);
     } else if (log.kind === 'file') {
-      this.subEl.textContent = 'RESTRICTED DIRECTORY';
+      this.subEl.textContent = 'RESTRICTED DIRECTORY' + (log.author ? '   |   WRITTEN BY ' + log.author : '');
     }
     if (log.kind === 'note' || log.kind === 'letter') this._finish();   // paper is read at a glance
     this._footer();
@@ -202,6 +222,10 @@ export class Readables {
   _footer() {
     const e = this.entry;
     if (!e) return;
+    if (this.isMontage) {
+      this.footEl.textContent = 'Enter: next      E: skip all';
+      return;
+    }
     const more = this.pages && this.page < this.pages.length - 1;
     if (!e.done) this.footEl.textContent = 'Enter: skip      E: ' + (this.term ? 'back' : 'close');
     else if (more) this.footEl.textContent = 'Enter: next      E: close';
@@ -222,6 +246,11 @@ export class Readables {
       else if (e.code === 'KeyE' || e.code === 'Escape') this.close();
       return;
     }
+    if (this.isMontage) {
+      if (e.code === 'Enter') this._advanceMontage();
+      else if (e.code === 'KeyE' || e.code === 'Escape') this.close();
+      return;
+    }
     if (e.code === 'Enter') {
       if (!this.entry.done) this._finish();
       else this._next();
@@ -229,6 +258,18 @@ export class Readables {
       if (t) this._back();
       else this.close();
     }
+  }
+
+  // the next snippet, with a cut; after the last one the montage is over
+  _advanceMontage() {
+    if (this.page >= this.pages.length - 1) {
+      this.close();
+      return;
+    }
+    this.frame.classList.remove('cut');
+    void this.frame.offsetWidth;
+    this.frame.classList.add('cut');
+    this._show(this.pages[++this.page]);
   }
 
   _pick(i) {
@@ -253,6 +294,11 @@ export class Readables {
     const e = this.entry;
     if (e && e.log.kind === 'video' && !e.media) this._drawStatic(dt);
     if (e && e.log.kind === 'audio') this._meter(e);
+    if (e && e.done && this.isMontage) {
+      // the words are out: hold a moment, then cut to the next memory
+      e.hold = (e.hold || 0) + dt;
+      if (e.hold > (e.log.kind === 'letter' ? 5 : MONTAGE_HOLD)) this._advanceMontage();
+    }
     if (!e || e.done) return;
     e.t += dt;
     const kind = e.log.kind;
@@ -261,10 +307,12 @@ export class Readables {
       shown = e.total * Math.min(1, e.media.currentTime / e.media.duration);
     } else if (kind === 'video') {
       // the title card first, then the words over the static
-      shown = Math.max(0, e.t - TITLE_CARD) * READ_RATE;
-      if (e.t > TITLE_CARD) this.cardEl.textContent = '';
+      const rate = this.isMontage ? MONTAGE_RATE : READ_RATE;
+      const card = this.isMontage ? 1.0 : TITLE_CARD;
+      shown = Math.max(0, e.t - card) * rate;
+      if (e.t > card) this.cardEl.textContent = '';
     } else {
-      shown = e.t * (kind === 'file' ? TYPE_RATE : READ_RATE);
+      shown = e.t * (kind === 'file' ? TYPE_RATE : this.isMontage ? MONTAGE_RATE : READ_RATE);
     }
     const n = Math.min(e.total, Math.floor(shown));
     if (n !== e.shown) {

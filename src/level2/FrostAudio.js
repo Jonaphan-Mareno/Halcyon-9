@@ -16,7 +16,7 @@ export class FrostAudio {
     if (!Ctx) return;
     this.ctx = new Ctx();
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.6;
+    this.master.gain.value = 0.6 * (this.volume ?? 1);
     this.master.connect(this.ctx.destination);
 
     // one second of white noise, reused by every sound

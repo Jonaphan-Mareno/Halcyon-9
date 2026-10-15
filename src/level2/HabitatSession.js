@@ -31,6 +31,9 @@ import { PlayerStats, MAX_INTEGRITY } from '../player/PlayerStats.js';
 import { HUD } from '../ui/HUD.js';
 import { FightHelp } from '../ui/FightHelp.js';
 import { Readables } from './Readables.js';
+import { Flashback } from './Flashback.js';
+import { Inventory } from '../ui/Inventory.js';
+import { sleep, pauseClock } from '../core/PauseClock.js';
 import { buildRoomProps } from './RoomProps.js';
 import '../ui/level2.css';
 
@@ -39,7 +42,6 @@ import '../ui/level2.css';
 // No gameplay yet: that is designed and added after the environment is approved.
 
 const SOLID = ['COL_', 'DOOR_'];
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // The lift is level 1's (lift.glb, see levels/liftCabin.js), its origin the middle of the door
 // sill at the front of the frame. Set there, the frame's front corners sit on the curved inside
@@ -78,7 +80,7 @@ const DAMAGED_BASE = 0.8;    // the mood's normal brightness on arrival (the pow
 const RESTORED_LIGHT = 0.6;  // how far towards clean the shade goes (uRestore)
 const RESTORED_BASE = 0.92;  // the mood's normal brightness after the restart (DAMAGED_BASE before)
 const HATCH_CODE = '471902'; // Kessler's override (placeholder, see the script's open decisions)
-const LOG_CLIPS = ['log-0', 'log-1', 'log-2', 'log-5', 'log-8'];   // Voss's personal log terminal
+const MEMORIES = ['letter', 'log-0', 'log-1', 'log-2', 'log-5', 'log-8'];   // Voss's personal logs, as one run of memories
 const LAB_FILES = ['directive', 'research', 'subjects'];            // the lab terminal
 const IDLE_LINE = 50;        // seconds lingering in the bunk or the lab before ARIA's remark
 const DIRECT_HIT = 15;       // a drone's dive, straight into him (health is out of 100)
@@ -143,9 +145,15 @@ export class HabitatSession {
       onShown: (id) => this._readShown(id),
       onFinished: (id) => this._readFinished(id)
     });
-    this.flashEl = document.createElement('div');
-    this.flashEl.id = 'memory-flash';
-    root.appendChild(this.flashEl);
+    this.flashback = new Flashback(root);
+    // the inventory (I): Kessler's card and the hatch code go in it
+    this.inventory = new Inventory(root);
+    this.inventory.statusFor.hatchcode = () => HATCH_CODE.split('').join(' ');
+    // the hatch code, kept in the top left from the moment he finds it until the hatch is open
+    this.codeNote = document.createElement('div');
+    this.codeNote.id = 'code-note';
+    this.codeNote.innerHTML = '<div class="cn-label">HATCH 4 OVERRIDE (DR. KESSLER)</div><div class="cn-code">' + HATCH_CODE.split('').join(' ') + '</div>';
+    document.body.appendChild(this.codeNote);
     this.loadingEl = document.createElement('div');
     this.loadingEl.id = 'level-loading';
     this.loadingEl.className = 'visible';
@@ -170,7 +178,15 @@ export class HabitatSession {
         this.reader.key(e);
         return;
       }
+      if (game.state === 'INVENTORY') {
+        if (e.code === 'KeyI' || e.code === 'Escape') this._closeInventory();
+        return;
+      }
       if (game.state !== 'PLAYING' || !this.ready) return;
+      if (e.code === 'KeyI' && !e.repeat) {
+        this._openInventory();
+        return;
+      }
       if (e.code === 'KeyE' && !e.repeat) this.interact?.use();
       if (e.code === 'Enter') this.skipLine();
       if (e.code === 'KeyQ' && !e.repeat && this.garden) {
@@ -219,6 +235,7 @@ export class HabitatSession {
       await this._load();
       await this._precompile();
       this.ready = true;
+    this.game.applySettings?.();
       this.loadingEl.classList.remove('visible');
       game.ui.showToast('WASD to move, Space to jump, E to use things, V to switch camera.', 7000);
     }).catch((e) => console.error('Level 2 atrium failed to load.', e));
@@ -411,7 +428,9 @@ export class HabitatSession {
       if (!node) continue;
       const centre = new THREE.Box3().setFromObject(node).getCenter(new THREE.Vector3());
       centre.add(new THREE.Vector3(-centre.x, -centre.y, 0).normalize().multiplyScalar(2.2));
-      this.quarterDoors.push({ node, centre, closedY: node.position.y, solid: true, open: 0 });
+      const door = { node, centre, closedY: node.position.y, solid: true, open: 0 };
+      this._slidingDoor(door);
+      this.quarterDoors.push(door);
     }
 
     // the story so far, and where the objective marker points (the model's marker empties: the
@@ -635,6 +654,44 @@ export class HabitatSession {
     this.lift = lift;
   }
 
+  // A quarter door made to look and open like the lab's: two panels (a slab, a glowing blue edge
+  // strip and an orange line, in the lab doors' own materials) that slide apart sideways into the
+  // wall. The model's single slab is hidden; its collider stays until the doors have opened.
+  _slidingDoor(d) {
+    const lab = this.labDoors[0]?.node;
+    if (!lab || lab.children.length < 3) return;
+    const [slabMat, glowMat, accentMat] = lab.children.map((c) => c.material);
+    const box = new THREE.Box3().setFromObject(d.node);
+    const c = box.getCenter(new THREE.Vector3());
+    const height = box.max.y - box.min.y;
+    const n = new THREE.Vector3(c.x, 0, c.z).normalize();              // out of the hall, through the door
+    const width = 4.24, pw = width / 2, depth = 0.2;
+    const group = new THREE.Group();
+    group.name = d.node.name + '_sliding';
+    group.position.set(c.x, box.min.y, c.z);
+    group.rotation.y = Math.atan2(n.x, n.z);                           // local +z is out of the hall
+    const mesh = (w, h, dd, mat, x, y, z) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, dd), mat);
+      m.position.set(x, y, z);
+      return m;
+    };
+    d.panels = [];
+    for (const s of [-1, 1]) {
+      const panel = new THREE.Group();
+      const inner = -s * pw / 2;                                       // the edge that meets the other panel
+      const face = -(depth / 2 + 0.02);                                // the hall side
+      panel.add(mesh(pw, height, depth, slabMat, 0, height / 2, 0));
+      panel.add(mesh(0.06, height - 0.8, 0.04, glowMat, inner + s * 0.05, height / 2, face));
+      panel.add(mesh(pw * 0.667, 0.08, 0.04, accentMat, 0, height - 0.84, face));
+      panel.position.set(s * pw / 2, 0, 0);
+      group.add(panel);
+      d.panels.push({ obj: panel, s });
+    }
+    d.pw = pw;
+    d.node.visible = false;
+    this.game.scene.add(group);
+  }
+
   // An invisible wall across the closed lift doors (the doors themselves are not solid while they
   // can still slide): he cannot step out before ARIA has told him about the drones
   _blockLiftDoors() {
@@ -753,6 +810,10 @@ export class HabitatSession {
 
   update(delta) {
     if (!this.ready || !this.controls.ready) return;
+    if (this.game.state === 'PAUSED' || this.game.state === 'INVENTORY') {
+      this._perf(delta, false);
+      return;
+    }
     const g = this.game;
     const dt = Math.min(delta, 0.05);
     const playing = g.state === 'PLAYING';
@@ -792,9 +853,10 @@ export class HabitatSession {
     for (const d of this.quarterDoors) {
       const allowed = d.node.name !== 'DOOR_KESSLER' || this._kesslerUnlocked();
       const near = allowed && this.controls.position.distanceTo(d.centre) < 4;
-      d.open = THREE.MathUtils.clamp(d.open + (near ? dt : -dt) / 1.2, 0, 1);
+      d.open = THREE.MathUtils.clamp(d.open + (near ? dt : -dt) / (d.panels ? 0.7 : 1.2), 0, 1);
       const t = d.open * d.open * (3 - 2 * d.open);
-      d.node.position.y = d.closedY + 3.4 * t;
+      if (d.panels) for (const pn of d.panels) pn.obj.position.x = pn.s * (d.pw / 2 + d.pw * t);
+      else d.node.position.y = d.closedY + 3.4 * t;
       if (d.open > 0 && d.solid) {
         const c = this.doorColliders[d.node.name];
         if (c) {
@@ -839,6 +901,9 @@ export class HabitatSession {
     }
     this.hud.setVisible(playing || g.state === 'KEYPAD');
     this.hud.update(this.player);
+    if (playing) this.player.playSeconds += dt;
+    this.codeNote.classList.toggle('visible', this.story.has('codeFound') && !this.story.has('hatchOpen') &&
+      (playing || g.state === 'KEYPAD'));
     this.reader.update(dt);
     this._idleLines(dt, playing, p);
     for (const k of this._markers || []) {
@@ -929,6 +994,10 @@ export class HabitatSession {
       this._powerReturns();
     }
     if (flag === 'pipeTaken' && !this.garden?.holding) this.garden?.takePipe();   // (the debug key)
+    if (flag === 'codeFound') {
+      this.inventory.add('hatchcode');
+      this.game.ui.showToast('THE HATCH CODE IS SHOWN TOP LEFT, AND KEPT IN YOUR INVENTORY (I)', 6000);
+    }
     if (flag === 'hatchOpen') {
       this.gates?.openHatch();
       this.say('hatchOpen');
@@ -950,7 +1019,7 @@ export class HabitatSession {
   }
 
   // ---------------------------------------------------------
-  // Upstairs: the bunk's logs, the corkboard and the locker, Voss's personal log, the lab's
+  // Upstairs: the bunk's logs, the corkboard, Voss's personal log, the lab's
   // terminal, Kessler's final log and the code card (scenes 2.6 to 2.8)
   // ---------------------------------------------------------
   _buildReadables(scene, lab) {
@@ -962,13 +1031,9 @@ export class HabitatSession {
     add('bunkLogB', spots.bunkLogB, 0.25, 'Play the crew log', () => r.read('bunkLogB'));
     if (spots.myBunk) add('myBunk', spots.myBunk, 0.3, 'Read the name plate', () => this.say('myBunk'));
     add('corkboard', spots.corkboard, 0.55, 'Look at the corkboard', () => r.read('rota', () => this.say('corkboard')));
-    add('locker', spots.locker, 0.4,
-      () => (this.story.has('cardTaken') ? 'Read the letter again' : "Search J. Voss's locker"),
-      () => {
-        if (this.story.has('cardTaken')) return r.read('letter');
-        r.read(['letter', 'lockerCard'], () => this._cardTaken());
-      });
-    add('personalLog', spots.personalLog, 0.3, "Use Voss's personal log", () => r.terminal('J. VOSS: PERSONAL LOG', LOG_CLIPS));
+    add('personalLog', spots.personalLog, 0.3,
+      () => (this.story.has('logWatched') ? 'Watch the memories again' : "Watch Voss's personal logs"),
+      () => r.montage(MEMORIES, () => this._memoriesWatched()));
     // the lab terminal is the workstation on the lab's west wall
     const screen = lab.getObjectByName('PT_LabScreen_0');
     if (screen) {
@@ -976,11 +1041,12 @@ export class HabitatSession {
         () => r.terminal('B-LAB: RESTRICTED DIRECTORY', LAB_FILES));
     }
     add('kesslerLog', spots.kesslerLog, 0.3, 'Play the final log', () => r.read('kesslerLog'));
-    add('codeCard', spots.codeCard, 0.15, 'Read the card', () => r.read('codeCard', () => this.story.set('codeFound')));
-    this._idle = { bunk: 0, lab: 0 };
+    add('codeCard', spots.codeCard, 0.15, 'Read the card',
+      () => (this._kesslerDone ? r.read('codeCard') : r.read('codeCard', () => this._kesslerScene())),
+      () => r.seen.has('kesslerLog'));       // her log first: it is what leads him to the card
+    this._idle = { bunk: 0, lab: 0, kessler: 0 };
     // where the objective's marker points inside the rooms
     const t = this.story.targets;
-    t.locker = spots.locker;
     t.personalLog = spots.personalLog;
     t.labTerminal = screen ? screen.getWorldPosition(new THREE.Vector3()) : null;
     t.kesslerLog = spots.kesslerLog;
@@ -990,7 +1056,7 @@ export class HabitatSession {
     const seen = (id) => () => r.seen.has(id);
     this._markers = [
       [spots.bunkLogA, seen('bunkLogA')], [spots.bunkLogB, seen('bunkLogB')], [spots.corkboard, seen('rota')],
-      [spots.locker, () => this.story.has('cardTaken')], [spots.personalLog, seen('log-8')],
+      [spots.personalLog, () => this.story.has('logWatched')],
       [t.labTerminal, () => this.story.has('labDone')], [spots.kesslerLog, seen('kesslerLog')], [spots.codeCard, seen('codeCard')]
     ].filter(([p]) => p).map(([p, done], i) => {
       const m = new THREE.Mesh(this._markerGeo ??= new THREE.OctahedronGeometry(0.085), this._markerMat ??= new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 1.5, 1.8) }));
@@ -1001,20 +1067,31 @@ export class HabitatSession {
     });
   }
 
-  // the locker's card is his: a flash of memory, then the letter's line
-  _cardTaken() {
-    if (!this.story.set('cardTaken')) return;
-    this.game.ui.showToast("DR. KESSLER'S ACCESS CARD: TAKEN", 3500);
-    this._memoryFlash();
-    setTimeout(() => this.say('letter'), 1400);
+  // Scene 2.8: he reads the code card. The full flashback plays (Kessler at the shutdown console,
+  // Voss arguing, then walking to the door controls instead of to her), then ARIA: "You weren't
+  // supposed to find that so soon", Voss's "What did I do?", the snap (the room goes red), the
+  // silence and the lights coming back slowly, her apology. Only then does the code count.
+  async _kesslerScene() {
+    this._kesslerDone = true;
+    const g = this.game;
+    g.state = 'FLASHBACK';
+    this.garden?.audio.hiss(false);
+    await this.flashback.play();
+    g.state = 'PLAYING';
+    await sleep(700);
+    await this.say('kessler');
+    this.story.set('codeFound');
   }
 
-  // A short, wordless flash of memory (the letter; step 8 builds the full flashback)
-  _memoryFlash() {
-    this.game.mood?.flicker(0.5);
-    this.flashEl.classList.remove('on');
-    void this.flashEl.offsetWidth;          // restart the animation
-    this.flashEl.classList.add('on');
+  // The personal logs have played through, as one run of memories ending on Cycle 8 ("take the
+  // card"). He has Kessler's card now (it was in his own locker), Voss recognises the handwriting,
+  // and ARIA breaks in.
+  _memoriesWatched() {
+    if (!this.story.set('logWatched')) return;
+    this.story.set('cardTaken');
+    this.inventory.add('card');
+    this.game.ui.showToast("DR. KESSLER'S ACCESS CARD ADDED TO YOUR INVENTORY (I)", 6000);
+    setTimeout(() => this.say([...TALKS.letter, ...TALKS.bunkInterrupt]), 800);
   }
 
   // an entry was opened: the lab's first file gets ARIA's longest pause
@@ -1027,11 +1104,6 @@ export class HabitatSession {
 
   // an entry was read or played to the end
   _readFinished(id) {
-    if (id === 'log-8' && !this._saidInterrupt) {
-      this._saidInterrupt = true;
-      this.story.set('logWatched');
-      setTimeout(() => this.say('bunkInterrupt'), 900);
-    }
     if (id === 'subjects' && !this._saidCycle9) {
       this._saidCycle9 = true;
       this.say('cycle9');
@@ -1039,16 +1111,21 @@ export class HabitatSession {
     if (LAB_FILES.every((f) => this.reader.seen.has(f))) this.story.set('labDone');
   }
 
-  // ARIA's remarks when he lingers: in the bunk without opening the locker, in the lab without
+  // ARIA's remarks when he lingers: in the bunk without watching the logs, in the lab without
   // using the terminal (once each)
   _idleLines(dt, playing, p) {
     if (!playing || !this._idle) return;
     const inLab = p.y > 4.5 && p.z < -17.3 && Math.abs(p.x) < 7;
-    if (this.story._inBunk(p) && !this.story.has('cardTaken')) this._idle.bunk += dt;
+    if (this.story._inBunk(p) && !this.story.has('logWatched')) this._idle.bunk += dt;
     if (inLab && !this.reader.seen.has('directive')) this._idle.lab += dt;
     if (this._idle.bunk > IDLE_LINE && !this._idle.bunkSaid && !this._talking()) {
       this._idle.bunkSaid = true;
       this.say('bunkIdle');
+    }
+    if (this.story._inKessler(p) && this.story.has('codeFound')) this._idle.kessler += dt;
+    if (this._idle.kessler > IDLE_LINE && !this._idle.kesslerSaid && !this._talking()) {
+      this._idle.kesslerSaid = true;
+      this.say('kesslerIdle');
     }
     if (this._idle.lab > IDLE_LINE && !this._idle.labSaid && !this._talking()) {
       this._idle.labSaid = true;
@@ -1201,11 +1278,67 @@ export class HabitatSession {
     }
   }
 
+  // The inventory (I): the world waits, as it does for the pause menu
+  _openInventory() {
+    const g = this.game;
+    g.state = 'INVENTORY';
+    pauseClock.paused = true;
+    this.controls.stop?.();
+    this.controls.instance.enabled = false;
+    g.reticle.classList.remove('visible');
+    this.codeNote.classList.remove('visible');       // (it would sit over the slots)
+    this.onPause();
+    this.inventory.show(this.player, g.ui.objectiveText.textContent);
+  }
+
+  _closeInventory() {
+    const g = this.game;
+    if (g.state !== 'INVENTORY') return;
+    this.inventory.close();
+    pauseClock.paused = false;
+    this.controls.instance.enabled = true;
+    this.onResume();
+    g.state = 'PLAYING';
+  }
+
+  // The pause menu opened or closed: hold ARIA's line and let go of the pipe
+  onPause() {
+    this.aria?.pause();
+    if (this.garden) {
+      this.garden.spraying = false;
+      this.garden.freezeHeld = false;
+      this.garden.audio.hiss(false);
+    }
+  }
+
+  onResume() {
+    this.aria?.resume();
+  }
+
+  // The graphics quality chosen in Options: 'auto' (it lowers itself if the game runs slowly), or a
+  // fixed 'high' (glow and full resolution), 'medium' (no glow) or 'low' (no glow, 80% resolution)
+  setQualityMode(mode) {
+    this._qualityMode = mode;
+    if (!this.bloom) return;           // (applied once the level has loaded)
+    const webgl = this.game.renderer.instance;
+    const pr = mode === 'low' ? 0.8 : 1;
+    this.bloom.enabled = mode === 'high' || mode === 'auto';
+    webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, pr));
+    this.composer.setPixelRatio(webgl.getPixelRatio());
+    this.composer.setSize(window.innerWidth, window.innerHeight);
+    const p = webgl.getPixelRatio();
+    this.fxaa.material.uniforms.resolution.value.set(1 / (window.innerWidth * p), 1 / (window.innerHeight * p));
+    this.qualityStep = mode === 'medium' ? 1 : mode === 'low' ? 2 : 0;
+    this.qualityTime = 0;
+    this.qualityFrames = 0;
+  }
+
   // A small frame counter (top right; F3 hides it), and automatic quality: if the first few
   // seconds of play run slowly, the glow is switched off, then the resolution lowered a little.
   _perf(delta, playing) {
     if (!this.fpsEl) {
       this.fpsEl = document.createElement('div');
+      this.fpsEl.className = 'fps-counter';
       this.fpsEl.style.cssText = 'position:fixed;top:8px;right:10px;z-index:50;font:12px monospace;color:#cfefff;' +
         'background:rgba(4,18,27,0.7);padding:3px 7px;border-radius:4px;pointer-events:none';
       document.body.appendChild(this.fpsEl);
@@ -1230,6 +1363,7 @@ export class HabitatSession {
     // automatic quality: judge each 4 seconds of play, at most twice
     // (not while the tab is hidden, and ignoring one-off stalls: the browser slows hidden tabs down)
     if (!playing || this.qualityStep >= 2 || document.hidden || delta > 0.2) return;
+    if (this._qualityMode && this._qualityMode !== 'auto') return;      // the player chose a quality
     this.qualityTime += delta;
     this.qualityFrames++;
     if (this.qualityTime < 4) return;

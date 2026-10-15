@@ -16,6 +16,9 @@ import { ItemPreview } from './ui/ItemPreview.js';
 import { IntroSequence } from './story/IntroSequence.js';
 import { AudioManager } from './audio/AudioManager.js';
 import { Soundtrack } from './audio/Soundtrack.js';
+import { PauseMenu } from './ui/PauseMenu.js';
+import { settings } from './core/Settings.js';
+import { pauseClock } from './core/PauseClock.js';
 import { MoodLight } from './graphics/MoodLight.js';
 import { CircuitPuzzle } from './puzzles/CircuitPuzzle.js';
 import { PlayerStats } from './player/PlayerStats.js';
@@ -184,6 +187,15 @@ export class Game {
     // The music is your own files (see Soundtrack.js); it may only start after a click, and
     // init() runs from the start button.
     this.music = new Soundtrack();
+    // the pause menu (Esc / P / the corner button) and the player's options
+    this.pauseMenu = new PauseMenu({
+      state: () => this.state,
+      pause: () => this.pause(),
+      resume: () => this.resume(),
+      restartLevel: () => this.restartLevel(),
+      toTitle: () => { window.location.href = window.location.pathname; }
+    });
+    settings.onChange(() => this.applySettings());
     this.mood = new MoodLight({ base: 0.74 });
     this._angerUntil = 0;
     window.addEventListener('keydown', (e) => {
@@ -358,6 +370,79 @@ export class Game {
 
   updateLevel2(delta) {
     this.level2.update(delta);
+  }
+
+  // ---------------------------------------------------------
+  // Pause menu (Esc), and the player's options
+  // ---------------------------------------------------------
+
+  // the controls of whichever level is running
+  _activeControls() {
+    return this.level2Mode ? this.level2?.controls : this.controls;
+  }
+
+  pause() {
+    if (this.state !== 'PLAYING') return;
+    this.state = 'PAUSED';
+    pauseClock.paused = true;
+    const c = this._activeControls();
+    c?.stop?.();
+    if (c?.instance) {
+      c.instance.enabled = false;
+      c.instance.unlock?.();
+    }
+    this.reticle.classList.remove('visible');
+    if (this.level2Mode) this.level2?.onPause?.();
+    else this.currentLevel?.ariaManager?.pause?.();
+    this.music?.setPaused(true);
+    this.pauseMenu.open();
+  }
+
+  resume() {
+    if (this.state !== 'PAUSED') return;
+    this.pauseMenu.close();
+    pauseClock.paused = false;
+    const c = this._activeControls();
+    c?.stop?.();
+    if (c?.instance) c.instance.enabled = true;
+    c?.lock?.();
+    if (this.level2Mode) this.level2?.onResume?.();
+    else this.currentLevel?.ariaManager?.resume?.();
+    this.music?.setPaused(false);
+    this.state = 'PLAYING';
+  }
+
+  // Level 1 starts again in place; Level 2 reloads straight into its lift (until Level 2 can be
+  // torn down and rebuilt in place)
+  restartLevel() {
+    if (this.level2Mode) {
+      const debug = new URLSearchParams(window.location.search).has('debug');
+      window.location.href = window.location.pathname + '?level=2' + (debug ? '&debug' : '');
+      return;
+    }
+    this.pauseMenu.close();
+    pauseClock.paused = false;
+    this.music?.setPaused(false);
+    this.state = 'PLAYING';
+    this.restart();
+  }
+
+  // Apply the options: volumes, mouse speed, quality, the frame counter
+  applySettings() {
+    const s = settings;
+    this.music?.setVolume(s.get('music'));
+    this.audio?.setVolume(s.get('effects'));
+    const garden = this.level2?.garden;
+    if (garden) {
+      garden.audio.volume = s.get('effects');
+      if (garden.audio.master) garden.audio.master.gain.value = 0.6 * s.get('effects');
+    }
+    this.currentLevel?.ariaManager?.applyVolume?.();
+    this.level2?.aria?.applyVolume?.();
+    for (const c of [this.controls, this.level2?.controls]) if (c?.instance) c.instance.pointerSpeed = s.get('sensitivity');
+    document.body.classList.toggle('hide-fps', !s.get('fps'));
+    this.perf?.setMode(s.get('quality'));
+    this.level2?.setQualityMode?.(s.get('quality'));
   }
 
   // ---------------------------------------------------------
@@ -689,12 +774,14 @@ export class Game {
   }
 
   startLoop() {
+    this.applySettings();
     const loop = (time) => {
       requestAnimationFrame(loop);
       const delta = (time - this.lastTime) / 1000;
       this.lastTime = time;
-      this.mood?.update(Math.min(delta, 0.05));
+      if (this.state !== 'PAUSED') this.mood?.update(Math.min(delta, 0.05));
       this._steerMusic();
+      this.pauseMenu?.update(this.state);
       if (this.level2Mode) {
         this.updateLevel2(Math.min(delta, 0.05));
       } else {

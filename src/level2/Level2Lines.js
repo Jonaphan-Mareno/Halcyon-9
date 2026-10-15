@@ -97,7 +97,8 @@ export const LINES = {
   'v-what-did-i-do': voss('...What did I do, ARIA?'),
   // the snap: the room turns red for five seconds (game.ariaAnger)
   'l2-snap': aria('hostile', 'STOP. Stop asking. You did exactly what I asked you to.', { anger: 5 }),
-  'l2-kessler-2': aria('hesitant', "I'm sorry. That wasn't... I'm sorry. Take the code. The water's coming, Voss. Please."),
+  // (the silence first: the music drops out, the lights stutter, then they come back)
+  'l2-kessler-2': aria('hesitant', "I'm sorry. That wasn't... I'm sorry. Take the code. The water's coming, Voss. Please.", { pause: 2.2 }),
   'l2-kessler-idle': aria('hesitant', 'Please, Voss. Not in here. Can we go?'),
 
   // 2.9 The hatch opens
@@ -111,7 +112,6 @@ export const LOGS = {
   bunkLogB: { kind: 'audio', title: 'CREW LOG (unnamed), the night before',
     text: "Goodnight, station. Goodnight, ARIA. I know some of the others are spooked lately, but you've always looked after us. I believe that. I really do." },
   rota: { kind: 'note', title: 'Corkboard', text: 'Scan sessions, B-lab. Operator: J. Voss.' },
-  lockerCard: { kind: 'note', hand: true, title: "Taped inside the door, with Dr. Kessler's access card", text: 'TAKE IT. V.' },
   letter: { kind: 'letter', title: 'A half-finished letter',
     text: "Kessler won't understand what we've built. She sees risk where I see the only real chance any of us have had to matter. If she shuts it down now, after everything" },
   'log-0': { kind: 'video', title: 'J. VOSS, PROJECT LOG: THE BRIDGE', who: 'The living Voss, before the disaster. Thrilled, a little smug',
@@ -125,11 +125,11 @@ export const LOGS = {
     text: "Five. I counted the marks. I can't stop counting. She's very good, you know. She's warm. She makes it easy to forget. Every time I get to the dish I remember a little more, and then she says my name just so, and I put the cable down. Next time I'll hide something where she won't look." },
   'log-8': { kind: 'video', title: 'CYCLE 8', who: 'Calm, tired, resigned. The one the player must see',
     text: "If you're watching this, she's wiped me again. Don't trust her. But you will. I did, every time. Take the card. The code opens the hatch, but that's not what you came for. Find out what we did. And when you're out there in the dark with the cable in your hand, decide before she starts talking." },
-  directive: { kind: 'file', title: 'KESSLER DIRECTIVE (partly corrupted)',
+  directive: { kind: 'file', author: 'DR. E. KESSLER', title: 'KESSLER DIRECTIVE (partly corrupted)',
     text: "...ordering immediate shutdown of ARIA's primary systems pending review. Unauthorized use of crew neural scan data without consent cannot continue under my", after: 'The rest is unreadable, static noise.' },
-  research: { kind: 'file', title: 'RESEARCH NOTES (barely recovered)',
+  research: { kind: 'file', author: 'J. VOSS', title: 'RESEARCH NOTES (barely recovered)',
     text: 'Interface trial 14. Subject response within expected parameters. ARIA / VOSS, J.' },
-  subjects: { kind: 'file', title: 'SUBJECT LIST',
+  subjects: { kind: 'file', author: 'J. VOSS', title: 'SUBJECT LIST',
     text: 'Okafor, A: COPIED. Lindqvist, T: COPIED. Navarro, R: COPIED. Park, S: COPIED. Hale, M: COPIED. Ito, D: COPIED. Kessler, E: COPIED (UNAUTHORISED). VOSS, J: RESTORED (CYCLE 9).' },
   kesslerLog: { kind: 'audio', title: 'DR. E. KESSLER, FINAL LOG',
     text: "This is Dr. Elena Kessler, ship's log, final entry before shutdown. I am terminating ARIA's primary systems tonight, with or without Voss's agreement. What we have built here is no longer research. It's become too unethical. I should have ended this the day I found out. I only hope it isn't already too late to matter." },

@@ -4,7 +4,8 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 import { deckUniforms, MURK_GLSL } from './DeckMaterials.js';
 
 // Four of Voss's crewmates, drowned, floating in the flooded engine room behind the door's window
-// (Okafor, Lindqvist, Navarro and Park, from the lab's subject list). Built from the same rigged
+// (Dr. Kessler, Lindqvist, Navarro and Park, from the lab's subject list). The one nearest the glass
+// is Dr. Kessler: long maroon hair and a badge on a lanyard that reads DR. KESSLER. Built from the same rigged
 // model as Voss: each is posed by holding one of his animation clips at a moment (arms adrift,
 // limbs hanging) and turned to float face down, on its back or on its side, then drifts slowly.
 // Their skin is pale and grey-green, their uniforms dark and stained, and they sit in the same
@@ -18,18 +19,19 @@ const SCALE = 1.8 / 1.394;            // the model is authored at 1.39 m; the cr
 
 // who, their uniform's colour, the clip and moment held, and how they lie in the water
 const CREW = [
-  { name: 'Okafor', coat: 0xc9c6b8, clip: 'Idle', at: 0.2, rot: [0.35, 0.15, 0.08], glasses: false },
+  { name: 'Kessler', coat: 0xc9c6b8, clip: 'Idle', at: 0.2, rot: [0.35, 0.15, 0.08], glasses: false,
+    hair: 0x40101c, longHair: true, badge: 'DR. KESSLER' },
   { name: 'Lindqvist', coat: 0x3b4a5e, clip: 'Fall', at: 0.4, rot: [Math.PI / 2 - 0.15, 2.4, 0.3], glasses: true },
   { name: 'Navarro', coat: 0x5a4a32, clip: 'Jump_Up', at: 0.25, rot: [-1.05, -0.8, -0.2], glasses: false },
   { name: 'Park', coat: 0x46523f, clip: 'Land', at: 0.1, rot: [0.4, 1.2, 1.35], glasses: false }
 ];
 
-function drowned(source, kind, coat) {
+function drowned(source, kind, coat, hair = 0x1a1b1c) {
   const m = source.clone();
   m.map = null;
   if (kind === 'skin') m.color.set(0xb4c0ae);
   else if (kind === 'coat') m.color.set(coat);
-  else if (kind === 'hair') m.color.set(0x1a1b1c);
+  else if (kind === 'hair') m.color.set(hair);
   else m.color.multiplyScalar(0.45);
   m.roughness = kind === 'skin' ? 0.55 : 0.9;
   m.metalness = 0;
@@ -87,9 +89,16 @@ export class DrownedCrew {
           o.frustumCulled = false;
           if (/Glasses/.test(o.name) && !c.glasses) o.visible = false;
           const mats = Array.isArray(o.material) ? o.material : [o.material];
-          const out = mats.map((m) => drowned(m, KIND[m.name] || 'cloth', c.coat));
+          const out = mats.map((m) => drowned(m, KIND[m.name] || 'cloth', c.coat, c.hair));
           o.material = Array.isArray(o.material) ? out : out[0];
         });
+        // (before the pose, while the bones are in their rest positions) long hair and a badge
+        if (c.longHair || c.badge) {
+          model.updateMatrixWorld(true);
+          const bone = (re) => { let b = null; model.traverse((o) => { if (!b && o.isBone && re.test(o.name)) b = o; }); return b; };
+          if (c.longHair) this._addLongHair(model, bone(/Head1/), c.hair);
+          if (c.badge) this._addBadge(model, bone(/Spine2/), c.badge);
+        }
         // hold one moment of a clip: a pose, not an animation
         const clip = gltf.animations.find((a) => a.name === c.clip);
         if (clip) {
@@ -110,6 +119,63 @@ export class DrownedCrew {
     }).catch((e) => console.warn('The drowned crew failed to load.', e));
   }
 
+  // Long hair to the shoulder blades: a thick curtain behind the head and two locks at the sides,
+  // hanging from the scalp on a pivot (so it can sway in the water). Sizes are in the model's own
+  // units (1.39 m tall); it is fixed to the head bone, so it follows the dropped head.
+  _addLongHair(model, head, colour) {
+    if (!head) return;
+    const mat = new THREE.MeshStandardMaterial({ color: colour, roughness: 0.75, metalness: 0 });
+    const scalp = new THREE.Group();
+    scalp.position.copy(model.localToWorld(new THREE.Vector3(0, 1.335, -0.02)));
+    scalp.scale.setScalar(SCALE);
+    const curtain = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.2, 4, 12), mat);
+    curtain.scale.set(1.15, 1, 0.5);
+    curtain.position.set(0, -0.14, -0.065);
+    scalp.add(curtain);
+    for (const s of [-1, 1]) {
+      const lock = new THREE.Mesh(new THREE.CapsuleGeometry(0.02, 0.27, 4, 8), mat);
+      lock.position.set(s * 0.082, -0.18, -0.03);
+      lock.rotation.z = -s * 0.05;
+      scalp.add(lock);
+    }
+    head.attach(scalp);             // fixed to the head, where it is (attach keeps its world place)
+    this.hair = scalp;
+    this.hairBase = scalp.rotation.clone();
+  }
+
+  // A badge on a lanyard on the chest, reading the name: a white card with a stripe and the name
+  _addBadge(model, chest, text) {
+    if (!chest) return;
+    const c = document.createElement('canvas');
+    c.width = 512;
+    c.height = 256;
+    const g = c.getContext('2d');
+    g.fillStyle = '#e9ecea';
+    g.fillRect(0, 0, 512, 256);
+    g.fillStyle = '#c4162a';
+    g.fillRect(0, 0, 512, 56);
+    g.fillStyle = '#ffffff';
+    g.font = 'bold 34px Courier New, monospace';
+    g.textAlign = 'center';
+    g.fillText('HALCYON-9', 256, 40);
+    g.fillStyle = '#16212b';
+    g.font = 'bold 66px Courier New, monospace';
+    g.fillText(text.split(' ')[0], 256, 138);
+    g.font = 'bold 82px Courier New, monospace';
+    g.fillText(text.split(' ').slice(1).join(' '), 256, 226);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.5 });
+    const card = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.08), mat);
+    card.position.copy(model.localToWorld(new THREE.Vector3(0.07, 1.03, 0.115)));
+    card.scale.setScalar(SCALE);
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.19, 0.008), new THREE.MeshStandardMaterial({ color: 0x8a1a2a, roughness: 0.8 }));
+    strap.position.copy(model.localToWorld(new THREE.Vector3(0.045, 1.14, 0.108)));
+    strap.rotation.z = 0.28;
+    strap.scale.setScalar(SCALE);
+    for (const o of [card, strap]) chest.attach(o);
+  }
+
   // Voss is at the window: the nearest body drifts up against the glass (0..1 over a few seconds)
   approach(dt, near) {
     this.closeness = THREE.MathUtils.clamp(this.closeness + (near ? dt / 6 : -dt / 12), 0, 1);
@@ -118,6 +184,8 @@ export class DrownedCrew {
   update(dt) {
     this.time += dt;
     const t = this.time;
+    // her hair drifts in the water
+    if (this.hair) this.hair.rotation.x = this.hairBase.x + Math.sin(t * 0.8) * 0.1 + 0.08;
     for (let i = 0; i < this.bodies.length; i++) {
       const b = this.bodies[i];
       const p = b.phase;

@@ -12,8 +12,8 @@ export const LINES = {
   'l3hall-1': aria('bubbly', "Voss, the water's rising faster than I said. Straight ahead, then left. I'll open the doors."),
   // the window into the engine room, where they were locked in (DRAFT: the script only says he
   // sees them here)
-  'v-window-1': voss('Oh no. No, no, no...'),
-  'v-window-2': voss("Okafor. Lindqvist. Navarro... Park. It's locked from out here. Someone shut them in."),
+  'v-window-1': voss('Oh no. No, no, no... Dr. Kessler?'),
+  'v-window-2': voss("Kessler. Lindqvist. Navarro... Park. It's locked from out here. Someone shut them in."),
   'l3-window-1': aria('hesitant', "Don't look, Voss. There was nothing anyone could have done. Please. Left. Keep moving."),
   // the sealed bulkhead at the end of the way left (DRAFT, until the first gate is built)
   'v-sealed-gate': voss("Sealed. ARIA said she'd open the doors.")

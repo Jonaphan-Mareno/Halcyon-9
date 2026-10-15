@@ -22,6 +22,14 @@ export const ITEMS = {
   flare: {
     name: 'Flare',
     description: 'An emergency flare. Security drones go blind when their sensors are overloaded with light. Use it on a drone (E).'
+  },
+  card: {
+    name: "Kessler's card",
+    description: "Dr. Kessler's access card, the one Voss taped inside his own locker with a note: take it. It opens her room, once the lab has been read."
+  },
+  hatchcode: {
+    name: 'Hatch 4 code',
+    description: "Dr. Kessler's override for Maintenance Hatch 4: 4-7-1-9-0-2. Pinned beside her monitor with a note: do not tell ARIA."
   }
 };
 

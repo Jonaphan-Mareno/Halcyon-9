@@ -112,7 +112,6 @@ export const LOGS = {
   bunkLogB: { kind: 'audio', title: 'CREW LOG (unnamed), the night before',
     text: "Goodnight, station. Goodnight, ARIA. I know some of the others are spooked lately, but you've always looked after us. I believe that. I really do." },
   rota: { kind: 'note', title: 'Corkboard', text: 'Scan sessions, B-lab. Operator: J. Voss.' },
-  lockerCard: { kind: 'note', hand: true, title: "Taped inside the door, with Dr. Kessler's access card", text: 'TAKE IT. V.' },
   letter: { kind: 'letter', title: 'A half-finished letter',
     text: "Kessler won't understand what we've built. She sees risk where I see the only real chance any of us have had to matter. If she shuts it down now, after everything" },
   'log-0': { kind: 'video', title: 'J. VOSS, PROJECT LOG: THE BRIDGE', who: 'The living Voss, before the disaster. Thrilled, a little smug',

@@ -31,6 +31,8 @@ import { PlayerStats, MAX_INTEGRITY } from '../player/PlayerStats.js';
 import { HUD } from '../ui/HUD.js';
 import { FightHelp } from '../ui/FightHelp.js';
 import { Readables } from './Readables.js';
+import { Flashback } from './Flashback.js';
+import { sleep } from '../core/PauseClock.js';
 import { buildRoomProps } from './RoomProps.js';
 import '../ui/level2.css';
 
@@ -39,7 +41,6 @@ import '../ui/level2.css';
 // No gameplay yet: that is designed and added after the environment is approved.
 
 const SOLID = ['COL_', 'DOOR_'];
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // The lift is level 1's (lift.glb, see levels/liftCabin.js), its origin the middle of the door
 // sill at the front of the frame. Set there, the frame's front corners sit on the curved inside
@@ -143,6 +144,7 @@ export class HabitatSession {
       onShown: (id) => this._readShown(id),
       onFinished: (id) => this._readFinished(id)
     });
+    this.flashback = new Flashback(root);
     this.flashEl = document.createElement('div');
     this.flashEl.id = 'memory-flash';
     root.appendChild(this.flashEl);
@@ -219,6 +221,7 @@ export class HabitatSession {
       await this._load();
       await this._precompile();
       this.ready = true;
+    this.game.applySettings?.();
       this.loadingEl.classList.remove('visible');
       game.ui.showToast('WASD to move, Space to jump, E to use things, V to switch camera.', 7000);
     }).catch((e) => console.error('Level 2 atrium failed to load.', e));
@@ -753,6 +756,10 @@ export class HabitatSession {
 
   update(delta) {
     if (!this.ready || !this.controls.ready) return;
+    if (this.game.state === 'PAUSED') {
+      this._perf(delta, false);
+      return;
+    }
     const g = this.game;
     const dt = Math.min(delta, 0.05);
     const playing = g.state === 'PLAYING';
@@ -976,8 +983,10 @@ export class HabitatSession {
         () => r.terminal('B-LAB: RESTRICTED DIRECTORY', LAB_FILES));
     }
     add('kesslerLog', spots.kesslerLog, 0.3, 'Play the final log', () => r.read('kesslerLog'));
-    add('codeCard', spots.codeCard, 0.15, 'Read the card', () => r.read('codeCard', () => this.story.set('codeFound')));
-    this._idle = { bunk: 0, lab: 0 };
+    add('codeCard', spots.codeCard, 0.15, 'Read the card',
+      () => (this._kesslerDone ? r.read('codeCard') : r.read('codeCard', () => this._kesslerScene())),
+      () => r.seen.has('kesslerLog'));       // her log first: it is what leads him to the card
+    this._idle = { bunk: 0, lab: 0, kessler: 0 };
     // where the objective's marker points inside the rooms
     const t = this.story.targets;
     t.locker = spots.locker;
@@ -999,6 +1008,22 @@ export class HabitatSession {
       scene.add(m);
       return { m, y: m.position.y, done, phase: i };
     });
+  }
+
+  // Scene 2.8: he reads the code card. The full flashback plays (Kessler at the shutdown console,
+  // Voss arguing, then walking to the door controls instead of to her), then ARIA: "You weren't
+  // supposed to find that so soon", Voss's "What did I do?", the snap (the room goes red), the
+  // silence and the lights coming back slowly, her apology. Only then does the code count.
+  async _kesslerScene() {
+    this._kesslerDone = true;
+    const g = this.game;
+    g.state = 'FLASHBACK';
+    this.garden?.audio.hiss(false);
+    await this.flashback.play();
+    g.state = 'PLAYING';
+    await sleep(700);
+    await this.say('kessler');
+    this.story.set('codeFound');
   }
 
   // the locker's card is his: a flash of memory, then the letter's line
@@ -1049,6 +1074,11 @@ export class HabitatSession {
     if (this._idle.bunk > IDLE_LINE && !this._idle.bunkSaid && !this._talking()) {
       this._idle.bunkSaid = true;
       this.say('bunkIdle');
+    }
+    if (this.story._inKessler(p) && this.story.has('codeFound')) this._idle.kessler += dt;
+    if (this._idle.kessler > IDLE_LINE && !this._idle.kesslerSaid && !this._talking()) {
+      this._idle.kesslerSaid = true;
+      this.say('kesslerIdle');
     }
     if (this._idle.lab > IDLE_LINE && !this._idle.labSaid && !this._talking()) {
       this._idle.labSaid = true;
@@ -1201,11 +1231,44 @@ export class HabitatSession {
     }
   }
 
+  // The pause menu opened or closed: hold ARIA's line and let go of the pipe
+  onPause() {
+    this.aria?.pause();
+    if (this.garden) {
+      this.garden.spraying = false;
+      this.garden.freezeHeld = false;
+      this.garden.audio.hiss(false);
+    }
+  }
+
+  onResume() {
+    this.aria?.resume();
+  }
+
+  // The graphics quality chosen in Options: 'auto' (it lowers itself if the game runs slowly), or a
+  // fixed 'high' (glow and full resolution), 'medium' (no glow) or 'low' (no glow, 80% resolution)
+  setQualityMode(mode) {
+    this._qualityMode = mode;
+    if (!this.bloom) return;           // (applied once the level has loaded)
+    const webgl = this.game.renderer.instance;
+    const pr = mode === 'low' ? 0.8 : 1;
+    this.bloom.enabled = mode === 'high' || mode === 'auto';
+    webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, pr));
+    this.composer.setPixelRatio(webgl.getPixelRatio());
+    this.composer.setSize(window.innerWidth, window.innerHeight);
+    const p = webgl.getPixelRatio();
+    this.fxaa.material.uniforms.resolution.value.set(1 / (window.innerWidth * p), 1 / (window.innerHeight * p));
+    this.qualityStep = mode === 'medium' ? 1 : mode === 'low' ? 2 : 0;
+    this.qualityTime = 0;
+    this.qualityFrames = 0;
+  }
+
   // A small frame counter (top right; F3 hides it), and automatic quality: if the first few
   // seconds of play run slowly, the glow is switched off, then the resolution lowered a little.
   _perf(delta, playing) {
     if (!this.fpsEl) {
       this.fpsEl = document.createElement('div');
+      this.fpsEl.className = 'fps-counter';
       this.fpsEl.style.cssText = 'position:fixed;top:8px;right:10px;z-index:50;font:12px monospace;color:#cfefff;' +
         'background:rgba(4,18,27,0.7);padding:3px 7px;border-radius:4px;pointer-events:none';
       document.body.appendChild(this.fpsEl);
@@ -1230,6 +1293,7 @@ export class HabitatSession {
     // automatic quality: judge each 4 seconds of play, at most twice
     // (not while the tab is hidden, and ignoring one-off stalls: the browser slows hidden tabs down)
     if (!playing || this.qualityStep >= 2 || document.hidden || delta > 0.2) return;
+    if (this._qualityMode && this._qualityMode !== 'auto') return;      // the player chose a quality
     this.qualityTime += delta;
     this.qualityFrames++;
     if (this.qualityTime < 4) return;

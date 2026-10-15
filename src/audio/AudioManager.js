@@ -11,6 +11,7 @@ export class AudioManager {
     this.ctx = null;
     this.master = null;
     this.hum = null;
+    this.volume = 1;           // the player's effects volume (Options)
   }
 
   // The AudioContext may only start after a user gesture; every call here
@@ -21,11 +22,16 @@ export class AudioManager {
       if (!Ctx) return null;
       this.ctx = new Ctx();
       this.master = this.ctx.createGain();
-      this.master.gain.value = 0.9;
+      this.master.gain.value = 0.9 * this.volume;
       this.master.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
     return this.ctx;
+  }
+
+  setVolume(v) {
+    this.volume = v;
+    if (this.master) this.master.gain.value = 0.9 * v;
   }
 
   // ---------------------------------------------------------

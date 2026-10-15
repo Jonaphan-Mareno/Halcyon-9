@@ -97,7 +97,8 @@ export const LINES = {
   'v-what-did-i-do': voss('...What did I do, ARIA?'),
   // the snap: the room turns red for five seconds (game.ariaAnger)
   'l2-snap': aria('hostile', 'STOP. Stop asking. You did exactly what I asked you to.', { anger: 5 }),
-  'l2-kessler-2': aria('hesitant', "I'm sorry. That wasn't... I'm sorry. Take the code. The water's coming, Voss. Please."),
+  // (the silence first: the music drops out, the lights stutter, then they come back)
+  'l2-kessler-2': aria('hesitant', "I'm sorry. That wasn't... I'm sorry. Take the code. The water's coming, Voss. Please.", { pause: 2.2 }),
   'l2-kessler-idle': aria('hesitant', 'Please, Voss. Not in here. Can we go?'),
 
   // 2.9 The hatch opens

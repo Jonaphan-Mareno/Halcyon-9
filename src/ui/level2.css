@@ -260,3 +260,17 @@
   45% { opacity: 1; }
   100% { opacity: 0; }
 }
+
+/* the flashback in Kessler's room (Flashback.js): a letterboxed memory over everything */
+#flashback {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+#flashback.on { display: flex; }
+#flashback canvas { width: min(100vw, 177.78vh); height: auto; aspect-ratio: 16 / 9; image-rendering: auto; }
+.fb-hint { position: absolute; right: 1.2rem; bottom: 1rem; font-size: 0.72rem; letter-spacing: 0.15rem; color: #cfefff; opacity: 0; transition: opacity 0.4s; }

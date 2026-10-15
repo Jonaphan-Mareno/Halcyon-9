@@ -17,6 +17,8 @@ export class PerfMonitor {
     this.onStep = onStep;
     this.index = 0;
     this.el = document.createElement('div');
+    this.fixed = null;        // a quality the player chose in Options (an index into the steps), or null for automatic
+    this.el.className = 'fps-counter';
     this.el.style.cssText = 'position:fixed;top:8px;right:10px;z-index:50;font:12px monospace;color:#cfefff;' +
       'background:rgba(4,18,27,0.7);padding:3px 7px;border-radius:4px;pointer-events:none';
     document.body.appendChild(this.el);
@@ -33,6 +35,19 @@ export class PerfMonitor {
 
   get current() { return this.steps[this.index]; }
 
+  // 'auto', or 'high' | 'medium' | 'low': a fixed step the automatic quality leaves alone
+  setMode(mode) {
+    const n = this.steps.length;
+    this.fixed = mode === 'high' ? 0 : mode === 'medium' ? Math.floor(n / 2) : mode === 'low' ? n - 2 : null;
+    if (this.fixed !== null && this.fixed !== this.index) {
+      this.index = this.fixed;
+      this.onStep(this.current);
+    }
+    this.judgeTime = 0;
+    this.judgeFrames = 0;
+    this.fastChecks = 0;
+  }
+
   update(delta, active) {
     this.frames++;
     this.time += delta;
@@ -44,7 +59,7 @@ export class PerfMonitor {
       this.time = 0;
     }
     // (not while paused or the tab is hidden, and ignoring one-off stalls such as loading)
-    if (!active || document.hidden || delta > 0.25) return;
+    if (!active || document.hidden || delta > 0.25 || this.fixed !== null) return;
     this.judgeTime += delta;
     this.judgeFrames++;
     if (this.judgeTime < WINDOW) return;

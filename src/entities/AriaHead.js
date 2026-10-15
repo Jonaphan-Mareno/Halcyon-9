@@ -28,7 +28,11 @@ const EXPRESSIONS = {
   // ARIA's bubbly personality, with a few half-true, slightly-too-bright moods
   bubbly:    { brow_up: 0.18, brow_down: 0.0,  smile: 0.45, tilt: 0.0,  gaze: 0.0, nod: false },
   sly:       { brow_up: 0.25, brow_down: 0.0,  smile: 0.30, tilt: 0.10, gaze: 0.25, nod: false },
-  watching:  { brow_up: 0.0,  brow_down: 0.12, smile: 0.25, tilt: 0.06, gaze: 0.0, nod: false }
+  watching:  { brow_up: 0.0,  brow_down: 0.12, smile: 0.25, tilt: 0.06, gaze: 0.0, nod: false },
+  // hiding something: a thin smile, eyes sliding away (level 2)
+  guarded:   { brow_up: 0.1,  brow_down: 0.15, smile: 0.08, tilt: 0.04, gaze: 0.35, nod: false },
+  // the mask slips: no smile, brows down, staring straight out (level 2's snap)
+  hostile:   { brow_up: 0.0,  brow_down: 0.55, smile: 0.0,  tilt: 0.0,  gaze: 0.0, nod: false }
 };
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));

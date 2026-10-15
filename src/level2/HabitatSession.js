@@ -9,7 +9,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { Physics } from '../core/Physics.js';
 import { PlayerController } from '../player/PlayerController.js';
-import { createHubTextures, applyHubMaterials, surfaceMaterial } from '../graphics/HubMaterials.js';
+import { createHubTextures, applyHubMaterials, surfaceMaterial, hubLighting, withHubLighting, bakeShadeMap, HUB_POOLS } from '../graphics/HubMaterials.js';
 import { surfaceFor, SURFACE } from '../levels/level1Look.js';
 import { makeLiftScreen } from '../levels/liftCabin.js';
 import { VideoWindow } from '../graphics/VideoWindow.js';
@@ -19,6 +19,19 @@ import { Organism } from './Organism.js';
 import { LabScreens } from './LabScreens.js';
 import { HoloScreens } from './HoloScreens.js';
 import { Sparks } from './Sparks.js';
+import { Level2Story } from './Level2Story.js';
+import { projectWaypoint } from '../ui/waypoint.js';
+import { Interact } from './Interact.js';
+import { LINES, TALKS, CUES } from './Level2Lines.js';
+import { buildHallClues } from './HallClues.js';
+import { Gates } from './Gates.js';
+import { KeypadUI } from '../ui/KeypadUI.js';
+import { Garden } from './Garden.js';
+import { PlayerStats, MAX_INTEGRITY } from '../player/PlayerStats.js';
+import { HUD } from '../ui/HUD.js';
+import { FightHelp } from '../ui/FightHelp.js';
+import { Readables } from './Readables.js';
+import { buildRoomProps } from './RoomProps.js';
 import '../ui/level2.css';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
@@ -26,6 +39,7 @@ import '../ui/level2.css';
 // No gameplay yet: that is designed and added after the environment is approved.
 
 const SOLID = ['COL_', 'DOOR_'];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // The lift is level 1's (lift.glb, see levels/liftCabin.js), its origin the middle of the door
 // sill at the front of the frame. Set there, the frame's front corners sit on the curved inside
@@ -36,6 +50,40 @@ const LIFT_OPENING = { halfWidth: 2.2, top: 3.62, back: 17.52 };   // a little p
 // of a lamp: level 1 lights the cabin with the control room's lamps, and a real light here would
 // be worked out for every pixel on screen (~3 ms a frame on Intel UHD 620)
 const LIFT_INSIDE_FILL = 1.5;
+
+// The atrium's broken lighting (see hubLighting in HubMaterials): the lamps that still work make
+// soft pools, and some areas have gone dead. Positions in metres (north is -z, the lift +z).
+const LAMP_POOLS = [
+  { at: [0, 3.2, 14], reach: 6.5, color: [1.0, 0.88, 0.72], power: 1.8 },      // the lift approach: warm, welcoming
+  { at: [-7, 3.6, 3], reach: 6.5, color: [1.0, 0.9, 0.76], power: 1.6 },         // one lounge lamp left working
+  { at: [9.5, 4.5, -6.5], reach: 8.5, color: [0.86, 0.95, 1.0], power: 2.2, flicker: true },  // the garden: flickers with the dangling light
+  { at: [0, 2.6, -14.2], reach: 7, color: [0.5, 0.78, 1.0], power: 1.5 },    // cold sea-glow from the window
+  { at: [-15.4, 4.2, 0.6], reach: 5.5, color: [1.0, 0.45, 0.16], power: 1.6, flicker: true }, // the sparking wires, west
+  { at: [11.5, 2.4, 11.5], reach: 5, color: [1.0, 0.16, 0.1], power: 1.4 },  // a red emergency lamp at the east stair
+  { at: [-3.9, 2.9, 15.6], reach: 3.4, color: [1.0, 0.9, 0.74], power: 1.5 },  // a desk lamp by the crew's photo board
+  { at: [15.6, 7.3, 0], reach: 3.6, color: [1.0, 0.86, 0.66], power: 1.8 }     // upstairs, the crew quarters' lights still on
+];
+const DEAD_ZONES = [
+  { at: [-13, 1.5, -6], reach: 7, depth: 0.6 },     // west, by the sealed pods
+  { at: [-8, 1, -12.5], reach: 6, depth: 0.5 },     // north-west, behind the beds
+  { at: [12.5, 1, 5.5], reach: 5.5, depth: 0.45 },  // behind the east stair
+  { at: [-10, 7, -10], reach: 7, depth: 0.55 }      // the gallery, north-west
+];
+const GRIME = 0.48;          // how dark the patches of soot and dead panels get
+const UNDER_GALLERY = 0.58;  // how much darker it is under the gallery ring
+const ATRIUM_DIM = 0.82;     // the atrium's share of the room light: the lamp pools stand out against it
+const DAMAGED_BASE = 0.8;    // the mood's normal brightness on arrival (the power is failing)
+// When the garden's pumps restart, most of the atrium's light comes back: the dark, damaged
+// arrival gives way to the room as it was meant to look (still a little under strain)
+const RESTORED_LIGHT = 0.6;  // how far towards clean the shade goes (uRestore)
+const RESTORED_BASE = 0.92;  // the mood's normal brightness after the restart (DAMAGED_BASE before)
+const HATCH_CODE = '471902'; // Kessler's override (placeholder, see the script's open decisions)
+const LOG_CLIPS = ['log-0', 'log-1', 'log-2', 'log-5', 'log-8'];   // Voss's personal log terminal
+const LAB_FILES = ['directive', 'research', 'subjects'];            // the lab terminal
+const IDLE_LINE = 50;        // seconds lingering in the bunk or the lab before ARIA's remark
+const DIRECT_HIT = 15;       // a drone's dive, straight into him (health is out of 100)
+const GRAZE = 5;             // a dive that only clips him
+const MANIFOLD_AT = { r: 14.6, angle: 30 };   // the garden's wall of pipes, behind the hatch
 
 // Glass everywhere (the sea window, railings, the lab's tubes and beakers): dark and one-sided, so
 // it adds reflections without laying a milky white film over what is behind it, and clear face-on
@@ -71,21 +119,100 @@ export class HabitatSession {
     game.camera.flashlight.intensity = 0;
     game.camera.flashlight.castShadow = false;
 
+    if (game.mood) game.mood.base = DAMAGED_BASE;    // under strain, never fully clean
     this._setUpRendering();
     this.controls = new PlayerController(camera, document.body, game.scene);
     game.controls = this.controls;
     this.controls.camDist = 3.8;
 
     const root = document.getElementById('ui-layer');
+    // Voss's health (integrity), the same as in Level 1, on the same HUD
+    this.player = new PlayerStats();
+    this.hud = new HUD(root, { onRestart: () => {} });
+    this.fightHelp = new FightHelp(root);
+    // everything he reads, hears or watches upstairs (the game waits while it is open)
+    this.reader = new Readables(root, {
+      onOpen: () => {
+        game.state = 'READING';
+        this.controls.instance.enabled = false;      // the view stays put behind the panel
+      },
+      onClose: () => {
+        game.state = 'PLAYING';
+        this.controls.instance.enabled = true;
+      },
+      onShown: (id) => this._readShown(id),
+      onFinished: (id) => this._readFinished(id)
+    });
+    this.flashEl = document.createElement('div');
+    this.flashEl.id = 'memory-flash';
+    root.appendChild(this.flashEl);
     this.loadingEl = document.createElement('div');
     this.loadingEl.id = 'level-loading';
     this.loadingEl.className = 'visible';
-    this.loadingEl.innerHTML = '<div class="loading-title">LEVEL 2</div><div class="loading-sub">Habitat atrium (environment preview)</div><div class="loading-bar"><div></div></div>';
+    this.loadingEl.innerHTML = '<div class="loading-title">LEVEL 2</div><div class="loading-sub">The habitat deck</div><div class="loading-bar"><div></div></div>';
     root.appendChild(this.loadingEl);
 
     document.addEventListener('click', () => {
       if (game.state === 'PLAYING' && !this.controls.instance.isLocked) this.controls.lock();
     });
+
+    // E uses what Voss is looking at; Enter skips a line of dialogue
+    this._wpInfo = { x: 0, y: 0, angle: 0, onScreen: true, label: '', distance: 0 };
+    this._head = new THREE.Vector3();
+    this._talkToken = 0;
+    window.addEventListener('keydown', (e) => {
+      if (this.keypad?.isOpen) {
+        if (e.code === 'Escape') this._closeKeypad();
+        return;
+      }
+      if (this.reader?.isOpen) {
+        if (e.code === 'Enter' || e.code === 'Escape' || e.code.startsWith('Arrow')) e.preventDefault();
+        this.reader.key(e);
+        return;
+      }
+      if (game.state !== 'PLAYING' || !this.ready) return;
+      if (e.code === 'KeyE' && !e.repeat) this.interact?.use();
+      if (e.code === 'Enter') this.skipLine();
+      if (e.code === 'KeyQ' && !e.repeat && this.garden) {
+        this.garden.freeze();
+        this.garden.freezeHeld = true;
+      }
+    });
+    // holding Q keeps asking ARIA: she freezes the moment one is wet enough
+    document.addEventListener('keyup', (e) => {
+      if (e.code === 'KeyQ' && this.garden) this.garden.freezeHeld = false;
+    });
+    // the left mouse button sprays the garden's water pipe while he holds it
+    document.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      this.garden?.audio.start();
+      if (game.state === 'PLAYING' && this.controls.instance.isLocked && this.garden?.holding) this.garden.spraying = true;
+    });
+    document.addEventListener('mouseup', (e) => {
+      if (e.button === 0 && this.garden) this.garden.spraying = false;
+    });
+
+    // ?debug in the address: ] sets the next story flag (to walk the objectives through the
+    // route), [ plays the next of ARIA's exchanges (to hear every line). (Not F7: in Edge and
+    // Chrome it turns on caret browsing and steals the keyboard.)
+    if (new URLSearchParams(window.location.search).has('debug')) {
+      let nextTalk = 0;
+      window.addEventListener('keydown', (e) => {
+        if (!this.story) return;
+        if (e.code === 'BracketRight') {
+          e.preventDefault();
+          const flag = this.story.next();
+          if (flag) this.story.set(flag);
+          game.ui.showToast(flag ? 'Debug: ' + flag : 'Debug: every flag is set', 1500);
+        } else if (e.code === 'BracketLeft') {
+          e.preventDefault();
+          const names = Object.keys(TALKS);
+          const name = names[nextTalk++ % names.length];
+          game.ui.showToast('Debug: ' + name + ' (' + nextTalk + '/' + names.length + ')', 2000);
+          this.say(name);
+        }
+      });
+    }
 
     Physics.create().then(async (physics) => {
       this.physics = physics;
@@ -93,7 +220,7 @@ export class HabitatSession {
       await this._precompile();
       this.ready = true;
       this.loadingEl.classList.remove('visible');
-      game.ui.showToast('Environment preview: WASD + mouse, Space jump, V switches camera. Rooms and gameplay come next.', 8000);
+      game.ui.showToast('WASD to move, Space to jump, E to use things, V to switch camera.', 7000);
     }).catch((e) => console.error('Level 2 atrium failed to load.', e));
   }
 
@@ -171,9 +298,9 @@ export class HabitatSession {
           // leaves: cut out by their alpha, both sides drawn. They get the cheaper Lambert lighting
           // (measured: plants cost ~5 ms a frame with full PBR)
           if (!leafCache.has(m)) {
-            leafCache.set(m, new THREE.MeshLambertMaterial({
+            leafCache.set(m, withHubLighting(new THREE.MeshLambertMaterial({
               name: m.name, color: m.color, map: m.map || null, alphaTest: 0.25, side: THREE.DoubleSide
-            }));
+            })));
           }
         } else if (m.name === 'glass' || m.name === 'glass_broken') {
           realGlass(m, m.name === 'glass' ? 0.18 : 0.4);
@@ -225,10 +352,12 @@ export class HabitatSession {
         litRooms.push({ centre: c, n: 1 });
       }
     });
+    this.roomLights = this.roomLights || [];
     for (const room of litRooms) {
       const l = new THREE.PointLight(0xffeeda, 30, 10, 2);
       l.position.copy(room.centre);
       this.game.scene.add(l);
+      this.roomLights.push({ light: l, base: l.intensity, color: l.color.clone() });
     }
     this.game.scene.add(model);
     return model;
@@ -260,6 +389,8 @@ export class HabitatSession {
         if (n) this.doors.push({ node: n, closed: n.position.clone(), open: n.position.clone().add(new THREE.Vector3(name.endsWith('L') ? -1.9 : 1.9, 0, 0)) });
       }
     }
+    // the closed doors are solid until ARIA has finished
+    this._blockLiftDoors();
 
     // the lab's sliding double doors open as you walk up to them
     this.labDoors = [];
@@ -283,6 +414,83 @@ export class HabitatSession {
       this.quarterDoors.push({ node, centre, closedY: node.position.y, solid: true, open: 0 });
     }
 
+    // the story so far, and where the objective marker points (the model's marker empties: the
+    // nameplates sit above their doors, so the marker drops to the doorway)
+    const at = (name, dy) => {
+      const o = atrium.getObjectByName(name);
+      return o ? o.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, dy, 0)) : null;
+    };
+    this.story = new Level2Story({
+      hatch: at('PT_Hatch', 0.8),
+      quarters: at('PT_Plate_VOSS', -2.2),
+      lab: at('PT_Plate_LAB', -2.4),
+      kessler: at('PT_Plate_KESSLER', -2.2)
+    });
+    this.story.onChange = (flag) => this._onStory(flag);
+
+    // things Voss can use (E): the hall's optional clues, scene 2.2
+    this.interact = new Interact(this.game.camera.instance, this.physics);
+    const clues = buildHallClues(scene, atrium);
+    if (clues.board) this.interact.add({ id: 'board', position: clues.board, radius: 0.9, label: 'Look at the photo board', use: () => this.say('chore') });
+    if (clues.frame) this.interact.add({ id: 'frame', position: clues.frame, radius: 0.2, label: 'Look at the photo', use: () => this.say('photo') });
+    if (clues.ration) this.interact.add({ id: 'ration', position: clues.ration, radius: 0.2, label: 'Look at the tray', use: () => this.say('ration') });
+    const pods = at('PT_PodDoor', 0);
+    if (pods) this.interact.add({ id: 'pods', position: pods, radius: 1.2, label: 'Read the sign on the pod door', use: () => this.say('pods') });
+
+    // what holds him back (scenes 2.2 to 2.9): the stair bulkheads, the hatch and its keypad,
+    // Kessler's door (it wants her card and the lab's authorisation)
+    this.gates = new Gates({ scene, atrium, physics: this.physics });
+    this.gates.bulkheadSpots.forEach((p, i) => this.interact.add({
+      id: 'bulkhead' + i, position: p, radius: 1.4, label: 'Look through the bulkhead',
+      when: () => this.gates.bulkheadsSealed, use: () => this.say('stairs')
+    }));
+    if (this.gates.keypadSpot) {
+      const hatchLabel = () => (this.story.has('gardenCleared') ? 'Use the hatch keypad' : 'Hatch keypad (no power)');
+      this.interact.add({
+        id: 'hatch', position: this.gates.keypadSpot, radius: 0.35, reach: 2.2,
+        label: hatchLabel, when: () => !this.story.has('hatchOpen'), use: () => this._useHatch()
+      });
+      // the hatch itself works too (the keypad is just beside it)
+      if (this.gates.hatchCentre) {
+        this.interact.add({
+          id: 'hatchSlab', position: this.gates.hatchCentre.clone().add(new THREE.Vector3(0, 0.15, 0)), radius: 1.0, reach: 2.8,
+          label: hatchLabel, when: () => !this.story.has('hatchOpen'), use: () => this._useHatch()
+        });
+      }
+    }
+    // the things to read upstairs (scenes 2.6 to 2.8)
+    this._buildReadables(scene, lab);
+
+    this.keypad = new KeypadUI({ onSubmit: (code) => this._hatchCode(code), onCancel: () => this._closeKeypad() });
+    this.keypad.root.querySelector('.keypad-brand').textContent = 'MAINTENANCE HATCH 4';
+    this.keypad.root.querySelector('.keypad-instruction').textContent = 'EMERGENCY OVERRIDE: CREW LEADER KEY (DR. E. KESSLER)';
+    const kessler = atrium.getObjectByName('DOOR_KESSLER');
+    if (kessler) {
+      this.interact.add({
+        id: 'kesslerDoor', position: new THREE.Box3().setFromObject(kessler).getCenter(new THREE.Vector3()), radius: 1.3,
+        label: "Dr. Kessler's door (locked)", when: () => !this._kesslerUnlocked(), use: () => this._tryKesslerDoor()
+      });
+    }
+    this.restore = 0;
+
+    // the garden fight (scene 2.3): the drones, the wall of pipes and its hose
+    this.garden = new Garden({
+      scene, physics: this.physics, camera: this.game.camera.instance,
+      centre: this.gates.hatchCentre || new THREE.Vector3(10.9, 0, -6.3), manifoldAt: MANIFOLD_AT,
+      say: (talk, quietOnly) => (quietOnly && this._talking()) ? Promise.resolve(false) : this.say(talk),
+      isTalking: () => this._talking(),
+      onWake: () => this.story.set('dronesWoken'),
+      onPipe: () => this.story.set('pipeTaken'),
+      onHurt: (kind, from) => this._hurt(kind, from),
+      onCleared: () => this.story.set('gardenCleared'),
+      toast: (text) => this.game.ui.showToast(text, 6500)
+    });
+    this.story.targets.pipe = this.garden.pipeSpot;
+    this.interact.add({
+      id: 'pipe', position: this.garden.pipeSpot, radius: 0.5, label: 'Pull out the water pipe',
+      when: () => !this.garden.holding && this.garden.state !== 'done', use: () => this.garden.takePipe()
+    });
+
     this._addAriaScreens([atrium, lab]);
     this._setUpLab(lab);
 
@@ -297,10 +505,12 @@ export class HabitatSession {
     // shadow, the lab's included). Measured on Intel UHD 620: three extra fill lights and the lab's
     // spotlight cost ~14 ms a frame, because every light is worked out for every pixel on screen.
     // The room's reflections (environment) fill in the rest.
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x8c949c, 0.42));
+    this.hemi = new THREE.HemisphereLight(0xffffff, 0x8c949c, 0.42);
+    scene.add(this.hemi);
     // daylight-like light from the skylight: even, no hot spot on the ceiling
     // (the main light, so its shadows read; the sky light and reflections are the soft fill)
     const sky = new THREE.DirectionalLight(0xfaf6ee, 1.9);
+    this.sun = sky;
     sky.position.set(4, 20, 6);
     // it casts the hall's shadows (pillars, gallery, furniture, the clutter on the floor), drawn
     // once like the lab's. The ceiling and skylight do not block it.
@@ -333,6 +543,17 @@ export class HabitatSession {
       }
     });
     this.flicker = 0;
+    this._setUpBrokenLighting();
+  }
+
+  // The lamp pools go into the surfaces' shader (one shared set of uniforms); the dead zones,
+  // soot and gallery shadow are baked once into the shade map
+  _setUpBrokenLighting() {
+    this.pools = LAMP_POOLS.slice(0, HUB_POOLS).map((p, i) => {
+      hubLighting.uPools.value[i].set(p.at[0], p.at[1], p.at[2], p.reach);
+      return { color: new THREE.Color(...p.color).multiplyScalar(p.power), flicker: !!p.flicker };
+    });
+    bakeShadeMap({ zones: DEAD_ZONES, grime: GRIME, gallery: { edge: 13.6, strength: UNDER_GALLERY }, dim: ATRIUM_DIM });
   }
 
   // The lift: the same cabin Voss rode down from the control room, in the control room's own
@@ -351,6 +572,7 @@ export class HabitatSession {
     // buttons, orange hazard strips); the light strip, blue trim and call panel screen keep
     // their own colours, as in level 1
     const mats = new Map();
+    this.liftInsideMats = [];
     const material = (spec, inside = false) => {
       const key = spec.kind + spec.color + inside;
       if (!mats.has(key)) {
@@ -358,6 +580,7 @@ export class HabitatSession {
         if (inside) {
           m.envMap = scene.environment;    // (a material's own env map takes its own intensity)
           m.envMapIntensity = LIFT_INSIDE_FILL;
+          this.liftInsideMats.push(m);
         }
         mats.set(key, m);
       }
@@ -408,7 +631,45 @@ export class HabitatSession {
       scene.add(parts.bezel);
       this.liftScreen = parts.screen;
     }
+    this.liftStripMat = lift.getObjectByName('Cabin_LightStrip')?.material || null;
     this.lift = lift;
+  }
+
+  // An invisible wall across the closed lift doors (the doors themselves are not solid while they
+  // can still slide): he cannot step out before ARIA has told him about the drones
+  _blockLiftDoors() {
+    if (!this.doors.length) return;
+    const box = new THREE.Box3();
+    for (const d of this.doors) {
+      d.node.updateWorldMatrix(true, true);
+      box.expandByObject(d.node);
+    }
+    const size = box.getSize(new THREE.Vector3());
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(Math.max(size.x, 0.2), Math.max(size.y, 2.5), Math.max(size.z, 0.3)));
+    box.getCenter(wall.position);
+    this._liftGate = this.physics.addStaticObject(wall);
+  }
+
+  // In the lift (scene 2.1): ARIA's welcome, then her warning about the drones with the fight's
+  // controls on screen. The doors stay shut until she has finished (Enter skips her lines).
+  async _arrive() {
+    await this.say('arrival');
+    this._fightHelpOn = true;
+    await this.say('briefing');
+    this._arrivalDone = true;
+  }
+
+  // Voss is out of the lift: its doors shut behind him and its lights die (it is flooded below)
+  _shutLift() {
+    this.liftShut = true;
+    if (this.liftStripMat) this.liftStripMat.emissiveIntensity = 0.1;
+    for (const m of this.liftInsideMats || []) m.envMapIntensity = 0.3;
+    this.say('liftShut');
+  }
+
+  _setLiftDoors(open) {
+    const t = open * open * (3 - 2 * open);
+    for (const d of this.doors) d.node.position.lerpVectors(d.closed, d.open, t);
   }
 
   // ARIA on every monitor (the ARIA_ markers from the model), idling for now. Same face and
@@ -496,11 +757,28 @@ export class HabitatSession {
     const dt = Math.min(delta, 0.05);
     const playing = g.state === 'PLAYING';
     if (playing || g.state === 'WAKING') this.controls.update(dt, playing);
-    // the lift doors slide open once you can move
-    if (playing && this.doorOpen < 1) {
+    // the lift: ARIA welcomes Voss on the way down, the doors open once she has finished, and
+    // they shut behind him once he is a step out (scene 2.1)
+    const p = this.controls.position;
+    if (playing && !this._arrivalStarted) {
+      this._arrivalStarted = true;
+      this._arrive();
+    }
+    if (this._arrivalDone && !this.liftShut && this.doorOpen < 1) {
       this.doorOpen = Math.min(1, this.doorOpen + dt / 1.6);
-      const t = this.doorOpen * this.doorOpen * (3 - 2 * this.doorOpen);
-      for (const d of this.doors) d.node.position.lerpVectors(d.closed, d.open, t);
+      this._setLiftDoors(this.doorOpen);
+      // open wide enough to walk through: the invisible wall goes
+      if (this._liftGate && this.doorOpen > 0.7) {
+        this.physics.world.removeCollider(this._liftGate, true);
+        this._liftGate = null;
+      }
+    }
+    if (playing && this.lift && !this.liftShut && this.story.has('leftLift') && p.z < LIFT_FRONT_Z - 1) this._shutLift();
+    if (this.liftShut && this.doorOpen > 0) {
+      this.doorOpen = Math.max(0, this.doorOpen - dt / 1.6);
+      this._setLiftDoors(this.doorOpen);
+      // shut: solid, unless he slipped back inside while they closed
+      if (this.doorOpen === 0 && p.z < LIFT_FRONT_Z - 0.4) for (const d of this.doors) this.physics.addStaticObject(d.node);
     }
     this.sea.update(dt, g.camera.instance);
     // the lab doors slide open when you are near them
@@ -512,7 +790,8 @@ export class HabitatSession {
     // the quarter doors: slide up into the wall as you come near, back down as you leave.
     // Solid only while fully closed, since that is where their collider is baked.
     for (const d of this.quarterDoors) {
-      const near = this.controls.position.distanceTo(d.centre) < 4;
+      const allowed = d.node.name !== 'DOOR_KESSLER' || this._kesslerUnlocked();
+      const near = allowed && this.controls.position.distanceTo(d.centre) < 4;
       d.open = THREE.MathUtils.clamp(d.open + (near ? dt : -dt) / 1.2, 0, 1);
       const t = d.open * d.open * (3 - 2 * d.open);
       d.node.position.y = d.closedY + 3.4 * t;
@@ -531,7 +810,6 @@ export class HabitatSession {
 
     // the organism, its readings and the spills follow its surges. Only animate while you are in
     // or near the lab (redrawing the screens costs time); the lab is north of the gallery door.
-    const p = this.controls.position;
     const nearLab = p.y > 4 && p.z < -12;
     if (nearLab) {
       this.organism.update(dt);
@@ -542,6 +820,45 @@ export class HabitatSession {
     }
 
     // sparks crackle from the damaged wiring; the dangling light stutters, cutting out on each crackle
+    this.gates?.update(dt);
+    if (this.garden) {
+      this._head.set(p.x, p.y + 1.6, p.z);
+      this.garden.update({ dt, feet: p, head: this._head, playing,
+        canWake: this._arrivalDone && this.story.has('leftLift') && !this.story.has('gardenCleared') });
+      this.garden.updateTease(dt);
+      // a drone glimpsed far across the hall the first time he walks into it (scene 2.2)
+      if (playing && !this._teased && this.story.has('leftLift') && !this.story.has('dronesWoken') && p.z < 9) {
+        this._teased = true;
+        this.garden.tease(new THREE.Vector3(-8, 4.2, -8), new THREE.Vector3(7, 4.2, -11), 5);
+        setTimeout(() => this.say('tease'), 1200);
+      }
+      // the fight's music (level2-fight.mp3) and a tenser mood, harder the more drones are up
+      const fighting = this.garden.active;
+      this.musicMood = fighting ? 'pressure' : null;
+      this.musicTension = fighting ? 0.6 + 0.3 * Math.min(1, this.garden.alive / 4) : 0;
+    }
+    this.hud.setVisible(playing || g.state === 'KEYPAD');
+    this.hud.update(this.player);
+    this.reader.update(dt);
+    this._idleLines(dt, playing, p);
+    for (const k of this._markers || []) {
+      const show = !k.done() && k.m.position.distanceToSquared(p) < 100;
+      k.m.visible = show;
+      if (show) {
+        k.m.rotation.y += dt * 1.6;
+        k.m.position.y = k.y + Math.sin(performance.now() * 0.0025 + k.phase) * 0.04;
+      }
+    }
+    // the fight's controls, from ARIA's warning in the lift until the garden is clear
+    const helpOn = this._fightHelpOn && playing && this.garden && this.garden.state !== 'done';
+    this.fightHelp.setVisible(!!helpOn);
+    if (helpOn) this.fightHelp.update(this.garden.holding, this.garden.coldSnap, this.garden.active);
+    if (this.restore < this._restoreTarget) {
+      this.restore = Math.min(this._restoreTarget, this.restore + dt / 3);
+      hubLighting.uRestore.value = this.restore * RESTORED_LIGHT;
+      if (g.mood) g.mood.base = THREE.MathUtils.lerp(DAMAGED_BASE, RESTORED_BASE, this.restore);
+    }
+    this._applyMood();
     this.sparks.update(dt);
     if (this.sparks.burstNow) this.flicker = 0.35;
     this.flicker = Math.max(0, this.flicker - dt);
@@ -550,8 +867,338 @@ export class HabitatSession {
     // ARIA idles on every screen (not AriaManager.update, which shows her on the nearest one only)
     this.aria.ariaMaterial.uniforms.uTime.value += dt;
     if (this.aria.useHead) this.aria.head.update(dt);
-    g.reticle.classList.toggle('visible', this.controls.view === 'first');
+    g.reticle.classList.toggle('visible', this.controls.view === 'first' && g.state !== 'READING');
+    if (playing && !this.story.has('leftLift') && p.z < LIFT_FRONT_Z) this.story.set('leftLift');
+    this._guide(playing);
     this._perf(delta, playing);
+  }
+
+  // ARIA and Voss speak: a list of line ids, or the name of one of the exchanges in
+  // Level2Lines.js. The lines play one after another: Voss's as text that stays up for a reading
+  // time, ARIA's with her voice (or a subtitle until it is recorded), her face's expression and
+  // her colour. Starting a new exchange cuts the current one short. Resolves true when finished,
+  // false when cut short.
+  async say(talk) {
+    const ids = Array.isArray(talk) ? talk : TALKS[talk];
+    if (!ids) {
+      console.warn('Level 2: no exchange called "' + talk + '".');
+      return false;
+    }
+    const ui = this.game.ui;
+    const token = ++this._talkToken;
+    if (this.aria.speaking) this.aria.skip();
+    for (const id of ids) {
+      if (token !== this._talkToken) return false;
+      const line = LINES[id];
+      if (!line) {
+        console.warn('Level 2: no line "' + id + '".');
+        continue;
+      }
+      if (line.who === 'voss') {
+        const shown = ui.showVossLine(line.text, { timed: true });
+        await Promise.race([shown, sleep(Math.max(2200, line.text.length * 60))]);
+        continue;
+      }
+      // a long silence before she answers: the music drops out and the lights stutter
+      if (line.pause) {
+        ui.hideDialogue();
+        this.game.holdMusic?.('silence', line.pause + 1.5);
+        this.game.mood?.flicker(0.45);
+        await sleep(line.pause * 1000);
+        if (token !== this._talkToken) return false;
+      }
+      const cue = CUES[line.cue] || CUES.guarded;
+      if (line.anger) this.game.ariaAnger?.(line.anger);
+      else this.aria.updateAriaState(cue.mood);
+      ui.showAriaLine(line.text, 'Enter: skip');
+      await this.aria.speak(id, Math.max(2.5, line.text.length * 0.055), cue.expression);
+      if (!line.anger) this.aria.updateAriaState('neutral');
+    }
+    if (token === this._talkToken) ui.hideDialogue();
+    return token === this._talkToken;
+  }
+
+  // ---------------------------------------------------------
+  // The story's consequences: whatever sets a flag (the fight, the keypad, F7 in debug), the
+  // level reacts here
+  // ---------------------------------------------------------
+  _onStory(flag) {
+    console.log('Level 2 story:', flag);
+    if (flag === 'gardenCleared') {
+      this.garden?.end();
+      this._powerReturns();
+    }
+    if (flag === 'pipeTaken' && !this.garden?.holding) this.garden?.takePipe();   // (the debug key)
+    if (flag === 'hatchOpen') {
+      this.gates?.openHatch();
+      this.say('hatchOpen');
+    }
+  }
+
+  // The last drone is down and the pumps restart (end of scene 2.3): a stutter and a deep hit,
+  // the atrium's light comes back, the stair bulkheads sink into the floor, and ARIA denies it
+  _powerReturns() {
+    const g = this.game;
+    g.mood?.flicker(0.9);
+    setTimeout(() => {
+      this._restoreTarget = 1;
+      this.gates?.openBulkheads();
+      this.gates?.setKeypadPowered(true);
+      g.ui.showToast('POWER RESTORED. THE STAIR BULKHEADS ARE OPEN.', 5000);
+    }, 700);
+    setTimeout(() => this.say('bulkhead'), 2600);
+  }
+
+  // ---------------------------------------------------------
+  // Upstairs: the bunk's logs, the corkboard and the locker, Voss's personal log, the lab's
+  // terminal, Kessler's final log and the code card (scenes 2.6 to 2.8)
+  // ---------------------------------------------------------
+  _buildReadables(scene, lab) {
+    const spots = buildRoomProps(scene);
+    for (const body of spots.lockerBodies) this.physics.addStaticObject(body);
+    const r = this.reader;
+    const add = (id, position, radius, label, use, when) => this.interact.add({ id, position, radius, label, use, when, reach: 2.2 });
+    add('bunkLogA', spots.bunkLogA, 0.25, 'Play the crew log', () => r.read('bunkLogA'));
+    add('bunkLogB', spots.bunkLogB, 0.25, 'Play the crew log', () => r.read('bunkLogB'));
+    if (spots.myBunk) add('myBunk', spots.myBunk, 0.3, 'Read the name plate', () => this.say('myBunk'));
+    add('corkboard', spots.corkboard, 0.55, 'Look at the corkboard', () => r.read('rota', () => this.say('corkboard')));
+    add('locker', spots.locker, 0.4,
+      () => (this.story.has('cardTaken') ? 'Read the letter again' : "Search J. Voss's locker"),
+      () => {
+        if (this.story.has('cardTaken')) return r.read('letter');
+        r.read(['letter', 'lockerCard'], () => this._cardTaken());
+      });
+    add('personalLog', spots.personalLog, 0.3, "Use Voss's personal log", () => r.terminal('J. VOSS: PERSONAL LOG', LOG_CLIPS));
+    // the lab terminal is the workstation on the lab's west wall
+    const screen = lab.getObjectByName('PT_LabScreen_0');
+    if (screen) {
+      add('labTerminal', screen.getWorldPosition(new THREE.Vector3()), 0.45, 'Use the terminal',
+        () => r.terminal('B-LAB: RESTRICTED DIRECTORY', LAB_FILES));
+    }
+    add('kesslerLog', spots.kesslerLog, 0.3, 'Play the final log', () => r.read('kesslerLog'));
+    add('codeCard', spots.codeCard, 0.15, 'Read the card', () => r.read('codeCard', () => this.story.set('codeFound')));
+    this._idle = { bunk: 0, lab: 0 };
+    // where the objective's marker points inside the rooms
+    const t = this.story.targets;
+    t.locker = spots.locker;
+    t.personalLog = spots.personalLog;
+    t.labTerminal = screen ? screen.getWorldPosition(new THREE.Vector3()) : null;
+    t.kesslerLog = spots.kesslerLog;
+    t.codeCard = spots.codeCard;
+    this.story.seen = (id) => r.seen.has(id);
+    // a small glowing diamond floats over everything not read yet, so nothing is missed
+    const seen = (id) => () => r.seen.has(id);
+    this._markers = [
+      [spots.bunkLogA, seen('bunkLogA')], [spots.bunkLogB, seen('bunkLogB')], [spots.corkboard, seen('rota')],
+      [spots.locker, () => this.story.has('cardTaken')], [spots.personalLog, seen('log-8')],
+      [t.labTerminal, () => this.story.has('labDone')], [spots.kesslerLog, seen('kesslerLog')], [spots.codeCard, seen('codeCard')]
+    ].filter(([p]) => p).map(([p, done], i) => {
+      const m = new THREE.Mesh(this._markerGeo ??= new THREE.OctahedronGeometry(0.085), this._markerMat ??= new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 1.5, 1.8) }));
+      m.position.copy(p).add(new THREE.Vector3(0, 0.32, 0));
+      m.scale.set(1, 1.5, 1);
+      scene.add(m);
+      return { m, y: m.position.y, done, phase: i };
+    });
+  }
+
+  // the locker's card is his: a flash of memory, then the letter's line
+  _cardTaken() {
+    if (!this.story.set('cardTaken')) return;
+    this.game.ui.showToast("DR. KESSLER'S ACCESS CARD: TAKEN", 3500);
+    this._memoryFlash();
+    setTimeout(() => this.say('letter'), 1400);
+  }
+
+  // A short, wordless flash of memory (the letter; step 8 builds the full flashback)
+  _memoryFlash() {
+    this.game.mood?.flicker(0.5);
+    this.flashEl.classList.remove('on');
+    void this.flashEl.offsetWidth;          // restart the animation
+    this.flashEl.classList.add('on');
+  }
+
+  // an entry was opened: the lab's first file gets ARIA's longest pause
+  _readShown(id) {
+    if (id === 'directive' && !this._saidLabFiles) {
+      this._saidLabFiles = true;
+      this.say('labFiles');
+    }
+  }
+
+  // an entry was read or played to the end
+  _readFinished(id) {
+    if (id === 'log-8' && !this._saidInterrupt) {
+      this._saidInterrupt = true;
+      this.story.set('logWatched');
+      setTimeout(() => this.say('bunkInterrupt'), 900);
+    }
+    if (id === 'subjects' && !this._saidCycle9) {
+      this._saidCycle9 = true;
+      this.say('cycle9');
+    }
+    if (LAB_FILES.every((f) => this.reader.seen.has(f))) this.story.set('labDone');
+  }
+
+  // ARIA's remarks when he lingers: in the bunk without opening the locker, in the lab without
+  // using the terminal (once each)
+  _idleLines(dt, playing, p) {
+    if (!playing || !this._idle) return;
+    const inLab = p.y > 4.5 && p.z < -17.3 && Math.abs(p.x) < 7;
+    if (this.story._inBunk(p) && !this.story.has('cardTaken')) this._idle.bunk += dt;
+    if (inLab && !this.reader.seen.has('directive')) this._idle.lab += dt;
+    if (this._idle.bunk > IDLE_LINE && !this._idle.bunkSaid && !this._talking()) {
+      this._idle.bunkSaid = true;
+      this.say('bunkIdle');
+    }
+    if (this._idle.lab > IDLE_LINE && !this._idle.labSaid && !this._talking()) {
+      this._idle.labSaid = true;
+      this.say('labIdle');
+    }
+  }
+
+  // A drone's dive: a direct hit knocks him back; at zero ARIA restores him from backup
+  _hurt(kind, from) {
+    if (this._restoring) return;
+    this.hud.flash();
+    if (kind === 'direct' && from) this.controls.knockback?.(from, 6);
+    if (this.player.damage(kind === 'direct' ? DIRECT_HIT : GRAZE)) this._restoreFromBackup();
+  }
+
+  _restoreFromBackup() {
+    this._restoring = true;
+    this.player.deaths++;
+    this.hud.showDeath('BACKUP RESTORED', 'RESTORED: CYCLE 9');
+    setTimeout(() => {
+      this.hud.hideDeath();
+      this.player.integrity = MAX_INTEGRITY;
+      // back at the edge of the garden, facing it
+      this.controls.teleport?.(new THREE.Vector3(4, 0.1, -2));
+      this._restoring = false;
+    }, 1800);
+  }
+
+  // Is anyone talking right now? (a hit's remark waits for a quiet moment)
+  _talking() {
+    return this.aria.speaking || this.game.ui.dialogue.classList.contains('visible');
+  }
+
+  _kesslerUnlocked() {
+    return this.story.has('cardTaken') && this.story.has('labDone');
+  }
+
+  _tryKesslerDoor() {
+    const ui = this.game.ui;
+    if (!this.story.has('cardTaken')) ui.showToast('ACCESS: CARD REQUIRED', 2500);
+    else ui.showToast('CARD ACCEPTED. LAB AUTHORISATION REQUIRED', 3000);
+  }
+
+  // The hatch keypad: dead until the pumps restart, then it wants Kessler's code
+  _useHatch() {
+    if (!this.story.has('gardenCleared')) {
+      this.say(['v-dead-keypad']);
+      return;
+    }
+    this.game.state = 'KEYPAD';
+    this.controls.instance.unlock?.();
+    this.game.ui.setPrompt(null);
+    this.keypad.open();
+  }
+
+  // opened: the right code went in. Otherwise, the first time he walks away from it, ARIA explains
+  // whose lock it is and begs him not to go upstairs (scene 2.4)
+  _closeKeypad(opened = false) {
+    if (!this.keypad.isOpen) return;
+    this.keypad.close();
+    this.game.state = 'PLAYING';
+    if (!opened && this.story.has('gardenCleared') && this.story.set('hatchTried')) this.say('hatchLocked');
+  }
+
+  _hatchCode(code) {
+    if (code === HATCH_CODE) {
+      this.keypad.setStatus('ACCESS GRANTED', 'success');
+      setTimeout(() => {
+        this._closeKeypad(true);
+        this.story.set('hatchOpen');
+      }, 900);
+      return;
+    }
+    this.keypad.setStatus('ACCESS DENIED', 'error');
+    setTimeout(() => this._closeKeypad(), 1200);
+  }
+
+  // Enter: skip ARIA's line, or move on from Voss's
+  skipLine() {
+    const ui = this.game.ui;
+    if (ui.isAriaLine()) this.aria.skip();
+    else ui.advance();
+  }
+
+  // The objective banner and the marker on the next place to go, both from the story's flags
+  _guide(playing) {
+    const ui = this.game.ui;
+    if (!playing) {
+      ui.setWaypoint(null);
+      ui.setPrompt(null);
+      return;
+    }
+    const p = this.controls.position;
+    // the thing he is looking at, if he can use it
+    const hit = this.interact ? this.interact.update(this._head.set(p.x, p.y + 1.6, p.z)) : null;
+    ui.setPrompt(hit ? 'E   ' + (typeof hit.label === 'function' ? hit.label() : hit.label) : null);
+    const goal = this.story.objective(p);
+    ui.setObjective(goal.text);
+    // no marker during a fight (it stays up close, as Level 1's does)
+    if (!goal.target) {
+      ui.setWaypoint(null);
+      return;
+    }
+    ui.setWaypoint(projectWaypoint(this.game.camera.instance, goal.target, goal.label, this._wpInfo));
+  }
+
+  // The game's mood (see MoodLight): the whole atrium a little dimmer than clean, and red when
+  // an alarm sounds or ARIA snaps. The light panels glow white on their own, so while red they
+  // are tinted too.
+  _applyMood() {
+    const mood = this.game.mood;
+    if (!mood) return;
+    const dim = mood.dim;
+    const hemi = this.hemi, sun = this.sun, scene = this.game.scene;
+    if (!this._moodBase) {
+      this._moodBase = {
+        hemiSky: hemi.color.clone(), hemiGround: hemi.groundColor.clone(), sun: sun.color.clone(),
+        glow: [], hemi: hemi.intensity, sunI: sun.intensity, env: scene.environmentIntensity
+      };
+      const wanted = ['white_glow', 'tile_glow', 'blue_glow', 'accent_glow'];
+      const seen = new Set();
+      this.atrium.traverse((o) => {
+        if (!o.isMesh) return;
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+          if (wanted.includes(m.name) && !seen.has(m)) { seen.add(m); this._moodBase.glow.push({ m, color: m.emissive.clone() }); }
+        }
+      });
+    }
+    const b = this._moodBase;
+    hemi.intensity = b.hemi * mood.ambient;
+    sun.intensity = b.sunI * dim;
+    scene.environmentIntensity = b.env * mood.ambient;
+    hemi.color.copy(b.hemiSky);
+    hemi.groundColor.copy(b.hemiGround);
+    sun.color.copy(b.sun);
+    for (const r of this.roomLights || []) { r.light.intensity = r.base * dim; r.light.color.copy(r.color); }
+    // the lamp pools: dimmed with the room, the faulty ones stuttering with the dangling light
+    const buzz = this.flicker > 0 ? (Math.random() < 0.5 ? 0.15 : 1.2) : 1;
+    (this.pools || []).forEach((p, i) => {
+      const c = hubLighting.uPoolColors.value[i].copy(p.color).multiplyScalar(dim * (p.flicker ? buzz : 1));
+      mood.tint(c);
+    });
+    if (mood.red > 0 || this._wasRed) {
+      mood.tint(hemi.color);
+      mood.tint(hemi.groundColor);
+      mood.tint(sun.color);
+      for (const r of this.roomLights || []) mood.tint(r.light.color);
+      for (const g of b.glow) { g.m.emissive.copy(g.color); mood.tint(g.m.emissive); }
+      this._wasRed = mood.red > 0;
+    }
   }
 
   // A small frame counter (top right; F3 hides it), and automatic quality: if the first few

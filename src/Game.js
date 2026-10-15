@@ -15,6 +15,8 @@ import { Inventory } from './ui/Inventory.js';
 import { ItemPreview } from './ui/ItemPreview.js';
 import { IntroSequence } from './story/IntroSequence.js';
 import { AudioManager } from './audio/AudioManager.js';
+import { Soundtrack } from './audio/Soundtrack.js';
+import { MoodLight } from './graphics/MoodLight.js';
 import { CircuitPuzzle } from './puzzles/CircuitPuzzle.js';
 import { PlayerStats } from './player/PlayerStats.js';
 
@@ -178,6 +180,18 @@ export class Game {
     // models, so it is ready for whichever level needs it
     Physics.preload();
 
+    // The music and the lighting mood belong to the whole game (they carry from level to level).
+    // The music is your own files (see Soundtrack.js); it may only start after a click, and
+    // init() runs from the start button.
+    this.music = new Soundtrack();
+    this.mood = new MoodLight({ base: 0.74 });
+    this._angerUntil = 0;
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyM') this.ui?.showToast?.(this.music.toggleMute() ? 'Music off (M)' : 'Music on (M)', 1200);
+      // F8: preview ARIA snapping (red lights). Handy for the demo and while tuning.
+      if (e.code === 'F8') { e.preventDefault(); this.ariaAnger(5); }
+    });
+
     if (this.startLevel === '2' || this.startLevel === 'hose' || this.startLevel === 'reactor') {
       this._initLevel2();
       return;
@@ -275,6 +289,7 @@ export class Game {
   _mountLevel2(kind) {
     const sessions = { '2': HabitatSession, hose: HoseTestSession, reactor: Level2Session };
     this.startLevel = kind;
+    this.music?.setLevel(2);
     this.level2 = new sessions[kind](this);
   }
 
@@ -345,9 +360,58 @@ export class Game {
     this.level2.update(delta);
   }
 
+  // ---------------------------------------------------------
+  // Mood: what the score and the lighting are doing right now
+  // ---------------------------------------------------------
+
+  // ARIA snaps: the room goes red and her face goes red on every screen, for `seconds`.
+  // (The story decides when; F8 previews it.)
+  ariaAnger(seconds = 5) {
+    this._angerUntil = performance.now() + seconds * 1000;
+    this.mood.alert(seconds, 1);
+    const aria = this.level2Mode ? this.level2?.aria : this.currentLevel?.ariaManager;
+    aria?.updateAriaState?.('hostile');
+    clearTimeout(this._calmTimer);
+    this._calmTimer = setTimeout(() => aria?.updateAriaState?.('neutral'), seconds * 1000);
+  }
+
+  // Hold the music on one mood for a while, whatever the player is doing (a scripted beat,
+  // such as ARIA's long silence in the lab)
+  holdMusic(mood, seconds) {
+    this._musicHold = { mood, until: performance.now() + seconds * 1000 };
+  }
+
+  // Called every frame: picks the music's mood from what the player is doing
+  _steerMusic() {
+    const music = this.music;
+    if (!music || !this.mood) return;
+    const s = this.state;
+    let mood = 'calm';
+    let tension = 0.15;
+    if (performance.now() < this._angerUntil) { mood = 'angry'; tension = 1; }
+    else if (this._musicHold && performance.now() < this._musicHold.until) { mood = this._musicHold.mood; tension = 0.5; }
+    else if (this.level2Mode && this.level2?.musicMood) {
+      // a level 2 scene asks for its own mood (the garden fight: pressure)
+      mood = this.level2.musicMood;
+      tension = this.level2.musicTension ?? 0.5;
+      music.setMood(mood);
+      this.mood.tension += (tension - this.mood.tension) * 0.03;
+      return;
+    }
+    else if (s === 'DEAD' || s === 'GAME_OVER') { mood = 'silence'; tension = 0.6; }
+    else if (!this.level2Mode && s === 'PUZZLE') {
+      // a blackout after an overload is silent; otherwise the pressure follows the countdown
+      mood = this.puzzle.frozen ? 'silence' : 'pressure';
+      tension = 0.4 + 0.5 * (this.puzzle.stress || 0);
+    } else if (!this.level2Mode && this.currentLevel?.inCell) { mood = 'uneasy'; tension = 0.35; }
+    music.setMood(mood);
+    this.mood.tension += (tension - this.mood.tension) * 0.03;
+  }
+
   // Connect a freshly built level to the UI, sound and story
   _wireLevel() {
     const level = this.currentLevel;
+    level.mood = this.mood;
     this.intro = new IntroSequence(this.ui, level.ariaManager);
     level.onTalkToAria = () => this.startIntroDialogue();
     level.onBrickPickedUp = () => this.ui.showToast('Click throws the brick. E drops it.', 5000);
@@ -629,6 +693,8 @@ export class Game {
       requestAnimationFrame(loop);
       const delta = (time - this.lastTime) / 1000;
       this.lastTime = time;
+      this.mood?.update(Math.min(delta, 0.05));
+      this._steerMusic();
       if (this.level2Mode) {
         this.updateLevel2(Math.min(delta, 0.05));
       } else {
@@ -1148,6 +1214,7 @@ export class Game {
     this.audio.blackout();
     level.setStress(1);
     level.overload(); // sparks, red rings, 3 seconds of blackout (failures++)
+    this.mood.alert(2.4, 0.8);   // the alarm lights
     this.puzzle.flashOverload();
     this.ui.flashOverload();
     if (this.damagePlayer(OVERLOAD_DAMAGE)) return; // the shock was too much

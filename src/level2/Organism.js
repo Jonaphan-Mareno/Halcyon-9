@@ -387,3 +387,6 @@ export class Organism {
     }
   }
 }
+
+// the same look, for the small pieces left where frozen drones shatter (Remains.js)
+export { makeMaterial as makeOrganismMaterial, TendrilBuilder, growTendril, seededRandom };

@@ -122,3 +122,141 @@
 
 /* Level 2 works like It Takes Two: dying restarts the course, so there are no lives to show */
 #hud .hud-row:nth-child(2) { display: none; }
+
+/* the garden fight's controls (FightHelp.js), under the objective */
+#fight-help {
+  position: absolute;
+  left: 24px;
+  top: 124px;
+  max-width: 320px;
+  padding: 0.55rem 1rem 0.6rem;
+  background: rgba(0, 15, 30, 0.7);
+  border-left: 3px solid #ffd23f;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  z-index: 11;
+}
+#fight-help.visible { opacity: 1; }
+.fh-title { font-size: 0.7rem; letter-spacing: 0.3rem; color: #ffd23f; opacity: 0.85; margin-bottom: 0.35rem; }
+.fh-row { display: flex; align-items: baseline; gap: 0.6rem; margin: 0.22rem 0; font-size: 0.85rem; line-height: 1.3; }
+.fh-row.done { opacity: 0.4; text-decoration: line-through; }
+.fh-key {
+  flex: none;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid rgba(0, 229, 255, 0.55);
+  color: var(--primary-color);
+  font-size: 0.7rem;
+  letter-spacing: 0.08rem;
+}
+.fh-state { margin-left: auto; font-size: 0.75rem; letter-spacing: 0.1rem; color: #ffb347; }
+.fh-state.ready { color: #3dff7a; }
+.fh-tip { margin-top: 0.4rem; font-size: 0.75rem; color: #ff8a8a; opacity: 0.9; }
+
+/* the reader (Readables.js): notes, letters, files, audio and video logs, terminals */
+#reader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 6vh;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  z-index: 13;
+}
+#reader.visible { opacity: 1; }
+.rd-frame {
+  width: min(620px, 90%);
+  max-height: 62vh;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 1.2rem 1.5rem 1rem;
+  background: rgba(0, 10, 20, 0.92);
+  border: 1px solid var(--primary-color);
+  box-shadow: 0 0 22px rgba(0, 229, 255, 0.2);
+}
+.rd-head { font-size: 0.8rem; letter-spacing: 0.3rem; color: var(--primary-color); }
+.rd-sub { font-size: 0.7rem; letter-spacing: 0.2rem; opacity: 0.6; margin-top: 0.2rem; }
+.rd-sub:empty { display: none; }
+.rd-body { margin-top: 0.9rem; font-size: 1.05rem; line-height: 1.6; white-space: pre-wrap; }
+.rd-after { margin-top: 0.8rem; font-size: 0.9rem; color: #ff8a8a; font-style: italic; }
+.rd-foot { margin-top: 1rem; font-size: 0.72rem; letter-spacing: 0.12rem; opacity: 0.6; text-align: right; }
+.rd-list:empty { display: none; }
+.rd-list { margin-top: 0.9rem; }
+.rd-item { padding: 0.35rem 0.6rem; font-size: 0.95rem; border-left: 2px solid transparent; }
+.rd-item.on { border-left-color: var(--primary-color); background: rgba(0, 229, 255, 0.1); }
+.rd-item.seen::after { content: '   seen'; opacity: 0.45; font-size: 0.75rem; letter-spacing: 0.1rem; }
+/* paper: notes and letters */
+.rd-note, .rd-letter { background: #e9e4d6; color: #22272e; border-color: #c9c2ae; box-shadow: 0 6px 30px rgba(0, 0, 0, 0.6); }
+.rd-note .rd-head, .rd-letter .rd-head { color: #5a6270; letter-spacing: 0.2rem; }
+.rd-note .rd-foot, .rd-letter .rd-foot { color: #3a4048; opacity: 0.75; }
+.rd-letter .rd-body {
+  font-family: "Segoe Print", "Ink Free", "Bradley Hand", "Comic Sans MS", cursive;
+  font-size: 1.15rem;
+  line-height: 1.8;
+  color: #1d2a4a;
+}
+/* a terminal file */
+.rd-file { background: rgba(0, 18, 14, 0.94); border-color: #3dff9a; box-shadow: 0 0 22px rgba(61, 255, 154, 0.15); }
+.rd-file .rd-head { color: #3dff9a; }
+.rd-file .rd-body { color: #a8ffd0; font-size: 0.98rem; }
+.rd-file .rd-after { color: #ff6a6a; font-style: normal; letter-spacing: 0.1rem; }
+/* an audio log */
+.rd-meter { display: flex; align-items: flex-end; gap: 4px; height: 38px; margin-top: 0.8rem; }
+.rd-meter i { flex: 1; height: 6%; background: var(--primary-color); opacity: 0.75; }
+/* a video log on a battered handheld */
+.rd-video { border-color: #6b6f78; background: rgba(12, 12, 14, 0.95); box-shadow: 0 6px 30px rgba(0, 0, 0, 0.6); }
+.rd-video .rd-head { color: #e8e8e8; }
+.rd-screen {
+  position: relative;
+  width: min(100%, 420px);
+  aspect-ratio: 16 / 9;
+  margin: 0.8rem auto 0;
+  background: #000;
+  border: 10px solid #23262c;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.rd-screen canvas, .rd-screen video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.rd-screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.25) 0 2px, transparent 2px 4px);
+  pointer-events: none;
+}
+.rd-card {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 1rem;
+  text-align: center;
+  font-size: 1.25rem;
+  letter-spacing: 0.35rem;
+  color: #f2f2f2;
+  text-shadow: 0 0 8px #000, 0 0 2px #000;
+}
+.rd-video .rd-body { font-size: 0.98rem; }
+
+/* a flash of memory */
+#memory-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 14;
+  background: radial-gradient(circle at 50% 55%, rgba(220, 255, 250, 0.95), rgba(0, 229, 255, 0.55) 45%, rgba(0, 10, 20, 0.95) 100%);
+}
+#memory-flash.on { animation: memory-flash 1.3s ease-out; }
+@keyframes memory-flash {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  30% { opacity: 0.85; }
+  45% { opacity: 1; }
+  100% { opacity: 0; }
+}

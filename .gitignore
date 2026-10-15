@@ -34,3 +34,6 @@ __pycache__/
 
 # Downloaded plant models (fetch with: node Blender/scripts/fetch_plants.cjs)
 Blender/assets/plants/
+# Private design/task notes (local only)
+Halcyon-9 Level 2 Six Independent Task Prompts.pdf
+halcyon-9.zip

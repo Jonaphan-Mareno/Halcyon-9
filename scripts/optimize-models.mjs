@@ -34,7 +34,7 @@ const THIN = {
 };
 
 const FILES = process.argv.slice(2).length ? process.argv.slice(2)
-  : ['controlroom.glb', 'l2-atrium.glb', 'l2-lab.glb'];
+  : ['controlroom.glb', 'l2-atrium.glb', 'l2-lab.glb', 'l3-drowned.glb'];
 
 const io = new NodeIO()
   .registerExtensions(ALL_EXTENSIONS)

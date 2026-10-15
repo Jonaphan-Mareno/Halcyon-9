@@ -24,8 +24,8 @@ const voss = (text) => ({ who: 'voss', text });
 
 export const LINES = {
   // 2.1 The lift
-  'l2-lift-1': aria('bubbly', "The elevator is unable to go to the third floor due to the water leakage. We'll have to take the emergency hatch on the second floor to get there."),
-  'l2-lift-2': aria('bubbly', "This is where everyone actually lived, Voss. We weren't just a station. We were trying to make a home down here. You'll see."),
+  'l2-lift-1': aria('bubbly', "The elevator is unable to go to the third floor due to the water leakage, we'll have to take the emergency hatch on the second floor to get there."),
+  'l2-lift-2': aria('bubbly', "This is where everyone actually lived. We weren't just a station. We were trying to make a home down here. You'll see."),
   'v-trying': voss('...Trying?'),
   'l2-lift-3': aria('guarded', "Oh, you know how it is. Deep-sea living is a work in progress. Go on, have a look around."),
   'l2-lift-4': aria('sly', 'The hatch is just right up ahead.'),
@@ -39,27 +39,25 @@ export const LINES = {
   // 2.2 The hall
   'v-chore': voss('Someone still had chore duty down here. Tidying up, watering the beds... like any of that mattered anymore.'),
   'v-ration': voss('Left mid-meal. Nobody just walks away from dinner.'),
-  'v-photo': voss("Seven people. Someone's been torn off the end. I keep looking for a face I'd know."),
+  'v-photo': voss("Seven people. I keep looking for a face I'd know."),
   'v-pods-sign': voss('ESCAPE PODS: LOCKED. Remote override: ARIA.'),
   'v-pods-why': voss('Why would she lock the way out?'),
-  'l2-pods': aria('sly', "The pods are offline. Water got into the release mechanism. It's such a shame."),
+  'l2-pods': aria('sly', "The pods are offline. Water got into the release mechanism, it's such a shame."),
   'v-sea': voss('...Did something just move out there?'),
-  'l2-sea': aria('bubbly', "Like I said before, we're deep down in the sea."),
+  'l2-sea': aria('bubbly', "Like I said before we're deep down in the sea."),
   'v-stairs': voss("There's a light on up there."),
-  'l2-stairs': aria('guarded', "It isn't safe to go upstairs. There's been a lot of structural damage."),
+  'l2-stairs': aria('guarded', "It isn't safe to go upstairs, there's been a lot of structural damage."),
   'v-tease': voss('...Was that supposed to move like that?'),
-  'l2-tease': aria('guarded', "That's just one of the garden maintenance machines. Be careful, the equipment has run rampant."),
+  'l2-tease': aria('guarded', "That's just one of the garden maintenance equipment. Be careful the equipment have ran rampage."),
 
   // 2.3 The garden
   'l2-garden-1': aria('guarded', "Pick up the pipe, Voss. The one on the wall. Aim it, squeeze, and get them wet. I'll lower the temperature so they freeze."),
   'v-anytime': voss('You can do that any time?'),
   'l2-garden-2': aria('guarded', "Only when I'm asked nicely. And only when there's something nearby worth freezing."),
   'l2-cool': aria('flat', 'Compressors recharging. Give me a few seconds.'),
-  'l2-bot-hit-1': aria('watching', "Oh, that looked like it hurt. The equipment really isn't itself lately."),
+  'l2-bot-hit-1': aria('watching', "Ooof, that looked like it hurt. The equipment really isn't itself lately."),
   'l2-bot-hit-2': aria('sly', 'Careful. It still remembers how to grip. Just not what for.'),
   'l2-garden-rest': aria('bubbly', "That's two. There are... a few more. Garden maintenance has a lot of staff."),
-  'v-filament': voss("That's not wiring."),
-  'l2-filament': aria('guarded', "Leftover coolant. Don't touch."),
   'l2-garden-idle': aria('sly', "The pipe's right there on the wall, Voss. I know you can see it. I'm the one with cameras, not you, and even I can see it."),
   'l2-garden-win': aria('relieved', "There. See? Nothing you can't handle."),
   'v-power-back': voss("The lights are back... and the bulkheads on the stairs just opened."),
@@ -67,9 +65,9 @@ export const LINES = {
 
   // 2.4 The hatch
   'v-dead-keypad': voss("Dead. There's no power to the keypad."),
-  'l2-hatch-1': aria('guarded', "That's Kessler's lock. She cut me out of it before... before. I can't touch it."),
-  'v-hatch-how': voss("Then how do I get through, ARIA?! We don't have much time!"),
-  'l2-hatch-2': aria('bubbly', "We'll find another way. Just don't go upstairs! It isn't safe."),
+  'l2-hatch-1': aria('guarded', "That's Kessler's lock. She cut me out of it before..."),
+  'v-hatch-how': voss("Then how do I get through ARIA?! We don't have much time!"),
+  'l2-hatch-2': aria('bubbly', "We'll find another way, just don't go upstairs! It isn't safe."),
 
   // 2.5 The gallery
   'l2-gallery-1': aria('hostile', 'Voss. The hatch is downstairs!', { anger: 3 }),
@@ -154,7 +152,6 @@ export const TALKS = {
   hitDirect: ['l2-bot-hit-1'],
   hitGraze: ['l2-bot-hit-2'],
   gardenRest: ['l2-garden-rest'],
-  filament: ['v-filament', 'l2-filament'],
   gardenIdle: ['l2-garden-idle'],
   gardenWin: ['l2-garden-win'],
   bulkhead: ['v-power-back', 'l2-bulkhead'],

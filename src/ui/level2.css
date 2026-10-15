@@ -328,3 +328,15 @@
   width: 128px; height: 40px; border-radius: 4px; background: #1a1300; border-color: #ffd23f; color: #ffe38a;
   font: 14px "Courier New", monospace; letter-spacing: 0.15rem; box-shadow: 0 0 14px rgba(255, 210, 63, 0.3);
 }
+
+/* dropping through the hatch into Level 3: the screen fades to black */
+#level-fade {
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.2s ease-in;
+}
+#level-fade.on { opacity: 1; }

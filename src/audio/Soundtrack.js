@@ -7,6 +7,8 @@
 //   level1-tense.mp3    Level 1's generator puzzle (falls back to level1.mp3 if missing)
 //   level2.mp3          Level 2, exploring
 //   level2-fight.mp3    Level 2's garden drone fight (falls back to level2.mp3 if missing)
+//   level3.mp3          Level 3, the drowned deck
+//   level3-tense.mp3    Level 3's tense moments (falls back to level3.mp3 if missing)
 //
 // The music dips while ARIA speaks, goes quiet on death, and M mutes it.
 

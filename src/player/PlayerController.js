@@ -4,8 +4,8 @@ import { Player } from '../entities/Player.js';
 
 // The player for the physics levels (level 2 onwards): a kinematic capsule moved
 // by Rapier's character controller, so it walks up stairs, slides along walls and
-// stands on moving platforms. Mouse looks, WASD moves, double-tapping W runs,
-// Shift (held) crouches, Space jumps, V switches between first and third person. The body is Voss's model
+// stands on moving platforms. Mouse looks, WASD moves, Shift (held) runs,
+// C (held) crouches, Space jumps, V switches between first and third person. The body is Voss's model
 // (entities/Player.js): hands only in first person, the whole body in third.
 //
 // Sizes are metres: Voss is 1.8 m tall. A standing jump rises about 1.6 m (so a 1.2 m cargo
@@ -19,10 +19,10 @@ const CROUCH_HEIGHT = 1.35;
 const CROUCH_EYE = 1.19;
 const CROUCH_SPEED = 2.6;
 const CROUCH_EASE = 12;       // how fast the eyes sink and rise
-const DOUBLE_TAP = 0.3;       // seconds between two W presses that start a run
 
 const WALK_SPEED = 6.0;
 const SPRINT_SPEED = 9.0;
+const CROUCH_SPRINT_SPEED = SPRINT_SPEED * 0.75; // Shift while crouched: a quicker crouched walk
 const GRAVITY = 25.0;
 const FALL_GRAVITY = 1.4;     // falling is a little heavier than rising, so jumps feel snappy
 const JUMP_SPEED = 8.94;      // sqrt(2 * 25 * 1.6) = a 1.6 m jump
@@ -46,7 +46,6 @@ export class PlayerController {
     this.onRespawn = null;
 
     this.keys = { forward: false, back: false, left: false, right: false, sprint: false, crouch: false, jumpHeld: false };
-    this._lastForwardTap = -Infinity;
     this.crouched = false;
     this.height = HEIGHT;                // current capsule height (shorter while crouched)
     this.eye = EYE;                      // current eye height; eases between standing and crouched
@@ -168,19 +167,12 @@ export class PlayerController {
 
   _onKeyDown(e) {
     switch (e.code) {
-      case 'ArrowUp': case 'KeyW':
-        // A second press soon after the first starts a run that lasts while W is held
-        if (!e.repeat) {
-          const now = performance.now() / 1000;
-          if (now - this._lastForwardTap < DOUBLE_TAP) this.keys.sprint = true;
-          this._lastForwardTap = now;
-        }
-        this.keys.forward = true;
-        break;
+      case 'ArrowUp': case 'KeyW': this.keys.forward = true; break;
       case 'ArrowLeft': case 'KeyA': this.keys.left = true; break;
       case 'ArrowDown': case 'KeyS': this.keys.back = true; break;
       case 'ArrowRight': case 'KeyD': this.keys.right = true; break;
-      case 'ShiftLeft': case 'ShiftRight': this.keys.crouch = true; break;
+      case 'ShiftLeft': case 'ShiftRight': this.keys.sprint = true; break;
+      case 'KeyC': this.keys.crouch = true; break;
       case 'Space':
         e.preventDefault();
         if (!e.repeat) this.jumpBuffer = JUMP_BUFFER;
@@ -194,11 +186,12 @@ export class PlayerController {
 
   _onKeyUp(e) {
     switch (e.code) {
-      case 'ArrowUp': case 'KeyW': this.keys.forward = this.keys.sprint = false; break;
+      case 'ArrowUp': case 'KeyW': this.keys.forward = false; break;
       case 'ArrowLeft': case 'KeyA': this.keys.left = false; break;
       case 'ArrowDown': case 'KeyS': this.keys.back = false; break;
       case 'ArrowRight': case 'KeyD': this.keys.right = false; break;
-      case 'ShiftLeft': case 'ShiftRight': this.keys.crouch = false; break;
+      case 'ShiftLeft': case 'ShiftRight': this.keys.sprint = false; break;
+      case 'KeyC': this.keys.crouch = false; break;
       case 'Space': this.keys.jumpHeld = false; break;
     }
   }
@@ -251,11 +244,12 @@ export class PlayerController {
     // Horizontal velocity eases toward the wanted velocity; quicker on the ground
     // On ice you barely grip: you keep your momentum and steer slowly. Wading is slow.
     const onIce = this.grounded && this.surface === 'ice';
-    // Crouch while Shift is held (only from the ground); stand again once there is room overhead
+    // Crouch while C is held (only from the ground); stand again once there is room overhead
     if (k.crouch && canMove && this.grounded && !this.crouched) this._setCrouched(true);
     else if ((!k.crouch || !canMove) && this.crouched && this._canStand()) this._setCrouched(false);
 
-    let speed = (this.crouched ? CROUCH_SPEED : k.sprint ? SPRINT_SPEED : WALK_SPEED) * this.speedScale;
+    const base = this.crouched ? (k.sprint ? CROUCH_SPRINT_SPEED : CROUCH_SPEED) : k.sprint ? SPRINT_SPEED : WALK_SPEED;
+    let speed = base * this.speedScale;
     if (this.surface === 'wade' && this.grounded) speed *= 0.55;
     if (onIce) speed *= 1.25;
     const grip = !this.grounded ? 4 : onIce ? 0.9 : 14;

@@ -107,7 +107,11 @@ export const LINES = {
 // What Voss reads, hears and watches upstairs (scenes 2.6 to 2.8), word for word. Step 6 shows these.
 // Video logs say who is on the handheld's screen until a recording exists (Readables shows them
 // live, LogHead.js): head (the character), condition (0 healthy .. 4 most worn, FaceWear.js) and
-// face (the FaceRig preset: how he talks).
+// face (the FaceRig preset: how he talks). Its beats are his acting, each at the words it starts on
+// (`at`, the first place they appear in the words or the spoken lines after): what LogHead.cue takes
+// (face, look, lean, gesture, tic, laugh, stare, still, mood, hold), and for the reveal without a
+// recording, pause (seconds before those words) and rate (the reading speed from there on, 1 normal).
+// Kept small and forward-facing in log-8: he never turns enough to show the wound.
 export const LOGS = {
   bunkLogA: { kind: 'audio', title: 'CREW LOG (unnamed)',
     text: "...I don't care what ARIA says, the scans aren't 'routine.' I asked for my file back and she just changed the subject. Changed the subject! She doesn't do that. Something's up-" },
@@ -121,15 +125,73 @@ export const LOGS = {
     after: 'Off-camera, Kessler: "Voss. Switch it off." Voss: "In a minute."',
     // log-0.mp3 holds his words only: the two spoken lines follow it as subtitles. (If they are
     // recorded onto its end, replace this with cues: [when Kessler starts, when he replies] in s)
-    linesAfterVoice: true },
+    linesAfterVoice: true,
+    beats: [
+      { at: 'The Bridge is stable', face: { smile: 0.6 }, gesture: 'nod', amp: 0.6, hold: 2 },
+      { at: 'she woke up', face: { smile: 0.5, brow: 0.6 }, lean: 0.12, hold: 2.5 },
+      { at: 'Her.', pause: 0.7, face: { smile: 0.8, brow: 0.5 }, hold: 2.2 },
+      { at: 'She asked me', look: [0.2, -0.06, 3], face: { smile: 0.3, brow: 0.3 }, hold: 2.5 },
+      { at: 'Kessler says', face: { smile: 0.15, frown: 0.1, brow: -0.25 }, gesture: 'shake', amp: 0.7, hold: 2.5 },
+      { at: 'The scans are the whole point', lean: 0.12, face: { smile: 0, brow: -0.35 }, gesture: 'nod', hold: 2 },
+      { at: 'This could change everything', pause: 0.4, lean: 0.18, face: { smile: 0.7, brow: 0.5 }, hold: 3 },
+      // Kessler from the doorway: he looks over to her, then back to the lens with a smirk
+      { at: 'Off-camera', look: [0.45, 0, 8], face: { smile: 0, frown: 0.25, brow: -0.2 }, hold: 2.8 },
+      { at: '"In a minute."', face: { smile: 0.45 }, hold: 4 }
+    ] },
   'log-1': { kind: 'video', head: 'voss', condition: 1, face: 'tense', title: 'J. VOSS, PROJECT LOG: MEMORIES', who: "The living Voss, before the disaster, while experimenting with the crew's memories",
-    text: "I found ways to not only scan and copy my colleagues' memories, but also selectively alter them. ARIA can now freely think for herself. I think the team is starting to realise something's wrong." },
+    text: "I found ways to not only scan and copy my colleagues' memories, but also selectively alter them. ARIA can now freely think for herself. I think the team is starting to realise something's wrong.",
+    beats: [
+      { at: 'I found ways', face: { smile: 0.25, brow: 0.3 }, lean: 0.08, hold: 2.5 },
+      { at: 'selectively alter', pause: 0.5, look: [-0.15, 0.08, 4], face: { smile: 0.1, frown: 0.25 }, hold: 1.6 },
+      { at: 'ARIA can now', look: [0, -0.05, 3], face: { smile: 0.2, brow: 0.55 }, hold: 2.5 },
+      { at: 'I think the team', look: [0.3, 0, 7], face: { smile: 0, frown: 0.4, brow: 0.45 }, hold: 1.4 },
+      { at: "something's wrong", pause: 0.4, face: { frown: 0.45, brow: 0.5 }, still: 0.5, hold: 3 }
+    ] },
   'log-2': { kind: 'video', head: 'voss', condition: 2, face: 'whisper', title: 'CYCLE 2', who: 'A reconstructed Voss, whispering, awake all night',
-    text: "I woke up in a cell. A cell. She said it was quarantine. Then I found my own handwriting in a locker, and it says I built her. I don't remember building anything. If I'm watching this later: the dish is outside. I'll make her tell me the truth." },
+    text: "I woke up in a cell. A cell. She said it was quarantine. Then I found my own handwriting in a locker, and it says I built her. I don't remember building anything. If I'm watching this later: the dish is outside. I'll make her tell me the truth.",
+    beats: [
+      { at: 'I woke up', look: [-0.2, 0, 10], hold: 0.6 },
+      { at: 'A cell.', pause: 0.6, face: { frown: 0.45, brow: 0.65 }, hold: 1.6 },
+      { at: 'She said', look: [0.12, 0, 4], face: { smile: 0.2, frown: 0.3, brow: -0.2 }, hold: 1.8 },
+      { at: 'Then I found', lean: 0.12, face: { brow: 0.5 }, hold: 3 },
+      { at: 'I built her', pause: 0.5, face: { frown: 0.4, brow: 0.8 }, hold: 2 },
+      { at: "I don't remember", gesture: 'shake' },
+      // a look over his shoulder at the door, then right up to the lens to say it
+      { at: "If I'm watching", pause: 0.3, look: [-0.35, 0.02, 9], hold: 0.9 },
+      { at: 'the dish is outside', lean: 0.2, face: { brow: 0.55, tired: 0.1 }, hold: 3, rate: 0.85 },
+      { at: "I'll make her", face: { frown: 0.45, brow: -0.45 }, gesture: 'nod', amp: 0.7, hold: 3, rate: 1 }
+    ] },
   'log-5': { kind: 'video', head: 'voss', condition: 3, face: 'strained', title: 'CYCLE 5', who: 'Strained, bargaining',
-    text: "Five. I counted the marks. I can't stop counting. She's very good, you know. She's warm. She makes it easy to forget. Every time I get to the dish I remember a little more, and then she says my name just so, and I put the cable down. Next time I'll hide something where she won't look." },
+    text: "Five. I counted the marks. I can't stop counting. She's very good, you know. She's warm. She makes it easy to forget. Every time I get to the dish I remember a little more, and then she says my name just so, and I put the cable down. Next time I'll hide something where she won't look.",
+    // the worst of him: rushing, laughing at nothing, warm about her in the wrong places
+    beats: [
+      { at: 'Five.', pause: 0.8, look: [-0.3, -0.04, 10], hold: 1.2 },
+      { at: 'I counted', tic: true },
+      { at: "I can't stop", laugh: 0.9, face: { smile: 0.35, frown: 0.4, brow: 0.6 }, hold: 1.6, rate: 1.35 },
+      { at: "She's very good", look: [0.15, -0.04, 3], face: { smile: 0.4, brow: 0.45, tired: 0.3 }, hold: 2.4, rate: 0.8 },
+      { at: "She's warm", pause: 0.6, face: { smile: 0.6, frown: 0.2, tired: 0.6 }, still: 0.8, hold: 2.2 },
+      { at: 'She makes it easy', tic: true, still: 0, face: { frown: 0.5, brow: 0.6 }, hold: 1.6, rate: 1.2 },
+      { at: 'Every time I get', lean: 0.15, hold: 4, rate: 1.3 },
+      { at: 'just so', pause: 0.6, face: { smile: 0.45, brow: 0.5, tired: 0.7 }, hold: 1.4, rate: 0.8 },
+      { at: 'and I put the cable down', face: { frown: 0.65, brow: 0.75 }, gesture: 'shake', hold: 2.2, rate: 1 },
+      { at: 'Next time', pause: 0.4, look: [-0.35, 0, 12], hold: 0.7 },
+      { at: "I'll hide", lean: 0.24, face: { frown: 0.3, brow: -0.35 }, hold: 4, rate: 0.85 },
+      { at: "where she won't look", laugh: 0.6, tic: true, hold: 2 }
+    ] },
   'log-8': { kind: 'video', head: 'voss', condition: 4, face: 'resigned', title: 'CYCLE 8', who: 'Calm, tired, resigned. The one the player must see',
-    text: "If you're watching this, she's wiped me again. Don't trust her. But you will. I did, every time. Take the card. The code opens the hatch, but that's not what you came for. Find out what we did. And when you're out there in the dark with the cable in your hand, decide before she starts talking." },
+    text: "If you're watching this, she's wiped me again. Don't trust her. But you will. I did, every time. Take the card. The code opens the hatch, but that's not what you came for. Find out what we did. And when you're out there in the dark with the cable in your hand, decide before she starts talking.",
+    // past panic: too still, hardly blinking, one hollow laugh, closer and closer to the lens
+    beats: [
+      { at: "If you're watching", still: 0.75, stare: 3 },
+      { at: 'again', pause: 0.5, look: [0.05, 0.14, 2], face: { frown: 0.4, tired: 0.9 }, hold: 1.6 },
+      { at: "Don't trust her", lean: 0.12, still: 0.9, face: { frown: 0.45, brow: -0.3 }, hold: 2.5 },
+      { at: 'But you will', pause: 0.9, laugh: 0.7, face: { smile: 0.3, frown: 0.3, tired: 0.9 }, hold: 1.6 },
+      { at: 'I did, every time', look: [0.08, 0.12, 2], hold: 2 },
+      { at: 'Take the card', lean: 0.1, gesture: 'nod', amp: 0.5, hold: 3 },
+      { at: 'Find out what we did', pause: 0.6, tic: true, face: { frown: 0.5, brow: 0.55 }, hold: 2.5 },
+      { at: "And when you're out there", lean: 0.2, still: 1, stare: 12, hold: Infinity, rate: 0.8 },
+      { at: 'decide before', pause: 0.7, lean: 0.3, face: { frown: 0.3, brow: -0.4, tired: 0.6 }, hold: Infinity, rate: 0.7 }
+    ] },
   directive: { kind: 'file', author: 'DR. E. KESSLER', title: 'KESSLER DIRECTIVE (partly corrupted)',
     text: "...ordering immediate shutdown of ARIA's primary systems pending review. Unauthorized use of crew neural scan data without consent cannot continue under my", after: 'The rest is unreadable, static noise.' },
   research: { kind: 'file', author: 'J. VOSS', title: 'RESEARCH NOTES (barely recovered)',

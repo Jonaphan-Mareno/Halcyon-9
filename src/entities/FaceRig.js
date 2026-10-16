@@ -15,6 +15,11 @@
 // head moves. update(dt) eases everything and writes the morph influences; head motion is given
 // out as `head` ({ yaw, pitch, roll } in radians) for the owner to apply to its neck or head bone.
 //
+// Acting on top of the preset (the video logs cue these on words, LogHead.cue): pose() a passing
+// expression, look() away, gesture() a nod or a shake, tic(), laugh(), stare() (no blinking),
+// `stillness` (0..1, the sway and breathing die away) and nerves() (0..1: unprompted darting looks,
+// tics, double blinks and brow flicks, more and more often).
+//
 // A head may carry a lip seal (material M_LipSeal): the faces closing the lips, shown only while
 // the mouth is shut, so a closed mouth looks exactly as modelled.
 
@@ -93,6 +98,7 @@ export class FaceRig {
     }
 
     this.time = 0;
+    this.gain = 1;                 // how far the smile, frown and brows go (Voss's morphs are mild)
     this.preset = PRESETS.neutral;
     this.expr = { smile: 0, frown: 0, brow: 0, tired: 0, bow: 0 };
     this.setPreset(preset, true);
@@ -120,6 +126,72 @@ export class FaceRig {
     this.blink = 0;
     this._nextBlink = 1 + Math.random() * 2;
     this._blinkT = -1;
+
+    this.calm();
+  }
+
+  // Drop any acting in progress (a new log starts from the preset alone)
+  calm() {
+    this._pose = null;
+    this._poseUntil = 0;
+    this._look = null;
+    this._gazeRate = 1.5;
+    this.lookPitch = 0;
+    this._gesture = null;
+    this._jolt = { yaw: 0, pitch: 0, roll: 0 };
+    this._browKick = 0;
+    this._laughT = -1;
+    this._laughLen = 0;
+    this.laughing = 0;
+    this._stareUntil = 0;
+    this._blinkAgain = false;
+    this.stillness = 0;
+    this._still = 0;
+    this._nerves = 0;
+    this._nextTic = 3;
+  }
+
+  // ------------------------------------------------------------------ acting
+  // A passing expression ({ smile, frown, brow, tired, bow }, any of them) held for `hold` seconds
+  pose(face, hold = 1.5) {
+    this._pose = face;
+    this._poseUntil = this.time + hold;
+  }
+
+  // Look away (yaw: radians of head turn, + to his left; pitch: + down) for `hold` seconds, at
+  // `speed` (a glance ~6, a dart ~14)
+  look(yaw, pitch = 0, hold = 1, speed = 6) {
+    this._look = { yaw, pitch, until: this.time + hold, speed, random: false };
+  }
+
+  // 'nod' or 'shake', `amp` 1 = a clear one
+  gesture(kind, amp = 1) {
+    this._gesture = { kind, amp, t: 0 };
+  }
+
+  // A sudden involuntary jerk of the head, the brows flicking up
+  tic() {
+    const r = () => (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.5);
+    this._jolt = { yaw: 0.07 * r(), pitch: 0.035 * r(), roll: 0.04 * r() };
+    this._browKick = 0.5;
+  }
+
+  // A short breathy laugh (seconds): the jaw jumps, the head bobs, a smile through it
+  laugh(seconds = 0.8) {
+    this._laughT = 0;
+    this._laughLen = seconds;
+  }
+
+  // Stop blinking for a while: a stare
+  stare(seconds) {
+    this._stareUntil = this.time + seconds;
+    this._blinkT = -1;
+    this.blink = 0;
+  }
+
+  nerves(level) {
+    this._nerves = level;
+    this._nextTic = 1 + Math.random() * 2;
   }
 
   setPreset(name, snap = false) {
@@ -201,21 +273,46 @@ export class FaceRig {
     if (!this.ok) return;
     this.time += dt;
     const p = this.preset;
-    const k = 1 - Math.exp(-4 * dt);
-    for (const key of Object.keys(this.expr)) this.expr[key] += ((p[key] ?? 0) - this.expr[key]) * k;
+    const pose = this.time < this._poseUntil ? this._pose : null;
+    const k = 1 - Math.exp(-(pose ? 6 : 4) * dt);
+    for (const key of Object.keys(this.expr)) {
+      const to = pose && key in pose ? pose[key] : p[key] ?? 0;
+      this.expr[key] += (to - this.expr[key]) * k;
+    }
+    this._still += (this.stillness - this._still) * (1 - Math.exp(-2 * dt));
+    this._jolt.yaw *= Math.exp(-9 * dt);
+    this._jolt.pitch *= Math.exp(-9 * dt);
+    this._jolt.roll *= Math.exp(-9 * dt);
+    this._browKick *= Math.exp(-7 * dt);
+    this._fidget(dt);
+
+    // the laugh: a few quick breaths out, fading
+    this.laughing = 0;
+    let laughJaw = 0;
+    if (this._laughT >= 0) {
+      this._laughT += dt;
+      const u = this._laughT / this._laughLen;
+      if (u >= 1) this._laughT = -1;
+      else {
+        this.laughing = Math.sin(Math.PI * Math.min(1, u * 2.5)) ** 0.5 * (1 - u * 0.6);
+        laughJaw = 0.28 * Math.abs(Math.sin(this._laughT * Math.PI * 5.5)) * this.laughing;
+      }
+    }
 
     this._mouth(dt);
     this._blink(dt);
 
     const e = this.expr;
-    const jaw = Math.min(1, this.jaw * p.jaw);
+    const jaw = Math.min(1, Math.max(this.jaw * p.jaw, laughJaw));
+    const smile = Math.min(1, e.smile + this.laughing * 0.35) * this.gain;
+    const brow = Math.max(-1.6, Math.min(1.6, (e.brow + this._browKick) * this.gain));
     this._set('jaw_open', jaw);
     this._set('mouth_wide', this.wide * p.jaw);
     this._set('mouth_pucker', this.pucker * Math.min(1, p.jaw + 0.2));
-    this._set('mouth_smile', e.smile * (1 - jaw * 0.6));
-    this._set('mouth_frown', e.frown * (1 - jaw * 0.5));
-    this._set('brow_up', Math.max(0, e.brow));
-    this._set('brow_down', Math.max(0, -e.brow));
+    this._set('mouth_smile', smile * (1 - jaw * 0.6));
+    this._set('mouth_frown', e.frown * this.gain * (1 - jaw * 0.5));
+    this._set('brow_up', Math.max(0, brow));
+    this._set('brow_down', Math.max(0, -brow));
     // the lids: a blink closes them from wherever they rest (heavy, tired lids rest lower)
     const rest = Math.max(e.tired, p.lids);
     this._set('eyes_tired', rest * (1 - this.blink));
@@ -223,19 +320,63 @@ export class FaceRig {
     const shut = jaw < 0.03 && this.pucker < 0.5;
     for (const s of this.seals) s.visible = shut;
 
-    // head: breathing, a slow sway, the preset's bow and sag, a drifting gaze for the tired
+    // head: breathing, a slow sway, the preset's bow and sag, a drifting gaze for the tired, and
+    // whatever he is acting (a look, a nod, a jerk, a laugh)
     const t = this.time;
+    if (this._look && this.time >= this._look.until) {
+      this._look = null;
+      this._gazeTarget = 0;
+      this._gazeRate = 3;
+    }
+    const look = this._look;
     this._gazeT += dt;
-    if (this._drift && this._gazeT > 2.5 + Math.random() * 3) {
+    if (!look && this._drift && this._gazeT > 2.5 + Math.random() * 3) {
       this._gazeT = 0;
       this._gazeTarget = (Math.random() * 2 - 1) * this._drift;
+      this._gazeRate = 1.5;
     }
-    this.gaze += (this._gazeTarget - this.gaze) * (1 - Math.exp(-1.5 * dt));
+    const gk = 1 - Math.exp(-(look ? look.speed : this._gazeRate) * dt);
+    this.gaze += ((look ? look.yaw : this._gazeTarget) - this.gaze) * gk;
+    this.lookPitch += ((look ? look.pitch : 0) - this.lookPitch) * gk;
+    let gYaw = 0, gPitch = 0;
+    const g = this._gesture;
+    if (g) {
+      g.t += dt;
+      const env = Math.exp(-3 * g.t) * g.amp;
+      if (g.kind === 'nod') gPitch = 0.07 * Math.sin(g.t * Math.PI * 2 * 2.2) * env;
+      else gYaw = 0.08 * Math.sin(g.t * Math.PI * 2 * 2.6) * env;
+      if (g.t > 1.4) this._gesture = null;
+    }
+    const sway = p.sway * (1 - 0.85 * this._still);
     const talk = this.mode === 'idle' ? 0 : 1;
-    this.head.yaw = Math.sin(t * 0.37) * 0.035 * p.sway + this.gaze;
-    this.head.pitch = e.bow + Math.sin(t * 0.9) * 0.012 + p.sag * (0.6 + 0.4 * Math.sin(t * 0.21))
-      + talk * this.jaw * 0.04 * p.sway;
-    this.head.roll = Math.sin(t * 0.29 + 1) * 0.02 * p.sway;
+    this.head.yaw = Math.sin(t * 0.37) * 0.035 * sway + this.gaze + gYaw + this._jolt.yaw;
+    this.head.pitch = e.bow + Math.sin(t * 0.9) * 0.012 * (1 - 0.7 * this._still) + p.sag * (0.6 + 0.4 * Math.sin(t * 0.21))
+      + talk * this.jaw * 0.04 * sway + this.lookPitch + gPitch + this._jolt.pitch
+      - 0.03 * Math.abs(Math.sin(this._laughT * Math.PI * 5.5)) * this.laughing;
+    this.head.roll = Math.sin(t * 0.29 + 1) * 0.02 * sway + this._jolt.roll;
+  }
+
+  // Nerves: now and then, unprompted, a darting look aside, a tic, a double blink or a brow flick
+  // (never over a look he is acting)
+  _fidget(dt) {
+    if (!this._nerves) return;
+    this._nextTic -= dt;
+    if (this._nextTic > 0) return;
+    this._nextTic = (7 - 5.4 * this._nerves) * (0.5 + Math.random());
+    const r = Math.random();
+    if (r < 0.4) {
+      if (this._look && !this._look.random) return;
+      const side = Math.random() < 0.5 ? -1 : 1;
+      this._look = { yaw: side * (0.12 + Math.random() * 0.18), pitch: (Math.random() - 0.5) * 0.08, until: this.time + 0.25 + Math.random() * 0.45, speed: 14, random: true };
+    } else if (r < 0.65) {
+      this.tic();
+    } else if (r < 0.85) {
+      if (this._stareUntil > this.time) return;
+      this._nextBlink = 0;
+      this._blinkAgain = true;
+    } else {
+      this._browKick = 0.35;
+    }
   }
 
   _set(name, value) {
@@ -288,9 +429,10 @@ export class FaceRig {
   _blink(dt) {
     const p = this.preset;
     this._nextBlink -= dt;
-    if (this._nextBlink <= 0 && this._blinkT < 0) {
+    if (this._nextBlink <= 0 && this._blinkT < 0 && this.time >= this._stareUntil) {
       this._blinkT = 0;
-      this._nextBlink = p.blink[0] + Math.random() * (p.blink[1] - p.blink[0]);
+      this._nextBlink = this._blinkAgain ? 0.12 : p.blink[0] + Math.random() * (p.blink[1] - p.blink[0]);
+      this._blinkAgain = false;
     }
     if (this._blinkT >= 0) {
       this._blinkT += dt;

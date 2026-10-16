@@ -151,7 +151,7 @@ export class HabitatSession {
       onShown: (id) => this._readShown(id),
       onFinished: (id) => this._readFinished(id),
       // a video log's live head: Voss, copied from the one the player walks around as
-      head: (name) => (name === 'voss' ? LogHead.fromPlayer(this.controls.character) : null)
+      head: (name) => (name === 'voss' ? LogHead.fromPlayer(this.controls.character, this.atrium) : null)
     });
     this.flashback = new Flashback(root);
     // the full flashback, in 3D (Kessler and the living Voss); the 2D one above stays as the fallback

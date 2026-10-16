@@ -5,7 +5,8 @@
 // and locks the room. Cut to black.
 //
 // It is drawn in 2D on a canvas (flat shapes in the station's colours, a cold teal grade, film
-// grain, letterbox bars), so it costs nothing in 3D. An optional recording can go in
+// grain, letterbox bars), so it costs nothing in 3D. This is the fallback: the full 3D flashback
+// (Flashback3D.js) plays instead when Kessler's model has loaded and the machine keeps up. An optional recording can go in
 // public/assets/audio/logs/flashback.mp3 (the muffled argument); until then it is silent.
 //
 // play() resolves when it ends. Enter skips it (after the first couple of seconds).
@@ -19,7 +20,7 @@ const AUDIO = './assets/audio/logs/flashback.mp3';
 const C = {
   wall: '#10222e', wall2: '#0a1620', floor: '#0b1218', console: '#172a3a', trim: '#f07a14',
   cyan: '#4fe3ff', coat: '#dfe8ee', coatShade: '#aebcc6', skin: '#d9ae92', skinShade: '#b98c72',
-  kessHair: '#2a2523', vossHair: '#3a2a20', vossCoat: '#cfdbe3', pants: '#1c2733', red: '#ff3b30'
+  kessHair: '#c8a96a', earpiece: '#eef3f6', vossHair: '#3a2a20', vossCoat: '#cfdbe3', pants: '#1c2733', red: '#ff3b30'
 };
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -304,8 +305,9 @@ export class Flashback {
     g.arc(-1, -2, 16, 0, Math.PI * 2);
     g.fill();
     if (p.bun) {
+      // Kessler: blond, swept back off the forehead, short at the back
       g.beginPath();
-      g.arc(-15, -6, 9, 0, Math.PI * 2);
+      g.ellipse(-10, -8, 9, 7, -0.3, 0, Math.PI * 2);
       g.fill();
     }
     // face
@@ -317,6 +319,14 @@ export class Flashback {
     g.beginPath();
     g.ellipse(0, -9, 16, 8, 0, Math.PI, Math.PI * 2);   // the hairline
     g.fill();
+    if (p.bun) {
+      // her white earpiece, hooked over the ear
+      g.strokeStyle = C.earpiece;
+      g.lineWidth = 1.6;
+      g.beginPath();
+      g.arc(-4, -2, 4, Math.PI * 1.1, Math.PI * 1.9);
+      g.stroke();
+    }
     // eyes (looking ahead, or round at the door)
     const gaze = p.look ? 3 : 1;
     for (const ex of [5, 15]) {

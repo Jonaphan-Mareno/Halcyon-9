@@ -242,6 +242,14 @@
   text-shadow: 0 0 8px #000, 0 0 2px #000;
 }
 .rd-video .rd-body { font-size: 0.98rem; }
+/* the live head on the handheld (LogHead.js), shown once the title card is done */
+.rd-screen canvas.rd-live { display: none; }
+.rd-screen canvas.rd-live.on { display: block; }
+/* who says what in a video log's spoken lines: off camera in another colour */
+.rd-video .rd-after { font-style: normal; }
+.rd-after .rd-label { color: #8a9099; font-style: italic; }
+.rd-after .rd-voss { color: #ededed; }
+.rd-after .rd-kessler { color: #8fd8ff; }
 
 /* a flash of memory */
 #memory-flash {
@@ -340,3 +348,8 @@
   transition: opacity 1.2s ease-in;
 }
 #level-fade.on { opacity: 1; }
+
+/* the 3D flashback (Flashback3D.js) draws on the game's canvas: everything over it hides meanwhile */
+body.fb3d #ui-layer > *:not(.fb3d-hint), body.fb3d #code-note, body.fb3d .fps-counter { visibility: hidden !important; }
+.fb3d-hint { position: absolute; z-index: 31; display: none; }
+.fb3d-hint.on { display: block; }

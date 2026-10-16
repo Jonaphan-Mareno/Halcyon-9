@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { createGLTFLoader, createFBXLoader } from '../core/loaders.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { FaceWear } from './FaceWear.js';
 
-// Voss, the scientist (human_scientist.glb, built in Blender from cvg.blend).
+// Voss, the scientist (human_scientist.glb, built in Blender from cvg.blend; human_scientist_v2.glb
+// adds his face's morph targets and the wound, see scripts/build-voss-v2.mjs).
 //
 // One file holds the rig, the body parts and every clip:
 //   Idle, Walk, Run, Jump, Jump_Up, Fall, Land  - the full body, all in place
@@ -10,7 +12,11 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 //   FP_Idle, FP_Walk, FP_Run, FP_Jump           - the arms only, posed for the first-person view
 // A Mixamo export of the same rig, Sprint.fbx, replaces the glb's Run (see _mixamoClip)
 // Body parts are separate meshes so a view can show just some of them:
-//   Coat_Torso, Sleeves, Hands, Shirt, Pants, Head, Hair, Glasses
+//   Coat_Torso, Sleeves, Hands, Shirt, Pants, Head, Hair, Glasses, Wound
+// Wound is the gash on the back of his skull (the Cycle 9 Voss is a reconstruction): shown by
+// default, setPartVisible('Wound', false) for the living Voss (the hair over it grows back: the
+// cards there, material M_HairPatch, show exactly when the wound does not). The Head's morph targets (his
+// face: jaw_open, blink, ...) rest at 0 in play; FaceRig drives them in the video logs.
 //
 // Two copies of the rig are used. The body lives inside the player controller's
 // body group and is seen in third person. The view model is a second copy that
@@ -18,7 +24,7 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 // first-person setup: the arms follow the view up and down and never sit inside
 // the near plane.
 
-const MODEL = './assets/models/human_scientist.glb';
+const MODEL = './assets/models/human_scientist_v2.glb';
 const RUN_FBX = './assets/models/Sprint.fbx';
 
 // The model is authored at 1.39 m; the game's Voss is 1.8 m
@@ -60,6 +66,12 @@ const REACH_RAISE = 1.1;                          // third person: the arm lifts
 // of the forearms covers the screen (view space, metres: +z is back, toward the player)
 const FP_ARMS_OFFSET = new THREE.Vector3(0, -0.05, 0.05);
 
+// The playable Voss (Cycle 9) looks as worn as the Cycle 8 Voss of the last video log: his face
+// painted at FaceWear's condition level 4 (bags, pallor, cuts, bruise, dried blood) and his lids
+// as heavy as that log's 'resigned' face
+const WORN_LEVEL = 4;
+const WORN_LIDS = 0.8;
+
 // The team's toon banding (level 1's shader used it before the habitat restyle): three hard steps of light
 export function makeToonRamp() {
   const data = new Uint8Array([70, 70, 70, 110, 190, 255]);
@@ -90,7 +102,8 @@ export function toonFrom(src, ramp, overrides = {}) {
   });
   mat.name = src.name;
   // Hair cards are cut out (MASK in the glb); keep them out of the transparent pass
-  if (src.name === 'M_HairCards') {
+  // (M_HairPatch: the cards over Voss's wound, see setPartVisible)
+  if (src.name === 'M_HairCards' || src.name === 'M_HairPatch') {
     mat.transparent = false;
     mat.alphaTest = 0.5;
     mat.depthWrite = true;
@@ -104,6 +117,14 @@ export function toonFrom(src, ramp, overrides = {}) {
     );
   };
   return mat;
+}
+
+// The wound on the back of Voss's head, or the hair that covers its place (on any copy of him)
+export function showWound(root, visible) {
+  root?.traverse((o) => {
+    if (o.name === 'Wound') o.visible = visible;
+    if (o.isMesh && o.material?.name === 'M_HairPatch') o.visible = !visible;
+  });
 }
 
 // Plays clips on one copy of the rig with crossfades
@@ -211,12 +232,14 @@ export class Player {
     const ramp = makeToonRamp();
     const materials = new Map();
     const toon = (m) => {
-      if (!materials.has(m)) materials.set(m, toonFrom(m, ramp));
+      // (M_MouthInner: its vertex colours darken the inside of the mouth toward the throat)
+      if (!materials.has(m)) materials.set(m, toonFrom(m, ramp, { vertexColors: m.name === 'M_MouthInner' }));
       return materials.get(m);
     };
 
     // Clips by name; anything missing is reported once so a bad export is obvious
     const clips = gltf.animations;
+    this.clips = clips;
     const wanted = ['Idle', 'Walk', 'Run', 'Jump', 'Jump_Up', 'Fall', 'Land', 'Crouch', 'FP_Idle', 'FP_Walk', 'FP_Run', 'FP_Jump'];
     const missing = wanted.filter((n) => !clips.some((c) => c.name === n));
     if (missing.length) console.warn('Player: clips missing from', MODEL, missing);
@@ -229,6 +252,8 @@ export class Player {
     this.body.add(bodyRoot);
     this.bodyRoot = bodyRoot;
     this.parts = this._partsOf(bodyRoot);
+    showWound(bodyRoot, true);           // Cycle 9: the wound shows (and the hair over it is gone)
+    this._wearFace(bodyRoot);
     this.neck = this._bone(bodyRoot, /Neck1/);
     this.head = this._bone(bodyRoot, /Head1/);
     if (!this.neck || !this.head) console.warn('Player: Neck1/Head1 bones not found; head look is off');
@@ -278,6 +303,33 @@ export class Player {
     this.ready = true;
     this.setMode(this.mode);
     return this;
+  }
+
+  // The worn face on this body only (its own copies of the head materials). The clean face texture
+  // stays on this.headTexture for the living Voss (the early logs, the flashback)
+  _wearFace(root) {
+    root.traverse((o) => {
+      if (!this.headTexture && o.isMesh && o.material?.name === 'M_Head') this.headTexture = o.material.map;
+    });
+    if (!this.headTexture?.image) return;
+    this.faceWear = new FaceWear(this.headTexture);
+    const worn = this.faceWear.texture(WORN_LEVEL);
+    const copies = new Map();
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      const name = o.material?.name;
+      if (name === 'M_Head' || name === 'M_LipSeal') {
+        if (!copies.has(o.material)) {
+          const m = o.material.clone();
+          m.onBeforeCompile = o.material.onBeforeCompile;     // (the rim light; clone() leaves it out)
+          m.map = worn;
+          copies.set(o.material, m);
+        }
+        o.material = copies.get(o.material);
+      }
+      const i = o.morphTargetDictionary?.eyes_tired;
+      if (i !== undefined) o.morphTargetInfluences[i] = WORN_LIDS;
+    });
   }
 
   // An animation-only FBX, or null (with a warning) if it is missing or broken
@@ -385,7 +437,7 @@ export class Player {
 
   // Meshes grouped by body part. A part with two materials loads as a group of meshes.
   _partsOf(root) {
-    const names = ['Coat_Torso', 'Sleeves', 'Hands', 'Shirt', 'Pants', 'Head', 'Hair', 'Glasses'];
+    const names = ['Coat_Torso', 'Sleeves', 'Hands', 'Shirt', 'Pants', 'Head', 'Hair', 'Glasses', 'Wound'];
     const parts = {};
     root.traverse((o) => {
       if (!o.isMesh) return;
@@ -410,6 +462,7 @@ export class Player {
   // Show or hide body parts on the third-person body (e.g. hide the head for a close camera)
   setPartVisible(name, visible) {
     for (const o of this.parts?.[name] || []) o.visible = visible;
+    if (name === 'Wound') showWound(this.bodyRoot, visible);
   }
 
   setMode(mode) {

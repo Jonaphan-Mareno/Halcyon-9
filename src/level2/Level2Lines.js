@@ -104,6 +104,9 @@ export const LINES = {
 };
 
 // What Voss reads, hears and watches upstairs (scenes 2.6 to 2.8), word for word. Step 6 shows these.
+// Video logs say who is on the handheld's screen until a recording exists (Readables shows them
+// live, LogHead.js): head (the character), condition (0 healthy .. 4 most worn, FaceWear.js) and
+// face (the FaceRig preset: how he talks).
 export const LOGS = {
   bunkLogA: { kind: 'audio', title: 'CREW LOG (unnamed)',
     text: "...I don't care what ARIA says, the scans aren't 'routine.' I asked for my file back and she just changed the subject. Changed the subject! She doesn't do that. Something's up-" },
@@ -112,16 +115,19 @@ export const LOGS = {
   rota: { kind: 'note', title: 'Corkboard', text: 'Scan sessions, B-lab. Operator: J. Voss.' },
   letter: { kind: 'letter', title: 'A half-finished letter',
     text: "Kessler won't understand what we've built. She sees risk where I see the only real chance any of us have had to matter. If she shuts it down now, after everything" },
-  'log-0': { kind: 'video', title: 'J. VOSS, PROJECT LOG: THE BRIDGE', who: 'The living Voss, before the disaster. Thrilled, a little smug',
+  'log-0': { kind: 'video', head: 'voss', condition: 0, face: 'smug', title: 'J. VOSS, PROJECT LOG: THE BRIDGE', who: 'The living Voss, before the disaster. Thrilled, a little smug',
     text: "Day sixty-one. The Bridge is stable. I connected her to the electrical organisms an hour ago and she woke up. Not the station AI. Her. She asked me what it feels like to be tired. Kessler says the brain scans cross a line. The scans are the whole point. If we can copy a mind, we can read one. This could change everything.",
-    after: 'Off-camera, Kessler: "Voss. Switch it off." Voss: "In a minute."' },
-  'log-1': { kind: 'video', title: 'J. VOSS, PROJECT LOG: MEMORIES', who: "The living Voss, before the disaster, while experimenting with the crew's memories",
+    after: 'Off-camera, Kessler: "Voss. Switch it off." Voss: "In a minute."',
+    // log-0.mp3 holds his words only: the two spoken lines follow it as subtitles. (If they are
+    // recorded onto its end, replace this with cues: [when Kessler starts, when he replies] in s)
+    linesAfterVoice: true },
+  'log-1': { kind: 'video', head: 'voss', condition: 1, face: 'tense', title: 'J. VOSS, PROJECT LOG: MEMORIES', who: "The living Voss, before the disaster, while experimenting with the crew's memories",
     text: "I found ways to not only scan and copy my colleagues' memories, but also selectively alter them. ARIA can now freely think for herself. I think the team is starting to realise something's wrong." },
-  'log-2': { kind: 'video', title: 'CYCLE 2', who: 'A reconstructed Voss, whispering, awake all night',
+  'log-2': { kind: 'video', head: 'voss', condition: 2, face: 'whisper', title: 'CYCLE 2', who: 'A reconstructed Voss, whispering, awake all night',
     text: "I woke up in a cell. A cell. She said it was quarantine. Then I found my own handwriting in a locker, and it says I built her. I don't remember building anything. If I'm watching this later: the dish is outside. I'll make her tell me the truth." },
-  'log-5': { kind: 'video', title: 'CYCLE 5', who: 'Strained, bargaining',
+  'log-5': { kind: 'video', head: 'voss', condition: 3, face: 'strained', title: 'CYCLE 5', who: 'Strained, bargaining',
     text: "Five. I counted the marks. I can't stop counting. She's very good, you know. She's warm. She makes it easy to forget. Every time I get to the dish I remember a little more, and then she says my name just so, and I put the cable down. Next time I'll hide something where she won't look." },
-  'log-8': { kind: 'video', title: 'CYCLE 8', who: 'Calm, tired, resigned. The one the player must see',
+  'log-8': { kind: 'video', head: 'voss', condition: 4, face: 'resigned', title: 'CYCLE 8', who: 'Calm, tired, resigned. The one the player must see',
     text: "If you're watching this, she's wiped me again. Don't trust her. But you will. I did, every time. Take the card. The code opens the hatch, but that's not what you came for. Find out what we did. And when you're out there in the dark with the cable in your hand, decide before she starts talking." },
   directive: { kind: 'file', author: 'DR. E. KESSLER', title: 'KESSLER DIRECTIVE (partly corrupted)',
     text: "...ordering immediate shutdown of ARIA's primary systems pending review. Unauthorized use of crew neural scan data without consent cannot continue under my", after: 'The rest is unreadable, static noise.' },

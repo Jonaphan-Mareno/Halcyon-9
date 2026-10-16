@@ -32,6 +32,8 @@ import { HUD } from '../ui/HUD.js';
 import { FightHelp } from '../ui/FightHelp.js';
 import { Readables } from './Readables.js';
 import { Flashback } from './Flashback.js';
+import { LogHead } from './LogHead.js';
+import { Flashback3D } from './Flashback3D.js';
 import { Inventory } from '../ui/Inventory.js';
 import { sleep, pauseClock } from '../core/PauseClock.js';
 import { buildRoomProps } from './RoomProps.js';
@@ -42,6 +44,8 @@ import '../ui/level2.css';
 // ENVIRONMENT PREVIEW. You arrive in the lift, the doors open, and you can walk the whole space.
 // No gameplay yet: that is designed and added after the environment is approved.
 
+// The 3D flashback (Flashback3D) plays when it is ready and the machine keeps up; the 2D one otherwise
+const FLASHBACK_3D = true;
 const SOLID = ['COL_', 'DOOR_'];
 
 // The lift is level 1's (lift.glb, see levels/liftCabin.js), its origin the middle of the door
@@ -144,9 +148,15 @@ export class HabitatSession {
         this.controls.instance.enabled = true;
       },
       onShown: (id) => this._readShown(id),
-      onFinished: (id) => this._readFinished(id)
+      onFinished: (id) => this._readFinished(id),
+      // a video log's live head: Voss, copied from the one the player walks around as
+      head: (name) => (name === 'voss' ? LogHead.fromPlayer(this.controls.character) : null)
     });
     this.flashback = new Flashback(root);
+    // the full flashback, in 3D (Kessler and the living Voss); the 2D one above stays as the fallback
+    this.flashback3d = new Flashback3D(root, null);
+    // for poking at from the dev console, e.g. __level2.reader.read('log-8') or __level2.flashback.play()
+    if (import.meta.env.DEV) window.__level2 = this;
     // the inventory (I): Kessler's card and the hatch code go in it
     this.inventory = new Inventory(root);
     this.inventory.statusFor.hatchcode = () => HATCH_CODE.split('').join(' ');
@@ -281,7 +291,14 @@ export class HabitatSession {
     this.frame = 0;
     g.renderer.render = () => {
       // ARIA's face is drawn offscreen for the monitors; half rate is plenty for a slow idle face
+      // the 3D flashback draws itself instead of the level while it plays
+      if (this.flashback3d?.running) {
+        this.flashback3d.render(webgl);
+        return;
+      }
       if (this.aria && (this.frame++ & 1) === 0) this.aria.renderHead(webgl);
+      // a video log's live head, drawn into the reader's screen before the frame covers it
+      this.reader?.liveHead?.render(webgl);
       this.composer.render();
     };
     window.addEventListener('resize', () => {
@@ -1010,6 +1027,11 @@ export class HabitatSession {
   // ---------------------------------------------------------
   _onStory(flag) {
     console.log('Level 2 story:', flag);
+    // on the way to Kessler's room: load her for the flashback ahead of time
+    if (FLASHBACK_3D && (flag === 'cardTaken' || flag === 'labDone')) {
+      this.flashback3d.player = this.controls.character;
+      this.flashback3d.preload();
+    }
     if (flag === 'gardenCleared') {
       this.garden?.end();
       this._powerReturns();
@@ -1097,7 +1119,15 @@ export class HabitatSession {
     const g = this.game;
     g.state = 'FLASHBACK';
     this.garden?.audio.hiss(false);
-    await this.flashback.play();
+    // the 3D flashback if it is ready and the machine keeps up (normal play above ~24 fps), else 2D
+    const slow = this.frameAverage > 1 / 24;
+    if (FLASHBACK_3D && this.flashback3d.ready && !slow) {
+      document.body.classList.add('fb3d');
+      await this.flashback3d.play();
+      document.body.classList.remove('fb3d');
+    } else {
+      await this.flashback.play();
+    }
     g.state = 'PLAYING';
     await sleep(700);
     await this.say('kessler');
@@ -1414,6 +1444,8 @@ export class HabitatSession {
     }
     this.fpsFrames++;
     this.fpsTime += delta;
+    // a running average of the frame time in play (the flashback picks 3D or 2D by it)
+    if (playing && delta < 0.2) this.frameAverage = this.frameAverage ? this.frameAverage * 0.98 + delta * 0.02 : delta;
     if (this.fpsTime >= 0.5) {
       const fps = this.fpsFrames / this.fpsTime;
       this.fpsEl.textContent = Math.round(fps) + ' fps  ' + (1000 / fps).toFixed(1) + ' ms' +

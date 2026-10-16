@@ -375,6 +375,28 @@ export class Readables {
         this.afterEl.appendChild(l.el);
       }
     }
+    // the log's beats, each at the letter of the reveal where its words start
+    const said = e.log.text + (e.lines || []).map((l) => l.text).join('');
+    e.beats = (e.log.beats || []).map((b) => ({ ...b, k: said.indexOf(b.at) })).filter((b) => {
+      if (b.k < 0) console.warn('Readables: beat not found in', e.id, JSON.stringify(b.at));
+      return b.k >= 0;
+    }).sort((a, b) => a.k - b.k);
+    e.beat = 0;
+  }
+
+  // The beats the reveal has reached (at letter `shown`): the head acts them; without a recording a
+  // beat's pause holds the words just before its own, and its rate speeds or slows the rest
+  _beats(e, shown) {
+    while (e.beat < e.beats.length && e.beats[e.beat].k <= shown) {
+      const b = e.beats[e.beat++];
+      e.live.cue(b);
+      if (e.media || this.isMontage || e.afterFrom !== undefined) continue;
+      if (b.rate) e.speed = b.rate;
+      if (b.pause) {
+        e.wait = b.pause;
+        e.pos = Math.min(e.pos, b.k);
+      }
+    }
   }
 
   // How many letters of the reveal a recording has reached at time t. A recording of the words only
@@ -476,13 +498,22 @@ export class Readables {
     }
     if (e.afterFrom !== undefined) {
       shown = e.log.text.length + (e.t - e.afterFrom) * (this.isMontage ? MONTAGE_RATE : READ_RATE);
+      if (e.beats && e.liveOn) this._beats(e, shown);
     } else if (e.media && e.media.duration > 0) {
       shown = this._mediaShown(e, e.media.currentTime, e.media.duration);
       // a recorded live head keeps its mouth shut while someone else speaks
       if (e.live) e.live.rig.muted = this._speakerAt(e, Math.floor(shown)) !== e.log.head;
+      if (e.beats && e.liveOn && e.media !== this.videoEl) this._beats(e, shown);
     } else if (kind === 'video') {
-      // the title card first, then the words over the static (or the live head)
-      shown = Math.max(0, e.t - card) * (this.isMontage ? MONTAGE_RATE : READ_RATE);
+      // the title card first, then the words over the static (or the live head), held and sped
+      // up or slowed by the head's beats
+      e.pos ||= 0;
+      if (e.t > card) {
+        if (e.wait > 0) e.wait -= dt;
+        else e.pos += dt * (this.isMontage ? MONTAGE_RATE : READ_RATE) * (e.speed || 1);
+      }
+      if (e.beats && e.liveOn) this._beats(e, e.pos);
+      shown = e.pos;
     } else {
       shown = e.t * (kind === 'file' ? TYPE_RATE : this.isMontage ? MONTAGE_RATE : READ_RATE);
     }

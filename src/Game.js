@@ -31,12 +31,12 @@ const OBJECTIVES = [
   'Find the torch on the floor',
   'Repair the generator circuit',
   'Turn the relay rings until every marker lines up with the rail',
-  'Use the security keypad beside the lift doors',
+  'Find the override code and use the security keypad',
   'Step into the lift and press the call panel to go down'
 ];
 
 //TEMP access code
-const ELEVATOR_ACCESS_CODE = '123456';
+const ELEVATOR_ACCESS_CODE = '441009';
 
 // Circuit puzzle timing: each failed attempt adds a little time, up to a cap,
 // so it never becomes frustrating
@@ -106,6 +106,24 @@ const ARIA_RESTORE_LINES = [
 ];
 const ARIA_GAME_OVER_TEXT = "Backup... corrupted. I am so sorry, Voss. I really did try.";
 
+// The lift answers to nobody but its manual emergency override — hardwired
+// with no network connection, so ARIA cannot open this one door the way she
+// opens everything else. The code is stencilled on a maintenance tag left on
+// the long desk behind ARIA's wall. Clips go in public/assets/audio/aria/<clip>.mp3;
+// until recorded the lines show as subtitles with the talking face.
+const ARIA_OVERRIDE_LINES = {
+  // Said the first time Voss reads the maintenance tag
+  tag: {
+    clip: 'override-1', expression: 'sly',
+    text: "Ah, you found the override tag! Hardwired. No network, no me. If the station's systems fail, a human types the code in by hand. Which, given the circumstances, is now you."
+  },
+  // Said after a wrong code at the keypad
+  hint: {
+    clip: 'tag-hint', expression: 'bubbly',
+    text: "Wrong code, Voss. The lift only answers to the manual override, and maintenance wrote that down the old way: an orange tag left on the desk in the room behind my wall. Look around. You found the torch — you can find a tag."
+  }
+};
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Level 1's automatic quality steps, best first (see PerfMonitor): effects go before resolution
@@ -166,6 +184,10 @@ export class Game {
     this._idleStage = -1;
     this._idleSeconds = 0;
     this._idleSpoken = false;
+    this._overrideIntroSeen = false;
+    this._keypadFailures = 0;
+    this._tagHintGiven = false;
+    this._tagReadQueued = false; // a tag read is waiting for ARIA to finish
     this.checkpoint = new THREE.Vector3(0, 3, 0); // where Voss is revived
   }
 
@@ -211,7 +233,7 @@ export class Game {
     }
 
     // Load first level
-    this.currentLevel = new Level1(this.scene, this.camera.instance);
+    this.currentLevel = new Level1(this.scene, this.camera.instance, { accessCode: ELEVATOR_ACCESS_CODE });
     // FXAA instead of MSAA, and a resolution that adapts to the machine (F3 shows the frame rate)
     this.renderer.usePost(this.scene, this.camera.instance);
     this.perf = new PerfMonitor({
@@ -539,6 +561,7 @@ export class Game {
     level.onUseKeypad = (keypad) => {
       this.enterKeypadMode(keypad);
     };
+    level.onReadTag = () => this.readMaintenanceTag();
     level.onLockedHint = (text) => this.ui.showToast(text);
     level.onRingTurned = () => this.audio.clunk();
     level.onRelayAligned = () => this.onRelayAligned();
@@ -726,6 +749,14 @@ export class Game {
       console.log('ACCESS DENIED');
 
       this.ui.showToast('ACCESS DENIED');
+
+      // One wrong code and ARIA sends Voss looking for the tag
+      this._keypadFailures++;
+      if (!this._tagHintGiven) {
+        this._tagHintGiven = true;
+        this.currentLevel.tagHintGiven = true;   // from now on the waypoint can confirm the tag once Voss is near it
+        this.ariaSays(ARIA_OVERRIDE_LINES.hint);
+      }
     }
 
     this.exitKeypadMode();
@@ -1136,6 +1167,42 @@ export class Game {
     if (!this._tutorialSeen) this.showTutorial();
   }
 
+  // Voss reads the maintenance tag on the workstation desk: the in-world source
+  // of the override code. First time, ARIA explains why the lift is the one
+  // thing on the station she cannot open for him.
+  async readMaintenanceTag() {
+    if (this.state !== 'PLAYING' || this._tagReadQueued) return;
+    // ARIA finishing a line calls hideDialogue(), which would swallow the
+    // Voss line mid-read and strand the dialogue state — queue the read
+    // behind her instead of dropping it. The loop re-checks `speaking`
+    // because another line can chain on before hers ends (skip, revive...).
+    const aria = this.currentLevel.ariaManager;
+    if (aria?.speaking) {
+      this._tagReadQueued = true;
+      while (aria.speaking) await aria.onceLineFinished();
+      this._tagReadQueued = false;
+      if (this.state !== 'PLAYING') return; // something took over while we waited
+    }
+    this.state = 'DIALOGUE';
+    this.reticle.classList.remove('visible');
+    this.controls.stop();
+
+    const digits = ELEVATOR_ACCESS_CODE.split('').join(' ');
+    await this.ui.showVossLine(
+      `"EMERGENCY OVERRIDE. For use when station systems fail. Code: ${digits}. Do not remove." ...Well. That is convenient.`
+    );
+    this.ui.hideDialogue();
+
+    this.controls.instance.enabled = true;
+    this.reticle.classList.add('visible');
+    this.state = 'PLAYING';
+
+    if (!this._overrideIntroSeen) {
+      this._overrideIntroSeen = true;
+      await this.ariaSays(ARIA_OVERRIDE_LINES.tag);
+    }
+  }
+
   // ---------------------------------------------------------
   // ARIA speaking a line (voice if recorded, otherwise subtitle + talking face)
   // ---------------------------------------------------------
@@ -1228,7 +1295,7 @@ export class Game {
     this.ui.setPrompt(null);
 
     this.currentLevel.dispose();
-    this.currentLevel = new Level1(this.scene, this.camera.instance);
+    this.currentLevel = new Level1(this.scene, this.camera.instance, { accessCode: ELEVATOR_ACCESS_CODE });
     if (this.perf) this.currentLevel.setQuality(this.perf.current);   // keep the quality the machine settled on
     this.controls.level = this.currentLevel;
     this._wireLevel();

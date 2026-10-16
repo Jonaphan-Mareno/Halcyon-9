@@ -74,13 +74,18 @@ const BRICK_HOLD_DISTANCE = 1.4;
 const BRICK_THROW_SPEED = 15;
 const GRAVITY = 9.8;
 const HANDLE_RANGE = 2.5;            // reaching through the broken window to the far-side handle
+const TAG_WAYPOINT_RANGE = 4;        // after the hint, how close Voss gets before the waypoint points at the tag
 
 export class Level1{
 
-  constructor(scene, camera){
+  constructor(scene, camera, { accessCode = '441009' } = {}){
     this.name = 'Control Room';
     this.scene = scene;
     this.camera = camera || null;   // the player's camera (used to place Voss in the cell)
+
+    // The emergency override code stencilled on the maintenance tag. The Game
+    // owns it so the tag and the keypad can never disagree.
+    this.accessCode = accessCode;
 
     this.width = window.innerWidth;
     this.height = window.innerHeight;
@@ -93,6 +98,12 @@ export class Level1{
     this.LightsPuzzle = [];
     //this.keypadInteractables = [];
     this.keypad = null;
+    this._keypadGlow = [];         // { mat, base } of the keypad's glow materials
+    this._keypadScreenMat = null;  // the keypad's display: black until powered
+    this.maintenanceTag = null;    // the override-code tag pinned to the console bank
+    this.tagRead = false;          // Voss has read the tag (waypoint hands back to the keypad)
+    this.tagHintGiven = false;     // set by the Game: ARIA has told Voss to look for the tag
+    this._tagNear = false;         // latched once Voss is near the tag (after the hint)
     this.doorMixer = null;
     this.doorActions = [];
     this.doorOpened = false;
@@ -120,6 +131,7 @@ export class Level1{
     this.onLockedHint = null;      // set by the Game: shows a "do this first" message
     
     this.onUseKeypad = null;
+    this.onReadTag = null;         // set by the Game: Voss reads the tag aloud
 
     // Torch and flashlight
     this.torch = null;             // group lying on the floor until picked up
@@ -488,6 +500,7 @@ export class Level1{
 
       this.scene.add(this.room);
       this.buildKeypad();
+      this.buildMaintenanceTag();
       this.room.updateMatrixWorld(true);
 
       // Re-exports of controlroom.glb have shipped this room with duplicate
@@ -821,6 +834,7 @@ onRingPuzzleComplete() {
     if (this.keypad) {
       this._interactables.push(this.keypad);
     }
+    if (this.maintenanceTag) this._interactables.push(this.maintenanceTag);
     // The lift's call panel only answers once the doors are open, and stops
     // being clickable again as soon as the ride has started
     if (this.elevatorConsoleScreen && this.doorOpened && !this.elevatorRiding) {
@@ -853,6 +867,13 @@ onRingPuzzleComplete() {
       }
     }
 
+    return false;
+  }
+
+  _isTagPart(object) {
+    for (let o = object; o; o = o.parent) {
+      if (o === this.maintenanceTag) return true;
+    }
     return false;
   }
 
@@ -891,10 +912,17 @@ onRingPuzzleComplete() {
     }
     this.ariaManager?.dispose();
     this.sparks.dispose();
-    for (const object of [this.room, this.torch, this.brick, ...this._shards, this.relay?.root, this.ringPuzzle?.hub, this.keypad]) {
+    for (const object of [this.room, this.torch, this.brick, ...this._shards, this.relay?.root, this.ringPuzzle?.hub, this.keypad, this.maintenanceTag]) {
       if (!object) continue;
       object.traverse((o) => o.geometry?.dispose?.());
       this.scene.remove(object);
+    }
+    // The tag's canvas texture lives outside the shader-material registry
+    if (this.maintenanceTag) {
+      this.maintenanceTag.traverse((o) => {
+        o.material?.map?.dispose?.();
+        o.material?.dispose?.();
+      });
     }
     for (const material of this.shaderMaterials) material.dispose();
     this._glassMaterial?.dispose();
@@ -923,6 +951,17 @@ onRingPuzzleComplete() {
     material.uniforms.glowAmount.value = glowAmount;
 
     return material;
+  }
+
+  // The keypad runs on the main supply, so it is dead until the relay rings
+  // are aligned: while off its screen goes black and every glow on the panel
+  // turns off. finalRepair() brings it to life.
+  _setKeypadPowered(on) {
+    const amount = on ? 1 : 0;
+    for (const { mat, base } of this._keypadGlow) {
+      mat.uniforms.glowAmount.value = base * amount;
+    }
+    this._keypadScreenMat?.color.setHex(on ? 0xffffff : 0x0d1417);
   }
 
   setupDoorAnimation(clips = []) {
@@ -1277,11 +1316,119 @@ onRingPuzzleComplete() {
       child.userData.interactionOwner = keypad;
     });
 
+    // The keypad only comes alive with full power (see _setKeypadPowered):
+    // collect its glowing materials, deduplicated because meshes share them,
+    // and start dark.
+    const seen = new Set();
+    keypad.traverse((child) => {
+      const mats = Array.isArray(child.material)
+        ? child.material
+        : child.material
+          ? [child.material]
+          : [];
+      for (const mat of mats) {
+        if (seen.has(mat) || !mat.uniforms?.glowAmount) continue;
+        seen.add(mat);
+        this._keypadGlow.push({ mat, base: mat.uniforms.glowAmount.value });
+      }
+    });
+    this._keypadScreenMat = screenUI.material;
+    this._setKeypadPowered(false);
+
     console.log('ROOM BOUNDS:', this.bounds);
     console.log('KEYPAD POSITION:', keypad.position);
     this.scene.add(keypad);
     this.keypad = keypad;
     this._rebuildInteractables();
+  }
+
+  // The clue for the lift: a maintenance tag left on the long workstation desk
+  // behind ARIA's wall (the room with the three keyboards and their chairs),
+  // stencilled with the emergency override code. The override is hardwired —
+  // deliberately cut off from the station network — which is why ARIA cannot
+  // open this door the way she opens everything else, and why Voss has to type
+  // the code by hand.
+  buildMaintenanceTag() {
+    const tag = new THREE.Group();
+    tag.name = 'MaintenanceTag';
+
+    // Lying flat on the desk (top at y 1.91) in the gap between the
+    // Keyboard.005 and Keyboard.002 workstations (z -4.5..-5.4), face up,
+    // spun slightly crooked — readable from above, where the platform floor
+    // puts Voss's eyes over the desk top
+    tag.position.set(-1.9, 1.92, -4.95);
+    tag.rotation.set(-Math.PI / 2, 0, 0.1);
+
+    tag.userData.interactionType = 'tag';
+    tag.userData.maxInteractionDistance = 2.6;
+
+    const note = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.26, 0.17),
+      new THREE.MeshBasicMaterial({ map: this.createTagTexture() })
+    );
+    note.name = 'MaintenanceTagFace';
+    tag.add(note);
+
+    // Raycast should hit the group via parent traversal
+    tag.traverse((child) => {
+      child.userData.interactionOwner = tag;
+    });
+
+    this.scene.add(tag);
+    this.maintenanceTag = tag;
+  }
+
+  createTagTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 336;
+    const ctx = canvas.getContext('2d');
+
+    // Worn safety-orange plate
+    const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bg.addColorStop(0, '#c05a17');
+    bg.addColorStop(1, '#8f3d0f');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Scratches so it reads as old hardware, not fresh UI
+    for (let i = 0; i < 40; i++) {
+      ctx.strokeStyle = `rgba(0, 0, 0, ${0.04 + Math.random() * 0.08})`;
+      ctx.lineWidth = 1;
+      const x = Math.random() * canvas.width;
+      const y = Math.random() * canvas.height;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + (Math.random() - 0.5) * 60, y + (Math.random() - 0.5) * 24);
+      ctx.stroke();
+    }
+
+    // Header bar
+    ctx.fillStyle = '#160b04';
+    ctx.fillRect(0, 0, canvas.width, 64);
+    ctx.fillStyle = '#ffb257';
+    ctx.font = 'bold 34px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('EMERGENCY OVERRIDE', canvas.width / 2, 44);
+
+    ctx.fillStyle = '#3a1c08';
+    ctx.font = 'bold 17px monospace';
+    ctx.fillText('FOR USE WHEN STATION SYSTEMS FAIL', canvas.width / 2, 96);
+
+    // The code, spaced out so it can be read from a step away
+    ctx.fillStyle = '#160b04';
+    ctx.font = 'bold 64px monospace';
+    ctx.fillText(this.accessCode.split('').join(' '), canvas.width / 2, 190);
+
+    ctx.fillStyle = '#3a1c08';
+    ctx.font = 'bold 17px monospace';
+    ctx.fillText('DO NOT REMOVE — H9 MAINTENANCE', canvas.width / 2, 300);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+
+    return texture;
   }
 
   createKeypadBolt(material) {
@@ -1506,10 +1653,17 @@ onRingPuzzleComplete() {
   // Text for the on-screen prompt while looking at an object, or null for none.
   // The torch and the generator stay locked until the player has talked to ARIA.
   getInteractPrompt(object, distance) {
+    if (this._isTagPart(object)) {
+      return distance <= this.maintenanceTag.userData.maxInteractionDistance
+        ? 'Click or press E to read the maintenance tag'
+        : null;
+    }
     if (this._isKeypadPart(object)) {
       if (distance > this.keypad.userData.maxInteractionDistance) {
         return null;
       }
+
+      if (!this.relaySolved) return 'The keypad is dead. No power';
 
       return 'Click or press E to use keypad';
     }
@@ -1556,6 +1710,9 @@ onRingPuzzleComplete() {
 
   // Range checks only: the "locked" messages are shown from onInteract
   canInteract(object, distance) {
+    if (this._isTagPart(object)) {
+      return distance <= this.maintenanceTag.userData.maxInteractionDistance;
+    }
     if (this._isKeypadPart(object)) {
       return distance <= this.keypad.userData.maxInteractionDistance;
     }
@@ -1587,7 +1744,16 @@ onRingPuzzleComplete() {
   }
 
   onInteract(object, options = {}) {
+    if (this._isTagPart(object)) {
+      this.tagRead = true;
+      this.onReadTag?.();
+      return;
+    }
     if (this._isKeypadPart(object)) {
+      if (!this.relaySolved) {
+        this.onLockedHint?.('The keypad is dead: no power. The relay rings are still out of phase.');
+        return;
+      }
       this.onUseKeypad?.(this.keypad);
       return;
     }
@@ -1647,6 +1813,19 @@ onRingPuzzleComplete() {
     }
   }
 
+  // True once Voss has come within TAG_WAYPOINT_RANGE of the tag after ARIA's
+  // hint AND has it in sight — the waypoint only confirms the tag once Voss is
+  // close enough to be looking at it (the desk is behind ARIA's wall, so mere
+  // proximity would latch the marker through the wall). Latches: the marker
+  // must not flip back to the keypad whenever Voss steps away again.
+  _tagSpotted() {
+    if (!this._tagNear && this.camera && this.maintenanceTag) {
+      const d = this.camera.position.distanceTo(this.maintenanceTag.position);
+      this._tagNear = d < TAG_WAYPOINT_RANGE && this._clearLineTo(this.maintenanceTag.position, d);
+    }
+    return this._tagNear;
+  }
+
   // What the on-screen waypoint should point at right now (or null)
   getWaypoint() {
     if (this.inCell) return this._cellWaypoint();
@@ -1668,8 +1847,17 @@ onRingPuzzleComplete() {
       w.position.copy(this._generatorCentre);
       w.label = 'Relay rings';
     } else if (!this.doorOpened && this.keypad) {
-      w.position.copy(this.keypad.position);
-      w.label = 'Keypad';
+      // The keypad first, so the code gets its (probably wrong) try before
+      // ARIA says anything. After her hint, once Voss is near enough to spot
+      // the tag, the marker confirms it — latched — until the tag has been
+      // read, then it is back to the keypad for the real code
+      if (!this.tagRead && this.maintenanceTag && this.tagHintGiven && this._tagSpotted()) {
+        w.position.copy(this.maintenanceTag.position);
+        w.label = 'Tag';
+      } else {
+        w.position.copy(this.keypad.position);
+        w.label = 'Keypad';
+      }
     } else if (this.doorOpened && !this.elevatorRiding) {
       w.position.copy(this._consoleCentre);
       w.label = 'Lift';
@@ -2378,12 +2566,13 @@ onRingPuzzleComplete() {
   }
 
   // Stage two done (the rings): full power. The lights surge back on one after
-  // another, floor by floor, instead of all at once.
+  // another, floor by floor, and the keypad comes alive.
   finalRepair() {
     this.relaySolved = true;
     this.powerTarget = 1;
     this._sequenceStart = this.time;
     this._surgeSparks();
+    this._setKeypadPowered(true);
     this.onRelayAligned?.();
   }
 

@@ -149,6 +149,8 @@ export class AriaManager {
 
     // Current spoken line (video clip + voice audio), if any
     this._endSpeech = null;
+    // Resolved when the current line ends (see onceLineFinished)
+    this._lineEndWaiters = [];
   }
 
   activate() {
@@ -261,6 +263,14 @@ export class AriaManager {
     if (this._endSpeech) this._endSpeech();
   }
 
+  // Resolves the next time a line ends (immediately if none is playing).
+  // Callers that must not run while she talks wait on this, then re-check
+  // `speaking` — another line can chain on before the wait resolves.
+  onceLineFinished() {
+    if (!this._endSpeech) return Promise.resolve();
+    return new Promise((resolve) => this._lineEndWaiters.push(resolve));
+  }
+
   // Play one of ARIA's lines: the face clip on the monitors and her voice
   // audio together. Resolves when the voice finishes, then goes back to idle.
   // If a clip has no video or audio yet (or fails to load) the line still
@@ -291,6 +301,15 @@ export class AriaManager {
         if (this.useHead) this.head.stopSpeaking();
         this.playIdle();
         resolve();
+        // Waiters resolve after speak()'s own promise, on purpose: the caller of
+        // speak() (Game.ariaSays) hides the dialogue box in its continuation,
+        // and that has to happen BEFORE whatever was queued behind her line —
+        // microtasks run in resolution order, so resolving the waiters first
+        // would let a Voss line shown by a waiter be swallowed by hideDialogue()
+        // and its promise stranded with the controls frozen.
+        const waiters = this._lineEndWaiters;
+        this._lineEndWaiters = [];
+        for (const waiter of waiters) waiter();
       };
       this._endSpeech = finish;
 
@@ -418,7 +437,8 @@ export class AriaManager {
 
   // Free GPU/video resources when the level is torn down
   dispose() {
-    if (this._endSpeech) this._endSpeech();
+    if (this._endSpeech) this._endSpeech(); // resolves any line-end waiters
+    this._lineEndWaiters = [];
     this.head.dispose();
     this.video.pause();
     this.video.removeAttribute('src');

@@ -23,6 +23,7 @@ import { pauseClock } from './core/PauseClock.js';
 import { MoodLight } from './graphics/MoodLight.js';
 import { CircuitPuzzle } from './puzzles/CircuitPuzzle.js';
 import { PlayerStats } from './player/PlayerStats.js';
+import { vossVoice } from './audio/VossVoice.js';
 
 // The goal shown top-left for each stage of the opening
 const OBJECTIVES = [
@@ -445,6 +446,7 @@ export class Game {
     this.reticle.classList.remove('visible');
     if (this.level2Mode) this.level2?.onPause?.();
     else this.currentLevel?.ariaManager?.pause?.();
+    vossVoice.pause();
     this.music?.setPaused(true);
     this.pauseMenu.open();
   }
@@ -459,6 +461,7 @@ export class Game {
     c?.lock?.();
     if (this.level2Mode) this.level2?.onResume?.();
     else this.currentLevel?.ariaManager?.resume?.();
+    vossVoice.resume();
     this.music?.setPaused(false);
     this.state = 'PLAYING';
   }
@@ -490,6 +493,7 @@ export class Game {
     }
     this.currentLevel?.ariaManager?.applyVolume?.();
     this.level2?.aria?.applyVolume?.();
+    vossVoice.applyVolume();
     for (const c of [this.controls, this.level2?.controls]) if (c?.instance) c.instance.pointerSpeed = s.get('sensitivity');
     document.body.classList.toggle('hide-fps', !s.get('fps'));
     this.perf?.setMode(s.get('quality'));

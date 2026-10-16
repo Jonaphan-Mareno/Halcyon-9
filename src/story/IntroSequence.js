@@ -6,9 +6,12 @@
 // edge ("permanent vacation", "I'll be watching"). Keep the wording here in
 // sync with the script document and the recorded clips.
 //
-// Recorded clips go in public/assets/audio/aria/intro-line-N.mp3 (voice).
+// Recorded clips go in public/assets/audio/aria/intro-line-N.mp3 (ARIA) and
+// public/assets/audio/voss/intro-line-N.mp3 (Voss).
 // Until a clip exists, that line shows as a timed subtitle with a talking
 // face instead.
+
+import { vossSays } from '../audio/VossVoice.js';
 
 export const INTRO_LINES = [
   {
@@ -62,7 +65,7 @@ export class IntroSequence {
     this.active = true;
 
     for (const line of INTRO_LINES) {
-      await this.ui.showVossLine(line.voss);
+      await vossSays(this.ui, line.voss, line.aria.clip, { timed: false });
 
       this.ui.showAriaLine(line.aria.text);
       const fallback = Math.max(MIN_FALLBACK_SECONDS, line.aria.text.length * SECONDS_PER_CHARACTER);

@@ -16,6 +16,7 @@ import { Interact } from '../level2/Interact.js';
 import { projectWaypoint } from '../ui/waypoint.js';
 import { CUES } from '../level2/Level2Lines.js';
 import { sleep } from '../core/PauseClock.js';
+import { vossSays, vossVoice } from '../audio/VossVoice.js';
 import { deckMaterial, deckUniforms, withMurk } from './DeckMaterials.js';
 import { Water } from './Water.js';
 import { DrownedCrew } from './DrownedCrew.js';
@@ -455,13 +456,13 @@ export class DeckSession {
     const ui = this.game.ui;
     const token = ++this._talkToken;
     if (this.aria.speaking) this.aria.skip();
+    vossVoice.stop();
     for (const id of ids) {
       if (token !== this._talkToken || this.disposed) return false;
       const line = LINES[id];
       if (!line) continue;
       if (line.who === 'voss') {
-        const shown = ui.showVossLine(line.text, { timed: true });
-        await Promise.race([shown, sleep(Math.max(2200, line.text.length * 60))]);
+        await vossSays(ui, line.text, line.clip);
         continue;
       }
       const cue = CUES[line.cue] || CUES.guarded;

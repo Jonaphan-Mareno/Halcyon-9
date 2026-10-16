@@ -5,7 +5,7 @@
 // Voss's lines are on-screen text (ids starting "v-").
 
 const aria = (cue, text, extra = {}) => ({ who: 'aria', cue, text, ...extra });
-const voss = (text) => ({ who: 'voss', text });
+const voss = (text, clip) => ({ who: 'voss', text, clip });
 
 export const LINES = {
   // 3.2 The flooded hall: on landing

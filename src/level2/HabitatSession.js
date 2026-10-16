@@ -34,6 +34,7 @@ import { Readables } from './Readables.js';
 import { Flashback } from './Flashback.js';
 import { Inventory } from '../ui/Inventory.js';
 import { sleep, pauseClock } from '../core/PauseClock.js';
+import { vossSays, vossVoice } from '../audio/VossVoice.js';
 import { buildRoomProps } from './RoomProps.js';
 import { disposeScene } from '../core/disposeScene.js';
 import '../ui/level2.css';
@@ -973,6 +974,7 @@ export class HabitatSession {
     const ui = this.game.ui;
     const token = ++this._talkToken;
     if (this.aria.speaking) this.aria.skip();
+    vossVoice.stop();
     for (const id of ids) {
       if (token !== this._talkToken) return false;
       const line = LINES[id];
@@ -981,8 +983,7 @@ export class HabitatSession {
         continue;
       }
       if (line.who === 'voss') {
-        const shown = ui.showVossLine(line.text, { timed: true });
-        await Promise.race([shown, sleep(Math.max(2200, line.text.length * 60))]);
+        await vossSays(ui, line.text, line.clip);
         continue;
       }
       // a long silence before she answers: the music drops out and the lights stutter

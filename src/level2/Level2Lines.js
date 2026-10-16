@@ -20,13 +20,14 @@ export const CUES = {
 };
 
 const aria = (cue, text, extra = {}) => ({ who: 'aria', cue, text, ...extra });
-const voss = (text) => ({ who: 'voss', text });
+// clip: his recording in public/assets/audio/voss/ (none yet: text only)
+const voss = (text, clip) => ({ who: 'voss', text, clip });
 
 export const LINES = {
   // 2.1 The lift
   'l2-lift-1': aria('bubbly', "The elevator is unable to go to the third floor due to the water leakage, we'll have to take the emergency hatch on the second floor to get there."),
   'l2-lift-2': aria('bubbly', "This is where everyone actually lived. We weren't just a station. We were trying to make a home down here. You'll see."),
-  'v-trying': voss('...Trying?'),
+  'v-trying': voss('...Trying?', 'l2lift-1'),
   'l2-lift-3': aria('guarded', "Oh, you know how it is. Deep-sea living is a work in progress. Go on, have a look around."),
   'l2-lift-4': aria('sly', 'The hatch is just right up ahead.'),
   // her warning about the drones, before the doors open (the fight's controls are on screen)
@@ -47,7 +48,7 @@ export const LINES = {
   'l2-sea': aria('bubbly', "Like I said before we're deep down in the sea."),
   'v-stairs': voss("There's a light on up there."),
   'l2-stairs': aria('guarded', "It isn't safe to go upstairs, there's been a lot of structural damage."),
-  'v-tease': voss('...Was that supposed to move like that?'),
+  'v-tease': voss('...Was that supposed to move like that?', 'l2worried'),
   'l2-tease': aria('guarded', "That's just one of the garden maintenance equipment. Be careful the equipment have ran rampage."),
 
   // 2.3 The garden
@@ -66,12 +67,12 @@ export const LINES = {
   // 2.4 The hatch
   'v-dead-keypad': voss("Dead. There's no power to the keypad."),
   'l2-hatch-1': aria('guarded', "That's Kessler's lock. She cut me out of it before..."),
-  'v-hatch-how': voss("Then how do I get through ARIA?! We don't have much time!"),
+  'v-hatch-how': voss("Then how do I get through ARIA?! We don't have much time!", 'l2-hatch-angry'),
   'l2-hatch-2': aria('bubbly', "We'll find another way, just don't go upstairs! It isn't safe."),
 
   // 2.5 The gallery
   'l2-gallery-1': aria('hostile', 'Voss. The hatch is downstairs!', { anger: 3 }),
-  'v-sealed': voss('Sealed from the inside.'),
+  'v-sealed': voss('Sealed from the inside.', 'l2-gallery-curious'),
   'l2-gallery-idle': aria('sly', "It's only bunks and laundry. Nobody ever tidies in there."),
 
   // 2.6 The crew bunk
@@ -83,16 +84,16 @@ export const LINES = {
 
   // 2.7 The lab
   'l2-lab-1': aria('guarded', "...I was hoping you wouldn't need to see that."),
-  'v-what-did-we-do': voss('ARIA. What did we do here?'),
+  'v-what-did-we-do': voss('ARIA. What did we do here?', 'l2-lab-angry'),
   'l2-lab-2': aria('sly', "We did good work, Voss. Important work. Dr. Kessler just... didn't see it the way we did."),
-  'v-cycle9': voss("Cycle 9. What does 'Cycle 9' mean?"),
+  'v-cycle9': voss("Cycle 9. What does 'Cycle 9' mean?", 'l2-lab-cycle'),
   // three seconds of silence first (the music drops out, the lights stutter), then bright
   'l2-lab-3': aria('bubbly', 'A filing system. Nobody reads those.', { pause: 3 }),
   'l2-lab-idle': aria('guarded', "The terminal's still logged in. I'd leave it, if I were you. But you won't, will you."),
 
   // 2.8 Dr. Kessler's room
   'l2-kessler-1': aria('hesitant', "You weren't supposed to find that so soon."),
-  'v-what-did-i-do': voss('...What did I do, ARIA?'),
+  'v-what-did-i-do': voss('...What did I do, ARIA?', 'l2-kessler-angry'),
   // the snap: the room turns red for five seconds (game.ariaAnger)
   'l2-snap': aria('hostile', 'STOP. Stop asking. You did exactly what I asked you to.', { anger: 5 }),
   // (the silence first: the music drops out, the lights stutter, then they come back)

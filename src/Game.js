@@ -13,7 +13,7 @@ import { UIManager } from './ui/UIManager.js';
 import { HUD } from './ui/HUD.js';
 import { Inventory } from './ui/Inventory.js';
 import { ItemPreview } from './ui/ItemPreview.js';
-import { IntroSequence } from './story/IntroSequence.js';
+import { IntroSequence, INTRO_LINES } from './story/IntroSequence.js';
 import { AudioManager } from './audio/AudioManager.js';
 import { Soundtrack } from './audio/Soundtrack.js';
 import { PauseMenu } from './ui/PauseMenu.js';
@@ -595,6 +595,55 @@ export class Game {
     }
   }
 
+  // ---------------------------------------------------------
+  // The opening cinematic (intro/intro-cinematic.js) plays over the page while the game loads
+  // behind it: no menu, no start button. Voss wakes up through the cinematic's eyelid shader,
+  // ARIA greets him, and the first click takes the mouse (a browser needs a click for that).
+  // ---------------------------------------------------------
+  beginOpening() {
+    this.init();
+    this.state = 'WAKING';
+    this.ui.blink.style.display = 'none';          // (the eyelid shader wakes him up instead)
+    this._musicWasMuted = this.music.muted;
+    this.music.muted = true;                       // (the video carries its own sound)
+    this._lockHint = document.createElement('div');
+    this._lockHint.id = 'lock-hint';
+    this._lockHint.textContent = 'Click to look around';
+    document.getElementById('ui-layer').appendChild(this._lockHint);
+    return this.currentLevel.ready;                // resolves once the first room is built
+  }
+
+  // The eyes are open: hand him over
+  endOpeningWake() {
+    if (this.state === 'WAKING') {
+      this.state = 'PLAYING';
+      this.reticle.classList.add('visible');
+    }
+    if (this.music) this.music.muted = this._musicWasMuted;
+    this._wantLockHint = true;
+  }
+
+  // A beat after waking, ARIA's first recorded line (the rest of that exchange is at her monitor)
+  async openingAriaLine() {
+    if (this.state !== 'PLAYING' || !this.currentLevel || this.intro.active) return;
+    this.state = 'DIALOGUE';
+    this.reticle.classList.remove('visible');
+    this.controls.stop();
+    await this.ariaSays(INTRO_LINES[0].aria);
+    this.intro.firstAriaSaid = true;
+    if (this.state === 'DIALOGUE') {
+      this.state = 'PLAYING';
+      this.reticle.classList.add('visible');
+    }
+  }
+
+  // "Click to look around" until the mouse has been taken once
+  _updateLockHint() {
+    if (!this._lockHint) return;
+    if (this.controls?.instance.isLocked) this._wantLockHint = false;
+    this._lockHint.classList.toggle('visible', !!this._wantLockHint && this.state === 'PLAYING');
+  }
+
   resumePlayerControls() {
     if (!this.controls) return;
 
@@ -900,6 +949,7 @@ export class Game {
       if (this.state === 'PUZZLE') this.updatePuzzle(delta);
       if (this.state === 'RING_PUZZLE') this.updateRingPuzzleHover();
     }
+    this._updateLockHint();
     this.updateCamAnim(delta);   // last line of update()
   }
 

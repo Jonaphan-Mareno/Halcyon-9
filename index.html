@@ -5,6 +5,14 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>halcyon-9</title>
+    <!-- the opening cinematic plays first: no start screen flashes before it (?level= and ?nointro keep it) -->
+    <style>html.cine #welcome-screen { display: none; } html.cine, html.cine body { background: #000; }</style>
+    <script>
+      (function () {
+        var p = new URLSearchParams(window.location.search);
+        if (!p.has('level') && !p.has('nointro')) document.documentElement.classList.add('cine');
+      })();
+    </script>
   </head>
   <body>
     <div id="ui-layer">

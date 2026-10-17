@@ -57,6 +57,7 @@ export class IntroSequence {
     this.ui = ui;
     this.aria = aria;
     this.active = false;
+    this.firstAriaSaid = false;      // true once ARIA has greeted him as he woke (the opening cinematic)
   }
 
   // Runs the whole conversation; resolves when ARIA's last line has finished
@@ -64,8 +65,11 @@ export class IntroSequence {
     if (this.active) return;
     this.active = true;
 
-    for (const line of INTRO_LINES) {
+    for (const [i, line] of INTRO_LINES.entries()) {
       await vossSays(this.ui, line.voss, line.aria.clip, { timed: false });
+
+      // (her first line was already said when he woke up, see Game.openingAriaLine)
+      if (i === 0 && this.firstAriaSaid) continue;
 
       this.ui.showAriaLine(line.aria.text);
       const fallback = Math.max(MIN_FALLBACK_SECONDS, line.aria.text.length * SECONDS_PER_CHARACTER);

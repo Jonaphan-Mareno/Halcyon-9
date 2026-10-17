@@ -1060,3 +1060,20 @@ body, html {
     margin-top: 10px;
   }
 }
+/* "Click to look around": shown after the opening cinematic until the mouse has been taken */
+#lock-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 14%;
+  transform: translateX(-50%);
+  padding: 0.5rem 1.2rem;
+  background: rgba(0, 15, 30, 0.7);
+  border: 1px solid var(--primary-color);
+  color: var(--text-color);
+  letter-spacing: 0.12rem;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  z-index: 12;
+}
+#lock-hint.visible { opacity: 0.95; }

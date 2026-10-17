@@ -245,7 +245,7 @@ export class Level1{
     this._envStrength = { value: ENV_DEAD };
     this._textures = createHubTextures();
 
-    this.buildRoom();
+    this.ready = this.buildRoom();   // (resolves once the room, the cell and the lights are in)
     this.addLighting();
     this.scene.onBeforeRender = (renderer, scene, camera) => this._lightsToView(camera);
 

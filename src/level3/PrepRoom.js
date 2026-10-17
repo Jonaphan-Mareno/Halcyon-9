@@ -289,6 +289,8 @@ export class PrepRoom {
     if (this.breathing && playing) this.oxygen = Math.max(0, this.oxygen - dt);
     if (this.suited) this._drawOxygen();
     this._visor.style.display = playing ? '' : 'none';
+    // (out in the sea, more than a few metres from the hatch, the inside cannot be seen at all)
+    if (this.s.deck) this.s.deck.visible = !(this.zone === 'sea' && p.x < -38);
     // out on the platform for the first time
     if (!this._outside && p.x < PLATFORM_X) {
       this._outside = true;

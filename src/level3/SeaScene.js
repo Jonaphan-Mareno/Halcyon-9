@@ -26,7 +26,7 @@ import { SeaLife } from './SeaLife.js';
 
 export const SEA = {
   FOG: 0x0a2530,              // the water's colour in the distance (the skybox's horizon)
-  FOG_DENSITY: 0.022,         // how far you can see: the canyon floor (30 m down) is just visible
+  FOG_DENSITY: 0.019,         // how far you can see: the canyon floor (30 m down), the station's whole height
   SKY_TOP: 0x2a6476,          // straight up: the faint glow of the surface, far above
   SKY_DEEP: 0x010407,         // straight down: the abyss
   HEMI: [0x3a7284, 0x030608, 0.75],   // soft light from above, none from below
@@ -39,7 +39,12 @@ export const SEA = {
 };
 
 const MODEL = './assets/models/l3-outside.glb';
-const GLOW_SCALE = { l3_lamp: 0.22, l3_alarm: 0.6, l3_window: 0.45, l3_porthole: 1.0, l3_lava: 1.0, l3_plume: 0.6 };
+const GLOW_SCALE = {
+  l3_lamp: 0.22, l3_alarm: 0.6, l3_window: 0.45, l3_porthole: 1.0, l3_lava: 1.0, l3_plume: 0.6,
+  // the atrium's lounge: lit from inside, so it glows a little through the murk
+  l3_atrium_floor: 1.0, l3_atrium_wall: 1.0, l3_planter: 1.0, l3_trunk: 1.0, l3_leaves: 1.0, l3_sofa: 1.0,
+  l3_ceiling_light: 0.45, l3_sill_light: 0.4, l3_bridge_window: 0.55
+};
 
 export class SeaScene {
   // session: the DeckSession (game, physics, hemi)
@@ -73,6 +78,11 @@ export class SeaScene {
       const swap = (m) => {
         if (!cache.has(m.name)) {
           let out = deckMaterial(m.name, { sea: true });
+          if (!out && m.name === 'l3_atrium_glass') {
+            // the atrium's windows: barely tinted glass, brighter at a glancing angle
+            out = new THREE.MeshStandardMaterial({ color: 0x6f9a96, roughness: 0.05, metalness: 0, transparent: true,
+              opacity: 0.12, depthWrite: false, envMapIntensity: 0.6 });
+          }
           if (!out) {
             out = m;
             if (m.emissive && GLOW_SCALE[m.name] !== undefined) m.emissiveIntensity *= GLOW_SCALE[m.name];
@@ -82,6 +92,7 @@ export class SeaScene {
         return cache.get(m.name);
       };
       o.material = Array.isArray(o.material) ? o.material.map(swap) : swap(o.material);
+      if (o.name.startsWith('L3_AtriumGlass')) o.renderOrder = 3;
     });
     this.group.add(model);
     this.model = model;
@@ -106,6 +117,7 @@ export class SeaScene {
     this._shafts();
     // fish, jellyfish, vent bubbles, and something big far out (SeaLife.js)
     this.life = new SeaLife(this.group, this.vents);
+    await this.life.ready;
     this.scene.add(this.group);
   }
 
@@ -185,7 +197,8 @@ export class SeaScene {
               {
                 // the seabed under this point (the Blender script's floor_z, in its own axes)
                 float bx = transformed.x, by = -transformed.z;
-                float floorY = -30.0 - 0.07 * max(0.0, -40.0 - bx) + 2.2 * sin(bx * 0.05) * cos(by * 0.07) - 0.3;
+                float trench = 16.0 * exp(-((bx + 2.0) * (bx + 2.0) + (by - 22.5) * (by - 22.5)) / 968.0);
+                float floorY = -30.0 - 0.07 * max(0.0, -40.0 - bx) + 2.2 * sin(bx * 0.05) * cos(by * 0.07) - trench - 0.3;
                 float h = clamp((transformed.y - floorY) / 2.4, 0.0, 1.4);
                 float w = uTime * 1.1 + bx * 1.3 + transformed.z * 0.7;
                 transformed.x += h * h * 0.22 * sin(w);

@@ -174,6 +174,13 @@ export function deckMaterial(name, { murk = false, sea = false } = {}) {
         }`)
       .replace('#include <opaque_fragment>', `
         if (uMurkOn > 0.5) outgoingLight = deckMurk(outgoingLight, vDeckPos, wn);
+        // out in the sea: faint light scattered down from far above catches the edges and the tops
+        // of things, so their shapes read in the murk
+        if (uSea > 0.5) {
+          vec3 vd = normalize(cameraPosition - vDeckPos);
+          float rim = pow(1.0 - abs(dot(wn, vd)), 3.0);
+          outgoingLight += vec3(0.07, 0.17, 0.2) * (rim * 0.8 + 0.25 * clamp(wn.y, 0.0, 1.0)) * (1.0 - uSediment * 0.5);
+        }
         #include <opaque_fragment>`);
   };
   mat.customProgramCacheKey = () => 'deck-tri' + (spec.cutout ? '-cut' : '');

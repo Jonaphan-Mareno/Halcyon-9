@@ -20,6 +20,12 @@ import { SeaLife } from './SeaLife.js';
 //     where the seabed is, from the same shape the Blender script gives it)
 //   - smoke rising from each vent and a glow at its foot (billboards, one draw call each), and a
 //     few faint shafts of light from above
+//   - the atrium seen through the saucer's windows: not models but INTERIOR MAPPING. A 360-degree
+//     photo of the real Level 2 atrium (captured in the game, assets/textures/l3/atrium_pano.jpg)
+//     and, for every pixel of the glass, the line of sight traced into an invisible round room the
+//     atrium's shape (scaled to the saucer): where it meets the far wall, the floor or the ceiling
+//     is looked up in the photo as the photo's camera saw it. So the room has depth and shifts as
+//     you move, for the cost of one texture read
 //
 // The lights out here are four of the deck's own, moved when Voss goes out (PrepRoom does that),
 // so the number of lights, and so the shaders, never change.
@@ -39,6 +45,16 @@ export const SEA = {
 };
 
 const MODEL = './assets/models/l3-outside.glb';
+
+// The atrium behind the saucer's windows (interior mapping, see _atriumGlass): the photo, the real
+// atrium's size (Level 2: 17.5 m across to its wall, its ceiling 12.5 m up), where the photo was taken
+// from in it (x, height, z: 8 m south of the middle, 2 m up), and the saucer's own axis and floor
+const ATRIUM = {
+  PANO: './assets/textures/l3/atrium_pano.jpg',
+  L2_R: 17.5, L2_H: 12.5, EYE: [0, 2.0, 8.0],
+  AXIS: [-2.0, -22.5], FLOOR: 15.6, ROOM_R: 43.8,
+  BRIGHT: 1.35                // (the photo is already tone-mapped once; this keeps it from going dull)
+};
 const GLOW_SCALE = {
   l3_lamp: 0.22, l3_alarm: 0.6, l3_window: 0.45, l3_porthole: 1.0, l3_lava: 1.0, l3_plume: 0.6,
   // the atrium's lounge: lit from inside, so it glows a little through the murk
@@ -78,11 +94,7 @@ export class SeaScene {
       const swap = (m) => {
         if (!cache.has(m.name)) {
           let out = deckMaterial(m.name, { sea: true });
-          if (!out && m.name === 'l3_atrium_glass') {
-            // the atrium's windows: barely tinted glass, brighter at a glancing angle
-            out = new THREE.MeshStandardMaterial({ color: 0x6f9a96, roughness: 0.05, metalness: 0, transparent: true,
-              opacity: 0.12, depthWrite: false, envMapIntensity: 0.6 });
-          }
+          if (!out && m.name === 'l3_atrium_glass') out = this._atriumGlass();
           if (!out) {
             out = m;
             if (m.emissive && GLOW_SCALE[m.name] !== undefined) m.emissiveIntensity *= GLOW_SCALE[m.name];
@@ -169,10 +181,10 @@ export class SeaScene {
     if (this.swayUniforms) this.swayUniforms.uTime.value = this.time;
     this.life?.update(dt, player, this.scene.fog);
     const fog = this.scene.fog;
-    for (const m of [this.snowMat, this.smokeMat, this.glowMat, this.shaftMat]) {
+    for (const m of [this.snowMat, this.smokeMat, this.glowMat, this.shaftMat, this.glassMat]) {
       const u = m?.userData.uniforms;
       if (!u) continue;
-      u.uTime.value = this.time;
+      if (u.uTime) u.uTime.value = this.time;
       if (u.uCam) u.uCam.value.copy(camera.position);
       if (u.uFogColor) u.uFogColor.value.copy(fog.color);
       if (u.uFogDensity) u.uFogDensity.value = fog.density;
@@ -208,6 +220,76 @@ export class SeaScene {
         m.customProgramCacheKey = () => 'sea-sway-' + m.name;
       }
     });
+  }
+
+  // ---------------------------------------------------------------- the atrium behind the glass
+  _atriumGlass() {
+    const pano = new THREE.TextureLoader().load(ATRIUM.PANO);
+    pano.colorSpace = THREE.SRGBColorSpace;
+    pano.generateMipmaps = false;               // (mipmaps would show a seam where the photo wraps round)
+    pano.minFilter = THREE.LinearFilter;
+    const k = ATRIUM.ROOM_R / ATRIUM.L2_R;      // the atrium scaled up to the saucer
+    const C = new THREE.Vector3(ATRIUM.AXIS[0], ATRIUM.FLOOR, ATRIUM.AXIS[1]);
+    // the photo's camera, in the room: the photo was taken 8 m south of the atrium's middle, 2 m up,
+    // looking north at the tree island; here it is turned to look east, in from the platform's side
+    const eye = C.clone().add(new THREE.Vector3(-ATRIUM.EYE[2] * k, ATRIUM.EYE[1] * k, ATRIUM.EYE[0] * k));
+    const uniforms = {
+      tPano: { value: pano }, uCentre: { value: C }, uRadius: { value: ATRIUM.ROOM_R },
+      uFloor: { value: C.y }, uCeil: { value: C.y + ATRIUM.L2_H * k }, uEye: { value: eye },
+      uBright: { value: ATRIUM.BRIGHT }, uFogColor: { value: new THREE.Color() }, uFogDensity: { value: 0.02 }
+    };
+    const mat = new THREE.ShaderMaterial({
+      uniforms,
+      vertexShader: /* glsl */`
+        varying vec3 vWorld;
+        varying vec3 vNormal;
+        void main() {
+          vec4 w = modelMatrix * vec4(position, 1.0);
+          vWorld = w.xyz;
+          vNormal = normalize(mat3(modelMatrix) * normal);
+          gl_Position = projectionMatrix * viewMatrix * w;
+        }`,
+      fragmentShader: /* glsl */`
+        uniform sampler2D tPano;
+        uniform vec3 uCentre;
+        uniform float uRadius;
+        uniform float uFloor;
+        uniform float uCeil;
+        uniform vec3 uEye;
+        uniform float uBright;
+        uniform vec3 uFogColor;
+        uniform float uFogDensity;
+        varying vec3 vWorld;
+        varying vec3 vNormal;
+        void main() {
+          vec3 v = normalize(vWorld - cameraPosition);
+          // into the room: the far side of its round wall, or its floor or ceiling, whichever is first
+          vec2 o = vWorld.xz - uCentre.xz;
+          vec2 d = v.xz;
+          float a = max(dot(d, d), 1e-5);
+          float b = 2.0 * dot(o, d);
+          float c = dot(o, o) - uRadius * uRadius;
+          float t = (-b + sqrt(max(b * b - 4.0 * a * c, 0.0))) / (2.0 * a);
+          if (v.y < -1e-4) t = min(t, (uFloor - vWorld.y) / v.y);
+          if (v.y > 1e-4) t = min(t, (uCeil - vWorld.y) / v.y);
+          vec3 hit = vWorld + v * max(t, 0.0);
+          // that point as the photo's camera saw it (the photo's axes: turned a quarter round)
+          vec3 dir = normalize(hit - uEye);
+          dir = vec3(dir.z, dir.y, -dir.x);
+          vec2 uv = vec2(atan(dir.x, -dir.z) / 6.2831853 + 0.5, asin(clamp(dir.y, -1.0, 1.0)) / 3.14159265 + 0.5);
+          vec3 room = texture2D(tPano, uv).rgb * uBright;
+          // the glass: a faint reflection of the sea at a glancing angle, and a little grime low down
+          float glance = pow(1.0 - abs(dot(normalize(vNormal), -v)), 4.0);
+          vec3 col = mix(room, uFogColor * 1.6 + vec3(0.02, 0.05, 0.06), glance * 0.6);
+          col *= mix(0.75, 1.0, smoothstep(uFloor, uFloor + 2.5, vWorld.y));
+          float depth = distance(vWorld, cameraPosition);
+          float fog = 1.0 - exp(-pow(uFogDensity * depth, 2.0));
+          gl_FragColor = vec4(mix(col, uFogColor, fog), 1.0);
+        }`
+    });
+    mat.userData.uniforms = uniforms;
+    this.glassMat = mat;
+    return mat;
   }
 
   // ---------------------------------------------------------------- marine snow

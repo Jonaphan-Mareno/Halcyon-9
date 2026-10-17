@@ -191,11 +191,10 @@ def floor_z(x, y):
 #   - the leg: a lattice tower round a lift shaft down to the seabed, pipes coiled round its foot
 # A hole is left in the deck level's hull where the collar goes through.
 DOOR_Z0, DOOR_Z1 = 0.8, 4.9
-SR = 40.0                     # the saucer's radius
-WIN0, WIN1 = 13.5, 19.4       # its window band
-CORE = 28.5                   # the lounge's inner wall (the lounge is the ring between it and the windows)
+SR = 44.0                     # the saucer's radius (at its windows)
+WIN0, WIN1 = 15.6, 32.6       # its window band: tall, as in the cinematic
 MR = 15.5                     # the machinery level's radius
-TOP = 23.6                    # the saucer's flat top (the bridge stands on it)
+TOP = 39.4                    # the saucer's top (the bridge stands on it)
 
 def door_hole(c):
     return c.x < CX - 20 and abs(c.y - CY) < 2.9 and DOOR_Z0 < c.z < DOOR_Z1
@@ -235,13 +234,13 @@ def ring_sheet(name, mat, r0, r1, z, up, seg=96):
 # the hull from the machinery level's top, up the deck level, out under the saucer to its rim
 LEG_BOTTOM = floor_z(CX, CY) - 6
 profile = [(MR, -12.6), (22.0, -12.0), (25.5, -11.2), (R, -10.5), (R, -6.0), (R, -1.5), (R, DOOR_Z0), (R, DOOR_Z1),
-           (R, 9.2), (30.0, 10.0), (35.5, 11.0), (39.2, 11.9), (SR, 12.5), (SR, WIN0)]
+           (R, 9.2), (30.0, 10.2), (38.0, 11.6), (42.6, 12.8), (SR + 0.6, 13.6), (SR + 0.6, WIN0)]   # (the dark floor band under the windows)
 bm = bmesh.new()
 revolve(bm, profile, CX, CY, 120, skip=door_hole, angle0=math.pi)   # (a seam of vertices straight out from the hatch)
 smooth_shade(obj_from_bm('L3_HullShell', bm, 'l3_hull'))
-# the saucer's roof: a rounded rim bulging out over the windows, then a flatter top
-ROOF = [(SR - 0.3, WIN1), (SR + 0.8, WIN1 + 0.5), (SR + 1.3, WIN1 + 1.4), (SR + 1.0, WIN1 + 2.3), (SR - 0.2, WIN1 + 3.0),
-        (36.0, WIN1 + 3.5), (30.0, TOP - 0.1), (22.0, TOP), (0.6, TOP)]
+# the saucer's roof: a thick rounded lid bulging out over the windows, then a gentle dome
+ROOF = [(SR + 0.2, WIN1), (SR + 1.4, WIN1 + 0.6), (SR + 2.2, WIN1 + 1.8), (SR + 2.2, WIN1 + 3.2), (SR + 1.2, WIN1 + 4.4),
+        (SR - 1.0, WIN1 + 5.2), (36.0, TOP - 0.6), (28.0, TOP - 0.15), (24.0, TOP), (0.6, TOP)]
 bm = bmesh.new()
 revolve(bm, ROOF, CX, CY, 120)
 smooth_shade(obj_from_bm('L3_Roof', bm, 'l3_hull'))
@@ -251,7 +250,7 @@ revolve(bm, [(5.0, -22.4), (9.5, -21.0), (MR, -18.8), (MR, -12.6)], CX, CY, 64)
 smooth_shade(obj_from_bm('L3_MachShell', bm, 'l3_hull'))
 
 # ring ribs round the deck level, and vertical ribs every 12 degrees (not across the collar)
-for (r0, z0, z1) in [(R, -6.25, -5.75), (R, -1.75, -1.25), (R, 6.3, 6.8), (R, 8.6, 9.2), (SR, 12.5, 13.1), (MR, -13.2, -12.6), (MR, -18.8, -18.2)]:
+for (r0, z0, z1) in [(R, -6.25, -5.75), (R, -1.75, -1.25), (R, 6.3, 6.8), (R, 8.6, 9.2), (SR + 0.6, 13.6, 14.0), (SR + 0.6, 15.2, WIN0), (MR, -13.2, -12.6), (MR, -18.8, -18.2)]:
     bm = bmesh.new()
     revolve(bm, [(r0 + 0.25, z0), (r0 + 0.25, z1)], CX, CY, 120, skip=door_hole if r0 == R else None, angle0=math.pi)
     obj_from_bm('L3_Rib', bm, 'l3_rust')
@@ -289,96 +288,55 @@ for (dy, r, mat) in ((-4.6, 0.3, 'l3_rust'), (-5.3, 0.18, 'l3_dark'), (4.8, 0.35
 
 # ---- the atrium: the window band (glass, posts, angled struts), lights along its sill, roof ribs
 glass = A('L3_AtriumGlass')
-NB = 48                               # bays round the saucer
+# (the glass shows the atrium inside: the game draws it there with its interior-mapping shader)
+NB = 20                               # bays round the saucer
+PANES = 4                             # each bay's glass in four panes, following the curve
 for k in range(NB):
     a0, a1 = 2 * math.pi * k / NB, 2 * math.pi * (k + 1) / NB
-    q = [polar(SR - 0.1, a0, WIN0), polar(SR - 0.1, a1, WIN0), polar(SR - 0.1, a1, WIN1), polar(SR - 0.1, a0, WIN1)]
-    f = glass.bm.faces.new([glass.bm.verts.new(v) for v in q])
-    glass.tag('l3_atrium_glass', [f])
-    # a post at each bay's edge, and a strut across the bay, leaning one way then the other
-    p = polar(SR + 0.05, a0, 0)
-    beam(struct, 'l3_dark', (p.x, p.y, WIN0), (p.x, p.y, WIN1), 0.32, 0.4)
-    b0, b1 = (polar(SR + 0.02, a0, WIN0 + 0.2), polar(SR + 0.02, a1, WIN1 - 0.2)) if k % 2 else (polar(SR + 0.02, a1, WIN0 + 0.2), polar(SR + 0.02, a0, WIN1 - 0.2))
-    beam(struct, 'l3_dark', tuple(b0), tuple(b1), 0.16, 0.2)
-    m = polar(SR + 0.15, (a0 + a1) / 2, 12.85)
-    box(glow, 'l3_sill_light', (m.x - 0.4, m.y - 0.4, 12.8), (m.x + 0.4, m.y + 0.4, 12.9))
-for k in range(16):                    # lamps round the roof's edge, shining down the windows
-    a = 2 * math.pi * (k + 0.5) / 16
-    p = polar(SR + 0.6, a, WIN1 + 0.3)
-    box(struct, 'l3_dark', (p.x - 0.35, p.y - 0.35, WIN1 + 0.15), (p.x + 0.35, p.y + 0.35, WIN1 + 0.45))
-    box(glow, 'l3_lamp', (p.x - 0.25, p.y - 0.25, WIN1 + 0.07), (p.x + 0.25, p.y + 0.25, WIN1 + 0.15))
-for k in range(24):                    # ribs over the roof
+    for j in range(PANES):
+        b0, b1 = a0 + (a1 - a0) * j / PANES, a0 + (a1 - a0) * (j + 1) / PANES
+        q = [polar(SR - 0.1, b0, WIN0), polar(SR - 0.1, b1, WIN0), polar(SR - 0.1, b1, WIN1), polar(SR - 0.1, b0, WIN1)]
+        f = glass.bm.faces.new([glass.bm.verts.new(v) for v in q])
+        glass.tag('l3_atrium_glass', [f])
+    # a thick post at each bay's edge, and a strut across the bay, leaning one way then the other
+    p = polar(SR + 0.2, a0, 0)
+    beam(struct, 'l3_dark', (p.x, p.y, WIN0 - 0.2), (p.x, p.y, WIN1 + 0.2), 0.8, 1.0)
+    s0, s1 = (polar(SR + 0.1, a0, WIN0 + 0.4), polar(SR + 0.1, a1, WIN1 - 0.4)) if k % 2 else (polar(SR + 0.1, a1, WIN0 + 0.4), polar(SR + 0.1, a0, WIN1 - 0.4))
+    beam(struct, 'l3_dark', tuple(s0), tuple(s1), 0.4, 0.5)
+    for j in range(3):                 # lights along the floor band, under the windows
+        m = polar(SR + 0.65, a0 + (a1 - a0) * (j + 0.5) / 3, 14.5)
+        box(glow, 'l3_sill_light', (m.x - 0.3, m.y - 0.3, 14.4), (m.x + 0.3, m.y + 0.3, 14.6))
+for k in range(NB):                    # lamps under the lid's overhang, shining down the windows
+    a = 2 * math.pi * (k + 0.5) / NB
+    p = polar(SR + 1.5, a, WIN1 + 0.6)
+    box(struct, 'l3_dark', (p.x - 0.4, p.y - 0.4, WIN1 + 0.5), (p.x + 0.4, p.y + 0.4, WIN1 + 0.85))
+    box(glow, 'l3_lamp', (p.x - 0.3, p.y - 0.3, WIN1 + 0.42), (p.x + 0.3, p.y + 0.3, WIN1 + 0.5))
+for k in range(32):                    # ribs over the roof
     a = 2 * math.pi * k / 24
     pts = [polar(r + 0.15, a, z + 0.12) for (r, z) in ROOF[1:-1]]
     for i in range(len(pts) - 1):
         beam(struct, 'l3_rust', tuple(pts[i]), tuple(pts[i + 1]), 0.28, 0.3)
 
-# ---- the lounge inside the windows: a ring of floor, its inner wall and ceiling, and round it
-# groups of sofas facing planted trees, lit warm from the ceiling
-ring_sheet('L3_AtriumFloor', 'l3_atrium_floor', CORE, SR - 0.15, WIN0 + 0.02, True)
-ring_sheet('L3_AtriumCeiling', 'l3_atrium_wall', CORE, SR - 0.15, WIN1 - 0.05, False)
-bm = bmesh.new()
-revolve(bm, [(CORE, WIN0), (CORE, WIN1)], CX, CY, 64)
-obj_from_bm('L3_AtriumWall', bm, 'l3_atrium_wall')
-lounge = A('L3_Lounge')
-F = WIN0 + 0.02
-for g in range(12):
-    a = 2 * math.pi * g / 12 + 0.13
-    c = polar(34.0, a, F)
-    t = Vector((-math.sin(a), math.cos(a), 0))          # round the ring
-    o = Vector((math.cos(a), math.sin(a), 0))           # out toward the windows
-    # the planter and its tree
-    cyl(lounge, 'l3_planter', (c.x, c.y, F + 0.3), 1.5, 0.6, seg=20)
-    cyl(lounge, 'l3_soil', (c.x, c.y, F + 0.61), 1.35, 0.04, seg=20)
-    cyl(lounge, 'l3_trunk', (c.x, c.y, F + 1.6), 0.14, 2.2, seg=8)
-    for b in range(3):
-        ba = b * 2.1 + g
-        tube(lounge, 'l3_trunk', (c.x, c.y, F + 2.2), (c.x + 0.8 * math.cos(ba), c.y + 0.8 * math.sin(ba), F + 3.1), 0.07, 6)
-    for (dx, dy, dz, r) in ((0, 0, 3.4, 1.35), (0.8, 0.3, 3.0, 1.0), (-0.7, 0.5, 3.1, 1.05), (0.1, -0.8, 3.0, 0.95)):
-        ball(lounge, 'l3_leaves', (c.x + dx, c.y + dy, F + dz), r, 1, (1, 1, 0.75))
-    # two sofas facing the tree from either side, a low table
-    for s in (-1, 1):
-        sc = c + t * (s * 3.0)
-        facing = -t * s
-        side = Vector((-facing.y, facing.x, 0))
-        p0 = sc - side * 1.2
-        p1 = sc + side * 1.2
-        lo = Vector((min(p0.x, p1.x), min(p0.y, p1.y), 0))
-        hi = Vector((max(p0.x, p1.x), max(p0.y, p1.y), 0))
-        pad = Vector((abs(facing.x), abs(facing.y), 0)) * 0.45
-        box(lounge, 'l3_sofa', (lo.x - pad.x, lo.y - pad.y, F), (hi.x + pad.x, hi.y + pad.y, F + 0.45))
-        bk = sc - facing * 0.4
-        lo2, hi2 = bk - side * 1.2, bk + side * 1.2
-        box(lounge, 'l3_sofa', (min(lo2.x, hi2.x) - abs(facing.x) * 0.12, min(lo2.y, hi2.y) - abs(facing.y) * 0.12, F),
-            (max(lo2.x, hi2.x) + abs(facing.x) * 0.12, max(lo2.y, hi2.y) + abs(facing.y) * 0.12, F + 0.95))
-    tb = c + o * 2.4
-    cyl(lounge, 'l3_trunk', (tb.x, tb.y, F + 0.22), 0.6, 0.06, seg=16)
-    # a standing lamp, and a light panel in the ceiling over the group
-    lp = c - o * 2.5 + t * 1.8
-    beam(lounge, 'l3_dark', (lp.x, lp.y, F), (lp.x, lp.y, F + 1.7), 0.05, 0.05)
-    cyl(glow, 'l3_window', (lp.x, lp.y, F + 1.8), 0.25, 0.35, seg=12)
-    box(glow, 'l3_ceiling_light', (c.x - 1.6, c.y - 1.6, WIN1 - 0.1), (c.x + 1.6, c.y + 1.6, WIN1 - 0.06))
-
 # ---- the bridge on top
-BX0, BX1, BY0, BY1, BZ = CX - 15.0, CX + 15.0, CY - 9.5, CY + 9.5, TOP + 4.6
+BX0, BX1, BY0, BY1, BZ = CX - 17.0, CX + 17.0, CY - 11.0, CY + 11.0, TOP + 5.5
 bridge = A('L3_Bridge')
 box(bridge, 'l3_hull', (BX0, BY0, TOP), (BX1, BY1, BZ))
 box(bridge, 'l3_dark', (BX0 - 0.6, BY0 - 0.6, BZ), (BX1 + 0.6, BY1 + 0.6, BZ + 0.35))
 # its window strip all round (lit), and lamps over the front
-for (lo, hi) in (((BX0 - 0.05, BY0 + 0.6, TOP + 2.2), (BX0, BY1 - 0.6, TOP + 3.7)), ((BX1, BY0 + 0.6, TOP + 2.2), (BX1 + 0.05, BY1 - 0.6, TOP + 3.7)),
-                 ((BX0 + 0.6, BY0 - 0.05, TOP + 2.2), (BX1 - 0.6, BY0, TOP + 3.7)), ((BX0 + 0.6, BY1, TOP + 2.2), (BX1 - 0.6, BY1 + 0.05, TOP + 3.7))):
+for (lo, hi) in (((BX0 - 0.05, BY0 + 0.6, TOP + 2.4), (BX0, BY1 - 0.6, TOP + 4.5)), ((BX1, BY0 + 0.6, TOP + 2.4), (BX1 + 0.05, BY1 - 0.6, TOP + 4.5)),
+                 ((BX0 + 0.6, BY0 - 0.05, TOP + 2.4), (BX1 - 0.6, BY0, TOP + 4.5)), ((BX0 + 0.6, BY1, TOP + 2.4), (BX1 - 0.6, BY1 + 0.05, TOP + 4.5))):
     box(glow, 'l3_bridge_window', lo, hi)
-for k in range(9):
-    x = BX0 + 2 + k * 3.25
-    box(bridge, 'l3_dark', (x - 0.12, BY0 - 0.08, TOP + 2.2), (x + 0.12, BY0, TOP + 3.7))
-    box(bridge, 'l3_dark', (x - 0.12, BY1, TOP + 2.2), (x + 0.12, BY1 + 0.08, TOP + 3.7))
+for k in range(11):
+    x = BX0 + 2 + k * 3.0
+    box(bridge, 'l3_dark', (x - 0.15, BY0 - 0.08, TOP + 2.4), (x + 0.15, BY0, TOP + 4.5))
+    box(bridge, 'l3_dark', (x - 0.15, BY1, TOP + 2.4), (x + 0.15, BY1 + 0.08, TOP + 4.5))
 for y in (BY0 + 2.5, CY - 3.0, CY + 3.0, BY1 - 2.5):
     box(bridge, 'l3_dark', (BX0 - 0.3, y - 0.3, BZ - 0.5), (BX0, y + 0.3, BZ - 0.2))
     box(glow, 'l3_lamp', (BX0 - 0.32, y - 0.2, BZ - 0.48), (BX0 - 0.3, y + 0.2, BZ - 0.3))
 for (x, y) in ((BX0, BY0), (BX1, BY0), (BX1, BY1), (BX0, BY1)):
     box(glow, 'l3_lamp', (x - 0.25, y - 0.25, BZ + 0.35), (x + 0.25, y + 0.25, BZ + 0.55))
 # the second tier, set back, with its own windows
-T2 = (CX - 7.0, CX + 9.0, CY - 5.5, CY + 5.5)
+T2 = (CX - 9.0, CX + 11.0, CY - 6.5, CY + 6.5)
 box(bridge, 'l3_hull', (T2[0], T2[2], BZ + 0.35), (T2[1], T2[3], BZ + 2.6))
 box(glow, 'l3_bridge_window', (T2[0] - 0.05, T2[2] + 0.5, BZ + 1.2), (T2[0], T2[3] - 0.5, BZ + 2.1))
 box(glow, 'l3_bridge_window', (T2[0] + 0.5, T2[2] - 0.05, BZ + 1.2), (T2[1] - 0.5, T2[2], BZ + 2.1))
@@ -391,7 +349,7 @@ def railing_ring(r, z, n):
         q = polar(r, 2 * math.pi * (k + 1) / n, z)
         beam(bridge, 'l3_rust', (p.x, p.y, z + 1.1), (q.x, q.y, z + 1.1), 0.07, 0.07)
         beam(bridge, 'l3_rust', (p.x, p.y, z + 0.55), (q.x, q.y, z + 0.55), 0.05, 0.05)
-railing_ring(21.4, TOP, 64)
+railing_ring(26.5, TOP, 80)
 for (a, b) in (((BX0 - 0.5, BY0 - 0.5), (BX1 + 0.5, BY0 - 0.5)), ((BX1 + 0.5, BY0 - 0.5), (BX1 + 0.5, BY1 + 0.5)),
                ((BX1 + 0.5, BY1 + 0.5), (BX0 - 0.5, BY1 + 0.5)), ((BX0 - 0.5, BY1 + 0.5), (BX0 - 0.5, BY0 - 0.5))):
     beam(bridge, 'l3_rust', (a[0], a[1], BZ + 1.45), (b[0], b[1], BZ + 1.45), 0.07, 0.07)
@@ -400,16 +358,16 @@ for (a, b) in (((BX0 - 0.5, BY0 - 0.5), (BX1 + 0.5, BY0 - 0.5)), ((BX1 + 0.5, BY
         x, y = a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n
         box(bridge, 'l3_rust', (x - 0.05, y - 0.05, BZ + 0.35), (x + 0.05, y + 0.05, BZ + 1.45))
 # radar domes, antennas with red lights, and some kit on the roof
-for (dx, dy, r) in ((5.0, 3.0, 1.8), (-3.0, -3.2, 1.4)):
+for (dx, dy, r) in ((6.5, 3.5, 2.0), (-3.5, -3.8, 1.6)):
     cyl(bridge, 'l3_dark', (CX + dx, CY + dy, BZ + 0.9), 0.35, 1.1, seg=10)
     ball(bridge, 'l3_dome', (CX + dx, CY + dy, BZ + 1.45 + r * 0.8), r, 2)
-for (dx, dy, h) in ((-11.0, 6.5, 16.0), (11.0, -6.5, 11.0)):
+for (dx, dy, h) in ((-13.0, 8.0, 18.0), (13.0, -8.0, 12.0)):
     x, y = CX + dx, CY + dy
     beam(bridge, 'l3_rust', (x, y, BZ + 0.35), (x, y, BZ + h), 0.2, 0.2)
     for zz in (BZ + h * 0.55, BZ + h * 0.8):
         beam(bridge, 'l3_rust', (x - 1.2, y, zz), (x + 1.2, y, zz), 0.08, 0.08)
     cyl(glow, 'l3_alarm', (x, y, BZ + h + 0.15), 0.18, 0.3, seg=10)
-for (dx, dy) in ((-11.5, -6.5), (12.0, 6.5), (0.0, -8.0), (-12.5, 2.0)):
+for (dx, dy) in ((-13.5, -8.0), (14.0, 8.0), (0.0, -9.5), (-14.5, 2.0)):
     box(bridge, 'l3_dark', (CX + dx - 0.8, CY + dy - 0.5, BZ + 0.35), (CX + dx + 0.8, CY + dy + 0.5, BZ + 1.2))
 
 # ---- the machinery level's machines: big drums on their sides, flanged, with turbine-like ends,
@@ -542,13 +500,13 @@ def crag(ob, big, mid, fine):
 back = grid('TERRAIN_Cliff', (19.0, -60.0, -64.0), (0, 170, 0), (0, 0, 160), 70, 52, (-1, 0, 0), 'l3_rock',
             shape=lambda co: Vector((co.x + 3.0 * math.sin(co.y * 0.05) - min(8.0, 0.24 * max(0.0, co.z - 10.0)), co.y, co.z)))
 crag(back, 9.0, 3.0, 0.6)
-north = grid('TERRAIN_North', (-175.0, 74.0, -60.0), (196, 0, 0), (0, 0, 150), 84, 50, (0, -1, 0), 'l3_rock',
+north = grid('TERRAIN_North', (-175.0, 82.0, -60.0), (196, 0, 0), (0, 0, 150), 84, 50, (0, -1, 0), 'l3_rock',
              shape=lambda co: Vector((co.x, co.y + 6.0 * math.sin(co.x * 0.03) + 0.12 * max(0.0, co.z), co.z)))
 crag(north, 10.0, 3.0, 0.6)
 south = grid('TERRAIN_South', (-175.0, -36.0, -60.0), (196, 0, 0), (0, 0, 150), 84, 50, (0, 1, 0), 'l3_rock',
              shape=lambda co: Vector((co.x, co.y + 5.0 * math.sin(co.x * 0.04 + 1.0) - 0.1 * max(0.0, co.z), co.z)))
 crag(south, 10.0, 3.0, 0.6)
-floor = grid('TERRAIN_Floor', (-180.0, -42.0, 0.0), (205, 0, 0), (0, 122, 0), 82, 50, (0, 0, 1), 'l3_rock',
+floor = grid('TERRAIN_Floor', (-180.0, -42.0, 0.0), (205, 0, 0), (0, 130, 0), 82, 52, (0, 0, 1), 'l3_rock',
              shape=lambda co: Vector((co.x, co.y, floor_z(co.x, co.y))))
 crag(floor, 4.0, 1.4, 0.35)
 

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Water } from './Water.js';
 import { dressInSuit, rackSuit } from './DiveSuit.js';
+import { SEA, dotTexture } from './SeaScene.js';
 
 // Through the first gate (scene 3.3, the airlock and the suit): the bulkhead at the end of the way
 // left opens, a stairwell climbs out of the flood to the EVA prep room, and at its far end the water
@@ -13,15 +14,17 @@ import { dressInSuit, rackSuit } from './DiveSuit.js';
 //      on one end, the station on the other)
 //   4. the water lock: E on the inner hatch opens it; inside, E on the panel floods it. The inner
 //      hatch slides shut, the red beacon turns, water pours up through the floor vents until the
-//      lock is full (its pressure matches the sea's), and the outer hatch opens onto black
-//   5. out through the outer hatch: the deep (the next build) starts there
+//      lock is full (its pressure matches the sea's), and the outer hatch opens onto the sea
+//   5. out through the outer hatch and the docking collar onto the platform outside (SeaScene.js):
+//      the canyon, the vents far below. (Swimming out from there is the next part.)
 //
 // The status screen by the door says where he is up to (suit, cable, lock). Coming back in, the
 // lock would be pumped dry before the inner hatch opens (not needed yet: the way is one way).
 //
 // Lights: the prep room and the lock borrow four of the deck's lights while he is up here (the
 // pump room's, the first corridor lamp's, the shaft's and the engine room's, none of which can be
-// seen from here), so the number of lights, and so the shaders, never change.
+// seen from here), and outside they move again, to the platform's floodlight and over three of
+// the vents, so the number of lights, and so the shaders, never change.
 
 const LOCK = { minX: -25.0, maxX: -21.2, minZ: -24.0, maxZ: -21.0 };   // world metres (z = -Blender y)
 const FLOOR = 1.5;                  // the prep room's and the lock's floor
@@ -30,6 +33,8 @@ const FLOOD_TIME = 9;               // seconds to fill the lock
 const OXYGEN = 240;                 // seconds of air in the suit (ARIA: "four minutes")
 const SUIT_HOLD = 2.0;              // seconds holding E to put the suit on
 const UP_HERE = -10.4, DOWN_THERE = -10.0;   // the stairwell's x where the room's lights take over (and back)
+const OUT_HERE = -25.7, IN_THERE = -25.3;    // past the outer hatch: outside (and back in)
+const PLATFORM_X = -28.8;                    // past the hull: on the platform
 const PREP_LIGHTS = [               // colour, candela, range: the stairwell lamp, the two panels, the lock lamp
   [0xffc48a, 4, 10], [0xe2ecff, 5, 9], [0xe2ecff, 5, 9], [0xcfe2ff, 2.2, 6]
 ];
@@ -49,7 +54,6 @@ export class PrepRoom {
     this.lock = 'shut';             // shut, inner (inner hatch open), sealing, flooding, full, outer, open
     this.oxygen = OXYGEN;
     this.breathing = false;         // the oxygen runs down once the lock floods
-    this.ended = false;
     this._t = 0;
     this._fog = { color: this.scene.fog.color.clone(), density: this.scene.fog.density };
 
@@ -68,8 +72,7 @@ export class PrepRoom {
     // where things are
     this.pos = {
       gate: at('PT_Gate1'), prepDoor: at('PT_PrepDoor'), suit: at('PT_Suit'), cable: at('PT_Cable'),
-      screen: at('PT_Screen'), panel: at('PT_LockPanel'), beacon: at('PT_LockBeacon'), mid: at('PT_LockMid'),
-      outside: at('PT_Outside')
+      screen: at('PT_Screen'), panel: at('PT_LockPanel'), beacon: at('PT_LockBeacon'), mid: at('PT_LockMid')
     };
     this.pos.suitTop = this.pos.suit?.clone().add(new THREE.Vector3(0, 1.35, 0));
     this.pos.innerHatch = this.doors.inner ? this._centre(this.doors.inner.obj) : null;
@@ -266,6 +269,7 @@ export class PrepRoom {
       this._fullT += dt;
       if (this._fullT > 1.6) {
         this.lock = 'outer';
+        this.s.sea?.setShown(true);
         this._block(this.doors.outer, false);
         this.game.ui.showToast('Pressure equal. Outer hatch opening.', 4000);
         this._move('outer', 1, () => {
@@ -277,15 +281,19 @@ export class PrepRoom {
     // the beacon turns red while the lock is working
     const working = this.lock === 'sealing' || this.lock === 'flooding' || this.lock === 'full' || this.lock === 'outer';
     if (this.zone === 'prep' && this.beacon) this.beacon.intensity = working ? 1.5 + 2.5 * Math.max(0, Math.sin(this._t * 7)) : 0;
+    // (outside, it blinks on top of the platform's mast)
+    if (this.zone === 'sea' && this.beacon) this.beacon.intensity = Math.sin(this._t * 2.4) > 0.55 ? 5 : 0.3;
     this._bubbles(dt, working && this.lock !== 'outer');
-    this._snow(dt);
     this._underwater();
     // the air, once he is breathing from the tanks
-    if (this.breathing && playing && !this.ended) this.oxygen = Math.max(0, this.oxygen - dt);
+    if (this.breathing && playing) this.oxygen = Math.max(0, this.oxygen - dt);
     if (this.suited) this._drawOxygen();
-    this._visor.style.display = playing || this.ended ? '' : 'none';
-    // out through the outer hatch: the deep starts here (the next build)
-    if (this.lock === 'open' && !this.ended && p.x < LOCK.minX - 0.8) this._theDeep();
+    this._visor.style.display = playing ? '' : 'none';
+    // out on the platform for the first time
+    if (!this._outside && p.x < PLATFORM_X) {
+      this._outside = true;
+      this.game.ui.showToast('You are outside. This is as far as Level 3 goes for now: swimming out to the dish is the next part.', 9000);
+    }
   }
 
   // how deep the water is where he stands: the lock's own water in the lock and outside it
@@ -301,15 +309,22 @@ export class PrepRoom {
 
   // up the stairs, the prep room's lights take over from four of the deck's (and back down again)
   _zone(p) {
-    const z = this.zone === 'deck' ? (p.x < UP_HERE ? 'prep' : 'deck') : (p.x > DOWN_THERE ? 'deck' : 'prep');
+    let z = this.zone;
+    if (z === 'deck' && p.x < UP_HERE) z = 'prep';
+    else if (z === 'prep' && p.x > DOWN_THERE) z = 'deck';
+    else if (z === 'prep' && p.x < OUT_HERE && this.s.sea) z = 'sea';
+    else if (z === 'sea' && p.x > IN_THERE) z = 'prep';
     if (z === this.zone) return;
     this.zone = z;
+    const sea = this.s.sea;
     this.borrowed.forEach((b, i) => {
-      if (z === 'prep' && b.to) {
-        b.light.position.copy(b.to);
-        b.light.color.setHex(PREP_LIGHTS[i][0]);
-        b.light.intensity = PREP_LIGHTS[i][1];
-        b.light.distance = PREP_LIGHTS[i][2];
+      const to = z === 'prep' ? b.to : z === 'sea' ? sea.lights[i] : null;
+      const spec = z === 'prep' ? PREP_LIGHTS[i] : SEA.LIGHTS[i];
+      if (to && spec) {
+        b.light.position.copy(to);
+        b.light.color.setHex(spec[0]);
+        b.light.intensity = spec[1];
+        b.light.distance = spec[2];
       } else {
         b.light.position.copy(b.home.position);
         b.light.color.copy(b.home.color);
@@ -322,6 +337,9 @@ export class PrepRoom {
         this.beacon.position.copy(this.pos.beacon);
         this.beacon.distance = 5;
         this.beacon.intensity = 0;
+      } else if (z === 'sea' && sea.points.beacon) {
+        this.beacon.position.copy(sea.points.beacon);
+        this.beacon.distance = 9;
       } else {
         this.beacon.position.copy(this._beaconHome.position);
         this.beacon.distance = this._beaconHome.distance;
@@ -356,22 +374,9 @@ export class PrepRoom {
     for (let i = 0; i < n; i++) this._resetBubble(i, true);
     const bg = new THREE.BufferGeometry();
     bg.setAttribute('position', new THREE.BufferAttribute(this._bub.pos, 3));
-    this.bubbles = new THREE.Points(bg, new THREE.PointsMaterial({ color: 0xcff5ff, size: 0.035, transparent: true, opacity: 0.7, depthWrite: false }));
+    this.bubbles = new THREE.Points(bg, new THREE.PointsMaterial({ color: 0xcff5ff, size: 0.06, map: dotTexture(), transparent: true, opacity: 0.8, depthWrite: false }));
     this.bubbles.frustumCulled = false;
     this.scene.add(this.bubbles);
-    // marine snow drifting past the outer hatch, out in the dark
-    const m = 160;
-    this._sn = { m, pos: new Float32Array(m * 3) };
-    for (let i = 0; i < m; i++) {
-      this._sn.pos[i * 3] = -29 + Math.random() * 4;
-      this._sn.pos[i * 3 + 1] = 1.1 + Math.random() * 3.2;
-      this._sn.pos[i * 3 + 2] = -24 + Math.random() * 3;
-    }
-    const sg = new THREE.BufferGeometry();
-    sg.setAttribute('position', new THREE.BufferAttribute(this._sn.pos, 3));
-    this.snow = new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xbcd6cf, size: 0.022, transparent: true, opacity: 0.6, depthWrite: false }));
-    this.snow.frustumCulled = false;
-    this.scene.add(this.snow);
   }
 
   _resetBubble(i, hidden) {
@@ -402,34 +407,25 @@ export class PrepRoom {
     this.bubbles.geometry.attributes.position.needsUpdate = true;
   }
 
-  _snow(dt) {
-    if (this.lock !== 'outer' && this.lock !== 'open') return;
-    const s = this._sn;
-    for (let i = 0; i < s.m; i++) {
-      s.pos[i * 3 + 1] -= 0.05 * dt;
-      s.pos[i * 3] += Math.sin(this._t * 0.4 + i) * 0.03 * dt;
-      if (s.pos[i * 3 + 1] < 1.1) s.pos[i * 3 + 1] = 4.3;
-    }
-    this.snow.geometry.attributes.position.needsUpdate = true;
-  }
-
-  // under the lock's water (or out in the sea), the view goes green-black and close
+  // Where the camera is: out in the sea (its fog, light from above), under the lock's water (the
+  // sea's colour, closer), or in the air
   _underwater() {
     const cam = this.game.camera.instance.position;
-    const level = cam.x < LOCK.minX ? (this.lock === 'outer' || this.lock === 'open' ? 99 : -99)
-      : this._inLock(cam, 0.05) ? this.lockWater.level : -99;
-    const under = cam.y < level;
-    if (under === this._under) return;
-    this._under = under;
+    const open = this.lock === 'outer' || this.lock === 'open';
+    const mode = cam.x < LOCK.minX ? (open ? 'sea' : 'air')
+      : this._inLock(cam, 0.05) && cam.y < this.lockWater.level ? 'lock' : 'air';
+    if (mode === this._fogMode) return;
+    this._fogMode = mode;
+    this.s.sea?.setActive(mode === 'sea');
     const fog = this.scene.fog;
-    if (under) {
-      fog.color.setHex(0x04211f);
-      fog.density = 0.2;
-    } else {
+    if (mode === 'lock') {
+      fog.color.setHex(SEA.FOG);
+      fog.density = 0.07;
+    } else if (mode === 'air') {
       fog.color.copy(this._fog.color);
       fog.density = this._fog.density;
     }
-    this._tint.classList.toggle('on', under);
+    this._tint.classList.toggle('on', mode !== 'air');
   }
 
   // ------------------------------------------------------------------ signs and the status screen
@@ -539,7 +535,6 @@ export class PrepRoom {
     this._blink = el('l3-blink');
     this._oxy = el('l3-oxygen', '<div class="ox-label">OXYGEN</div><div class="ox-bar"><div></div></div><div class="ox-time">4:00</div>');
     this._carry = el('l3-carry', '<div class="cc-label">CARRYING</div><div class="cc-item">UPLINK CABLE</div><div class="cc-note">Plug the end into the dish on the pylon</div>');
-    this._end = el('l3-end', '<div class="end-title">THE DEEP</div><div class="end-sub">Level 3 continues here: the swim out to the dish is the next part to be built.</div>');
     this._oxyBar = this._oxy.querySelector('.ox-bar div');
     this._oxyTime = this._oxy.querySelector('.ox-time');
   }
@@ -552,18 +547,6 @@ export class PrepRoom {
     if (this._oxyTime.textContent !== text) this._oxyTime.textContent = text;
     this._oxy.classList.toggle('low', f < 0.25);
     this._oxy.classList.toggle('waiting', !this.breathing);
-  }
-
-  _theDeep() {
-    this.ended = true;
-    const g = this.game;
-    g.state = 'DEPARTING';
-    this.s.controls.stop?.();
-    this.s.controls.instance.unlock?.();
-    g.ui.setPrompt(null);
-    g.ui.setWaypoint(null);
-    g.ui.hideDialogue();
-    this._end.classList.add('on');
   }
 
   // what to do next, for the objective banner and the marker: { text, target, label }
@@ -581,13 +564,14 @@ export class PrepRoom {
       case 'inner': return this._inLock(p) ? { text: 'Flood the lock', target: this.pos.panel, label: 'PANEL' }
         : { text: 'Enter the water lock', target: this.pos.mid, label: 'LOCK' };
       case 'sealing': case 'flooding': case 'full': return { text: 'Wait while the lock floods', target: null };
-      default: return { text: 'Go out to the dish', target: this.pos.outside, label: 'OUT' };
+      default: return this._outside ? { text: 'Look around (swimming out to the dish comes next)', target: null }
+        : { text: 'Go outside', target: this.s.sea?.points.outside || null, label: 'OUT' };
     }
   }
 
   dispose() {
     this.lockWater?.dispose();
-    for (const el of [this._visor, this._tint, this._blink, this._oxy, this._carry, this._end]) el?.remove();
+    for (const el of [this._visor, this._tint, this._blink, this._oxy, this._carry]) el?.remove();
     const lamp = this.game.camera.flashlight;
     lamp.intensity = 0;
   }

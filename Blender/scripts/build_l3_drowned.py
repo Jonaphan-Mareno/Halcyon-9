@@ -25,7 +25,7 @@ caged lamps (a light each); PT_Window, PT_CrewSign (the plate over the door), PT
 PT_EngineRoom; PT_Body_<n> where the drowned crew float. DOOR_<name> doors the game moves (Gate1 and
 its wheel, LockInner, LockOuter); PROP_CableEnd the cable's free end; PREP_LIGHT_<n> the prep room's
 and the lock's lights; PT_Suit, PT_Cable, PT_Screen, PT_LockPanel, PT_LockBeacon, PT_LockMid,
-PT_PrepDoor, PT_Outside and the PT_*Sign plates.
+PT_PrepDoor and the PT_*Sign plates. (Outside the lock: l3-outside.glb.)
 """
 import sys, os, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -614,13 +614,8 @@ def hatch(name, x):
 hatch('DOOR_LockInner', PX0 - 0.1)
 hatch('DOOR_LockOuter', KX0 - 0.1)
 
-# outside: a short black throat of hull past the outer hatch, open to the sea
-box(lock, 'l3_dark', (-29.0, L0 - 0.6, FZ - 0.4), (KX0 - T, L1 + 0.6, FZ - 0.2), col=True)
-box(lock, 'l3_dark', (-29.0, L0 - 0.8, FZ - 0.4), (KX0 - T, L0 - 0.6, LZ + 0.6), col=True)
-box(lock, 'l3_dark', (-29.0, L1 + 0.6, FZ - 0.4), (KX0 - T, L1 + 0.8, LZ + 0.6), col=True)
-box(lock, 'l3_dark', (-29.0, L0 - 0.8, LZ + 0.6), (KX0 - T, L1 + 0.8, LZ + 0.8), col=True)
-col_box((-29.2, L0 - 0.8, FZ - 0.4), (-29.0, L1 + 0.8, LZ + 0.8))   # (the level ends before here)
-empty('PT_Outside', (-26.6, 22.5, FZ + 1.0))
+# outside the outer hatch: the docking collar, the platform and the sea are in l3-outside.glb
+# (Blender/scripts/build_l3_outside.py)
 
 
 def post(objs):

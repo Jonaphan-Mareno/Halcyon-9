@@ -17,8 +17,9 @@ Used in Level 3 (the drowned deck). CC0 needs no credit, but we credit the site 
 | Metal 022 | heavy rust: the ribs, pipes, frames and the pump | https://ambientcg.com/view?id=Metal022 |
 | Concrete 042 C | cracked concrete with rusty mesh: the floors and the foot of every wall | https://ambientcg.com/view?id=Concrete042C |
 | Metal Walkway 014 | the rusty perforated catwalk in the pump room | https://ambientcg.com/view?id=MetalWalkway014 |
+| Rock 035 | the canyon outside the station: cliffs, seabed, pillars and the vents | https://ambientcg.com/view?id=Rock035 |
 
-Suggested credits-screen line: *"Rust and concrete textures from ambientCG (ambientcg.com, CC0)."*
+Suggested credits-screen line: *"Rust, concrete and rock textures from ambientCG (ambientcg.com, CC0)."*
 
 ## Poly Haven (CC0 1.0, public domain)
 

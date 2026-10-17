@@ -161,7 +161,8 @@ export function dressInSuit(model, { mutate = false, empty = false, parts: withP
   const m = materials(empty);
   model.traverse((o) => {
     if (!o.isMesh || !o.material) return;
-    if (/Glasses/.test(o.name) || o.name === 'Hair' || (empty && /^Head/.test(o.name))) {
+    // (his hair is Hair, or Hair_1 and Hair_2 in the newer model; the empty suit has no one in it)
+    if (/Glasses/.test(o.name) || /^Hair/.test(o.name) || (empty && /^(Head|Wound)/.test(o.name))) {
       o.visible = false;
       return;
     }

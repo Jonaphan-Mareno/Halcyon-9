@@ -21,6 +21,7 @@ import { deckMaterial, deckUniforms, withMurk } from './DeckMaterials.js';
 import { Water } from './Water.js';
 import { DrownedCrew } from './DrownedCrew.js';
 import { PrepRoom } from './PrepRoom.js';
+import { SeaScene } from './SeaScene.js';
 import '../ui/level3.css';
 import { LINES, TALKS } from './Level3Lines.js';
 import { disposeScene } from '../core/disposeScene.js';
@@ -32,7 +33,8 @@ import { disposeScene } from '../core/disposeScene.js';
 // is flooded to the ceiling and four of the crew, locked in, float in it. The way on turns left, to
 // a sealed bulkhead that ARIA opens; past it, stairs climb out of the water to the EVA prep room,
 // where he puts on the dive suit, takes the uplink cable and goes out through the water lock
-// (PrepRoom.js). (The flooded hall's other gates and its logs are still to come.)
+// (PrepRoom.js) onto a platform on the station's flank, over the canyon and its vents
+// (SeaScene.js). (The flooded hall's other gates and its logs are still to come.)
 //
 // Its own renderer settings, physics world, player and HUD, like Level 2's session; the game keeps
 // whichever session is running in game.level2 and calls update() on it every frame.
@@ -102,6 +104,7 @@ export class DeckSession {
       this.physics = physics;
       await this._load();
       await this._precompile();
+      this.sea?.setShown(false);          // (compiled while the loading screen was up; hidden till the hatch opens)
       this.ready = true;
       game.applySettings?.();
       this.loadingEl.classList.remove('visible');
@@ -209,6 +212,9 @@ export class DeckSession {
       this.interact.add({ id: 'window', position: this.windowPos, radius: 0.6, label: 'Look through the window', use: () => this._seeCrew() });
     }
     await this.crew.ready;
+    // outside the station: the platform, the canyon, the vents (hidden until the outer hatch opens)
+    this.sea = new SeaScene(this);
+    await this.sea.ready;
     // through the gate: the stairs, the EVA prep room, the suit, the cable and the water lock
     this.prep = new PrepRoom(this, deck, at);
   }
@@ -381,6 +387,7 @@ export class DeckSession {
     this.crew.update(dt);
     this._driftSilt(dt);
     this.prep?.update(dt, p, playing);
+    this.sea?.update(dt, g.camera.instance);
     this._holding(dt, playing);
 
     this.hud.setVisible(playing);
@@ -531,6 +538,7 @@ export class DeckSession {
     window.removeEventListener('keyup', this._onKeyUp);
     window.removeEventListener('resize', this._onResize);
     this.prep?.dispose();
+    this.sea?.dispose();
     this.holdEl?.remove();
     this.controls.instance.unlock?.();
     this.controls.instance.dispose?.();

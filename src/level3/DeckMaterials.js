@@ -12,6 +12,9 @@ import * as THREE from 'three';
 //   - the flooded crew room (seen only through the door's window) is drawn as if through water:
 //     the further a surface is from the window, the more it fades into green murk, with faint
 //     moving caustic light on it (setMurk)
+//   - outside, in the sea (SeaScene.js: { sea: true }), there is no water line (it is all under
+//     water); the canyon rock gathers pale silt on whatever faces up, and the vents' rock glows
+//     orange in its cracks near the seabed, pulsing slowly (lava)
 // Uniforms that change every frame (the water line, the time) are shared by every material.
 
 const DIR = './assets/textures/l3/';
@@ -24,7 +27,11 @@ const SURFACES = {
   l3_grate: { set: 'l3_grate', tile: 1.0, tint: 0xffffff, normal: 1.0, cutout: true },
   l3_dark: { set: 'l3_wall', tile: 1.8, tint: 0x2a2c30, normal: 0.6 },
   l3_hazard: { set: 'l3_rust', tile: 1.2, tint: 0xffc13b, normal: 0.8, paint: 0.65 },
-  l3_cloth: { set: 'l3_concrete', tile: 0.9, tint: 0x3a3e44, normal: 0.4, rough: 1.0 }
+  l3_cloth: { set: 'l3_concrete', tile: 0.9, tint: 0x3a3e44, normal: 0.4, rough: 1.0 },
+  // outside: the station's plating, the canyon rock (ambientCG Rock 035) and the vents
+  l3_hull: { set: 'l3_wall', tile: 3.2, tint: 0xa8b2ba, normal: 1.0 },
+  l3_rock: { set: 'l3_rock', tile: 7.0, tint: 0x9fb2ba, normal: 1.4, rough: 1.0, sediment: 1 },
+  l3_vent: { set: 'l3_rock', tile: 2.4, tint: 0x5f5a55, normal: 1.3, rough: 1.0, lava: 1 }
 };
 
 // shared, per frame
@@ -65,15 +72,15 @@ function loadSets() {
     return t;
   };
   cache = {};
-  for (const set of ['l3_wall', 'l3_rust', 'l3_concrete', 'l3_grate']) {
+  for (const set of ['l3_wall', 'l3_rust', 'l3_concrete', 'l3_grate', 'l3_rock']) {
     cache[set] = { color: load(set + '_color.webp', true), normal: load(set + '_normal.webp', false), orm: load(set + '_orm.webp', false) };
   }
   return cache;
 }
 
 // A triplanar, water-aware material for one of the model's material names (or null if the name
-// is not a textured surface)
-export function deckMaterial(name, { murk = false } = {}) {
+// is not a textured surface). murk: seen through the crew room's water; sea: out in the sea.
+export function deckMaterial(name, { murk = false, sea = false } = {}) {
   const spec = SURFACES[name];
   if (!spec) return null;
   const tex = loadSets()[spec.set];
@@ -86,7 +93,8 @@ export function deckMaterial(name, { murk = false } = {}) {
     Object.assign(shader.uniforms, deckUniforms, {
       uCol: { value: tex.color }, uNrm: { value: tex.normal }, uOrm: { value: tex.orm },
       uTile: { value: spec.tile }, uNormalStrength: { value: spec.normal }, uPaint: { value: spec.paint ?? 0 },
-      uMurkOn: { value: murk ? 1 : 0 }
+      uMurkOn: { value: murk ? 1 : 0 }, uSea: { value: sea ? 1 : 0 },
+      uSediment: { value: spec.sediment ?? 0 }, uLava: { value: spec.lava ?? 0 }
     });
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>' + VARYINGS)
@@ -102,6 +110,9 @@ export function deckMaterial(name, { murk = false } = {}) {
         uniform float uNormalStrength;
         uniform float uPaint;
         uniform float uMurkOn;
+        uniform float uSea;
+        uniform float uSediment;
+        uniform float uLava;
         uniform float uWaterLevel;
         uniform float uTime;
         uniform vec3 uWindow;
@@ -121,18 +132,31 @@ export function deckMaterial(name, { murk = false } = {}) {
         vec4 texCol = tri(uCol);
         // painted metal (the hazard stripes): the paint covers the rust, which shows through worn spots
         vec3 albedo = mix(texCol.rgb, vec3(dot(texCol.rgb, vec3(0.3, 0.59, 0.11))) * 1.6, uPaint);
+        // silt settles on whatever faces up (the canyon's ledges and floor)
+        albedo = mix(albedo, vec3(0.30, 0.34, 0.33), uSediment * smoothstep(0.5, 0.88, wn.y) * 0.8);
         diffuseColor.rgb *= albedo;
         diffuseColor.a *= texCol.a;
         vec3 orm = tri(uOrm).rgb;
         // under the water line: darker and green-brown with depth; just above it, a wet band
-        float under = clamp((uWaterLevel - vDeckPos.y) * 1.8, 0.0, 1.0);
-        float wet = smoothstep(uWaterLevel + 0.3, uWaterLevel, vDeckPos.y) * (1.0 - uMurkOn);
+        float under = clamp((uWaterLevel - vDeckPos.y) * 1.8, 0.0, 1.0) * (1.0 - uSea);
+        float wet = smoothstep(uWaterLevel + 0.3, uWaterLevel, vDeckPos.y) * (1.0 - uMurkOn) * (1.0 - uSea);
         diffuseColor.rgb *= mix(vec3(1.0), vec3(0.22, 0.27, 0.2), under * (1.0 - uMurkOn));
         diffuseColor.rgb *= 1.0 - 0.35 * wet;
         diffuseColor.rgb *= mix(1.0, orm.r, 0.7);`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         roughnessFactor *= orm.g;
         roughnessFactor = mix(roughnessFactor, 0.15, wet);`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        if (uLava > 0.5) {
+          // lava in the vents' cracks: thin wandering lines where a field of waves crosses zero,
+          // only near the seabed, pulsing slowly
+          float f = sin(vDeckPos.x * 1.7 + sin(vDeckPos.y * 2.3) * 1.5) * sin(vDeckPos.z * 1.9 + vDeckPos.y * 0.9)
+                  + 0.5 * sin(vDeckPos.y * 4.1 + vDeckPos.x * 2.7);
+          float crack = smoothstep(0.86, 1.0, 1.0 - abs(f));
+          float low = smoothstep(-21.0, -30.0, vDeckPos.y);
+          float pulse = 0.7 + 0.3 * sin(uTime * 1.6 + vDeckPos.x * 0.4 + vDeckPos.z * 0.3);
+          totalEmissiveRadiance += vec3(1.0, 0.3, 0.05) * crack * low * pulse * 3.0;
+        }`)
       .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
         metalnessFactor *= orm.b * 0.6 * (1.0 - uPaint);`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>

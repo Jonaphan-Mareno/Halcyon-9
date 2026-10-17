@@ -21,6 +21,12 @@ by name with Blender's .NNN duplicate suffix stripped - which also catches furni
 as fresh, differently-baked copies. An object edited past matching topology (the extended room
 shell) keeps its geometry and takes the source's material slots only.
 
+Props with no bedroom source are the user's own. glTF samples textures by UV only, so one whose
+image textures are wired through Generated or Object coordinates would export with its textures
+silently dropped (the sci-fi bed went out white with orange stripes that way): such textures are
+rewired to UV and their faces box-projected - the mapping the Generated coordinates show in the
+viewport - before the glTF export. In memory only; the .blend is never touched.
+
   blender -b --factory-startup --python Blender/scripts/export_l2_atrium.py -- [out.glb]
 """
 import sys, os, math, re, bpy, bmesh
@@ -177,6 +183,72 @@ for f in fresh.values():
         if me and me.users == 0:
             (D.meshes if was_mesh else D.armatures).remove(me)
 print('coloured %d/%d meshes from bedroom.blend%s' % (coloured, len(pairs), (' (skipped: %s)' % skipped) if skipped else ''))
+
+# props with no bedroom source are the user's own: glTF samples textures by UV only, so image
+# textures wired through Generated/Object coordinates are silently dropped by the exporter and
+# the prop ships in flat base colours. Rewire them to UV and box-project the faces that use
+# them - the mapping the Generated coordinates show in the viewport.
+for o, n in pairs:
+    if n is not None:
+        continue                              # bedroom-sourced: its materials come from bedroom.blend
+    rewired, rebuilt, touched = 0, [], set()
+    for mi, slot in enumerate(o.material_slots):
+        m = slot.material
+        if m is None or not m.use_nodes:
+            continue
+        nt = m.node_tree
+        coord = next((x for x in nt.nodes if x.type == 'TEX_COORD'), None)
+        imgs = [x for x in nt.nodes if x.type == 'TEX_IMAGE']
+        for t in imgs:
+            bad = next((l for l in nt.links if l.to_socket == t.inputs['Vector']
+                        and l.from_node.type == 'TEX_COORD' and l.from_socket.name != 'UV'), None)
+            if bad is None or coord is None:
+                continue
+            nt.links.remove(bad)
+            nt.links.new(coord.outputs['UV'], t.inputs['Vector'])
+            rewired += 1
+            touched.add(mi)
+        if not imgs:
+            continue
+        # a texture the exporter can carry: feeding a live Emission colour, or the Base Color
+        # of the Principled/Diffuse that directly feeds the output. Anything else - through a
+        # Mix Shader, or into Normal - is silently dropped, so rebuild the tree around the
+        # first image texture (in memory; the .blend keeps the authored tree)
+        out = next((x for x in nt.nodes if x.type == 'OUTPUT_MATERIAL'), None)
+        surf = next((l for l in nt.links if out is not None and l.to_socket == out.inputs['Surface']), None)
+        carries = any(l.from_node.type == 'TEX_IMAGE' and l.to_node.type == 'EMISSION' for l in nt.links) \
+            or (surf is not None and surf.from_node.type in ('BSDF_PRINCIPLED', 'BSDF_DIFFUSE')
+                and any(l.from_node.type == 'TEX_IMAGE' and l.to_node is surf.from_node
+                        and l.to_socket.name in ('Base Color', 'Color') for l in nt.links))
+        if carries:
+            continue
+        pb = next((x for x in nt.nodes if x.type == 'BSDF_PRINCIPLED'), None) \
+            or nt.nodes.new('ShaderNodeBsdfPrincipled')
+        nt.links.new(imgs[0].outputs['Color'], pb.inputs['Base Color'])
+        if out is not None:
+            nt.links.new(pb.outputs['BSDF'], out.inputs['Surface'])
+        rebuilt.append(m.name)
+        touched.add(mi)
+    if not touched:
+        continue
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    uv = bm.loops.layers.uv.active or bm.loops.layers.uv.new('UVMap')
+    lo = Vector((min(v.co[a] for v in bm.verts) for a in range(3)))
+    span = Vector((max(v.co[a] for v in bm.verts) for a in range(3))) - lo
+    faces = 0
+    for f in bm.faces:
+        if f.material_index not in touched:
+            continue
+        faces += 1
+        dom = max(range(3), key=lambda a: abs(f.normal[a]))
+        pair = (1, 2) if dom == 0 else ((0, 2) if dom == 1 else (0, 1))
+        for l in f.loops:
+            l[uv].uv = tuple((l.vert.co[b] - lo[b]) / span[b] if span[b] > 1e-9 else 0.5 for b in pair)
+    bm.to_mesh(o.data)
+    bm.free()
+    print('%s: %d texture(s) rewired to UV%s, %d faces box-projected' % (
+        o.name, rewired, (', rebuilt %s' % rebuilt) if rebuilt else '', faces))
 
 # the glTF exporter only carries vertex colours through a Color Attribute node feeding a
 # Principled Base Color; rebuild the authored Attribute -> Diffuse BSDF trees that way

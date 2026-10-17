@@ -52,6 +52,30 @@ armed = [n.get('name', '?') for n in nodes
          if 'mesh' in n and any('JOINTS_0' in p.get('attributes', {}) for p in meshes[n['mesh']]['primitives'])]
 print('meshes with JOINTS_0: %s' % armed)
 
+# user-authored props whose image textures were rewired to UV (export_l2_atrium.py): their
+# materials must actually carry a texture in the GLB - a silent drop is how the sci-fi bed
+# once went out white with orange stripes. Textures may reference their image either through
+# a top-level source or through the EXT_texture_webp extension.
+def img_name(tex):
+    src = tex.get('source', (tex.get('extensions', {}).get('EXT_texture_webp', {}) or {}).get('source'))
+    return doc['images'][src].get('name', '?') if src is not None else None
+
+for n in nodes:
+    if 'mesh' not in n or not n.get('name'):
+        continue
+    for p in meshes[n['mesh']]['primitives']:
+        mi = p.get('material')
+        if mi is None:
+            continue
+        m = doc['materials'][mi]
+        refs = [m.get('emissiveTexture'), m.get('normalTexture'),
+                (m.get('pbrMetallicRoughness', {}) or {}).get('baseColorTexture'),
+                (m.get('pbrMetallicRoughness', {}) or {}).get('metallicRoughnessTexture')]
+        for r in refs:
+            if r is not None:
+                print('textured prop: %s  %s' % (n['name'], img_name(doc['textures'][r['index']])))
+                break
+
 # props parked outside their room's shell still get their own colliders, named by the bedroom
 # source (base name), so a .002 duplicate shares the base name with the original
 for n in ('WallPanel00', 'BedCrew00', 'Canister00'):

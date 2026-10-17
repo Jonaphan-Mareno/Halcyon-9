@@ -31,7 +31,8 @@ function shellMetalMaterial() {
     roughnessMap: load('Metal046B_1K-JPG_Roughness.jpg', false),
     metalnessMap: load('Metal046B_1K-JPG_Metalness.jpg', false),
     metalness: 1,
-    roughness: 1,
+    roughness: 0.65,
+    envMapIntensity: 2,
     side: THREE.DoubleSide        // like the room's toon shell: seen from the inside
   });
   return metal;

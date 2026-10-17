@@ -619,6 +619,7 @@ export class Game {
 
   // The eyes are open: hand him over
   endOpeningWake() {
+    if (this.controls) this.controls.instance.enabled = true;
     if (this.state === 'WAKING') {
       this.state = 'PLAYING';
       this.reticle.classList.add('visible');
@@ -635,6 +636,7 @@ export class Game {
     this.controls.stop();
     await this.ariaSays(INTRO_LINES[0].aria);
     this.intro.firstAriaSaid = true;
+    this.controls.instance.enabled = true;          // (stop() switched the mouse and keys off for the line)
     if (this.state === 'DIALOGUE') {
       this.state = 'PLAYING';
       this.reticle.classList.add('visible');

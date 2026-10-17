@@ -5,7 +5,9 @@ import { settings } from '../core/Settings.js';
 // HALCYON-9's opening cinematic.
 //
 //   1. the page loads and a full-screen video of the station (intro.mp4: the sound is in the
-//      video, there is no separate music file) fades in from black
+//      video, there is no separate music file) fades in from black. (intro.mp4 is the first,
+//      moody shot of the generated video, 4.5 s, cut before it changes to a brighter shot; the
+//      whole video is kept as reference/intro-original.mp4.)
 //   2. a few seconds in, at the music's drop, the title and then the subtitle fade in
 //   3. near the end the picture, the titles and the sound fade to black together
 //   4. a short black hold
@@ -43,10 +45,10 @@ export const INTRO_CONFIG = {
   LOAD_TIMEOUT: 4.0,          // wait this long for the video (canplaythrough), then skip the cinematic
   VIDEO_FADE_IN: 0.8,         // the picture fades up from black
 
-  MUSIC_DROP_TIME: 1.5,       // the title appears, this far into the video
-  TITLE_FADE: 1.2,
-  SUBTITLE_DELAY: 0.8,        // after the title starts to appear
-  SUBTITLE_FADE: 1.0,
+  MUSIC_DROP_TIME: 1.0,       // the title appears, this far into the video
+  TITLE_FADE: 1.0,
+  SUBTITLE_DELAY: 0.5,        // after the title starts to appear
+  SUBTITLE_FADE: 0.8,
   TITLE_TEXT: 'HALCYON-9',
   SUBTITLE_TEXT: 'Deep Sea Research Station',
   TITLE_TOP: '7vh',           // how far down the title sits

@@ -599,14 +599,14 @@ export class Game {
   // The opening cinematic (intro/intro-cinematic.js) plays first: no menu, no start button. The
   // game is built once the screen has gone black (building it stalls the page for a second or
   // so, which would make the video stutter), draws nothing until the cinematic lets it, and Voss
-  // wakes up through the cinematic's eyelid shader. ARIA greets him, and the first click takes
+  // wakes up through the cinematic's waking-eyes shader. ARIA greets him, and the first click takes
   // the mouse (a browser needs a click for that).
   // ---------------------------------------------------------
   beginOpening() {
     this.renderHeld = true;
     this.init();
     this.state = 'WAKING';
-    this.ui.blink.style.display = 'none';          // (the eyelid shader wakes him up instead)
+    this.ui.blink.style.display = 'none';          // (the cinematic's shader wakes him up instead)
     this._musicWasMuted = this.music.muted;
     this.music.muted = true;                       // (the video carries its own sound)
     this._lockHint = document.createElement('div');

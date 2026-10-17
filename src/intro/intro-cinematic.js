@@ -23,9 +23,9 @@ import { settings } from '../core/Settings.js';
 //     getComposer: () => game.renderer.composer,       // the game's EffectComposer, once it exists
 //     whenGameReady: () => promise,                    // called once the screen is black: build the game,
 //                                                      // and resolve when Level 1 has loaded
-//     setGameRendering: (on) => {},                    // the game draws nothing until the eyelids are in place
+//     setGameRendering: (on) => {},                    // the game draws nothing until the waking shader is in place
 //     onStarted: () => {},                             // the video is playing
-//     onWakeStart: () => {}, onWakeEnd: () => {},      // the eyelids start / the wake-up is over
+//     onWakeStart: () => {}, onWakeEnd: () => {},      // the eyes start to open / the wake-up is over
 //     onAriaCue: () => {},                             // time for ARIA's first line
 //     onComplete: () => {},                            // everything is done and cleaned up
 //     onFallback: () => {}                             // the video would not load: start the game normally
@@ -49,8 +49,8 @@ export const INTRO_CONFIG = {
   SUBTITLE_FADE: 1.0,
   TITLE_TEXT: 'HALCYON-9',
   SUBTITLE_TEXT: 'Deep Sea Research Station',
-  TITLE_TOP: '7vh',           // where the title sits (the station is on the left, the water on the right)
-  TITLE_SHIFT_X: '7vw',       // how far right of the centre, to keep clear of the station's roof
+  TITLE_TOP: '7vh',           // how far down the title sits
+  TITLE_SHIFT_X: '0vw',       // how far right of the centre (0: centred)
 
   FADE_START: null,           // when the fade to black starts, in video seconds; null: duration minus FADE_OUT_BEFORE_END
   FADE_OUT_BEFORE_END: 1.5,
@@ -75,15 +75,15 @@ export const INTRO_CONFIG = {
     './assets/textures/screen_wear.jpg'
   ],
 
-  // The wake-up: [time, how open the eyes are (0 shut, 1 the whole screen), haze (1 blurred and
-  // grey, 0 sharp)]. Values between the keys are eased. Eyes open slowly, shut again, open more
-  // fully, and the view sharpens.
+  // The wake-up: [time, how open the eyes are (0 black, 1 and over fully seen), haze (1 blurred and
+  // grey, 0 sharp)]. Values between the keys are eased. Out of black a dim blur, back to black
+  // (a blink), then up fully as the view sharpens.
   WAKE_KEYS: [
     [0.0, 0.00, 1.00],
     [0.5, 0.00, 1.00],
-    [1.9, 0.20, 0.92],        // first opening, slow
-    [2.6, 0.26, 0.88],
-    [3.1, 0.00, 0.86],        // blink: shut
+    [1.9, 0.34, 0.92],        // first opening, slow: a dim blur
+    [2.6, 0.40, 0.88],
+    [3.1, 0.00, 0.86],        // blink: black
     [3.5, 0.00, 0.84],
     [4.6, 0.85, 0.55],        // open again, more fully
     [5.2, 1.25, 0.30],        // wide open
@@ -118,12 +118,13 @@ const STYLE = `
 `;
 
 // ---------------------------------------------------------------------------------------------
-// The eyelid shader: a full-screen pass over the finished game frame.
-//   uOpen  how far the lids are apart (0 shut; past 1 they are off the screen)
-//   uHaze  1: heavily blurred, grey, glowing and narrowed; 0: the plain picture
+// The waking-eyes shader: a full-screen pass over the finished game frame.
+//   uOpen  how open the eyes are: how much of the picture comes through (0 black; 0.9 and over all of it)
+//   uHaze  1: heavily blurred, grey and narrowed; 0: the plain picture
+// No lids are drawn: the picture comes up out of black, blurred, and goes back for a blink.
 // ---------------------------------------------------------------------------------------------
 export const EyeShader = {
-  name: 'EyelidShader',
+  name: 'WakingEyesShader',
   uniforms: {
     tDiffuse: { value: null },
     uOpen: { value: 0 },
@@ -178,24 +179,15 @@ export const EyeShader = {
         // washed out: the colour drains, the brightness does not change
         col = mix(vec3(lum), col, 1.0 - 0.7 * uHaze);
       }
-      // tunnel vision, closing in when hazy
+      // tunnel vision, closing in when hazy (soft and colourless: no edge to see)
       vec2 d = (vUv - 0.5) * vec2(uAspect, 1.0);
       float vig = smoothstep(1.05, 0.2, length(d) * (1.0 + 0.7 * uHaze));
       col *= mix(1.0, vig, 0.3 + 0.55 * uHaze);
 
-      // the eyelids: a lens-shaped opening that is curved while narrow, soft-edged (blurrier
-      // when hazy), with a dim red glow on the rim where light comes through the lid
-      float x = (vUv.x - 0.5) * 2.0;
-      float curve = 0.5 * x * x * (1.0 - smoothstep(0.55, 1.05, uOpen));
-      float gap = uOpen * 0.5 * (1.0 - curve);
-      float y = abs(vUv.y - 0.5);
-      float soft = 0.014 + 0.07 * uHaze * smoothstep(0.0, 0.3, uOpen);
-      float inside = 1.0 - smoothstep(gap - soft, gap + soft, y);
-      inside *= smoothstep(0.0, 0.02, uOpen);
-      float rim = (1.0 - smoothstep(gap, gap + soft * 3.5, y)) * (1.0 - inside) * smoothstep(0.0, 0.05, uOpen);
-      vec3 lid = vec3(0.22, 0.035, 0.02) * rim * (0.35 + uOpen);
-      col = mix(lid, col, inside);
-      gl_FragColor = vec4(col, 1.0);
+      // how open the eyes are: how much of the picture comes through, out of black
+      float seen = clamp(uOpen / 0.9, 0.0, 1.0);
+      seen = seen * seen * (3.0 - 2.0 * seen);
+      gl_FragColor = vec4(col * seen, 1.0);
     }`
 };
 
@@ -473,7 +465,7 @@ export function startIntro(options = {}) {
       : Promise.resolve();
     await Promise.all([wait(cfg.BLACK_HOLD * 1000), gameReady]);
 
-    // ---- the wake-up: the eyelid pass goes on before the black cover comes off ----
+    // ---- the wake-up: the waking-eyes pass goes on before the black cover comes off ----
     composer = options.getComposer?.() || null;
     const keys = cfg.WAKE_KEYS;
     const end = keys[keys.length - 1][0];
@@ -504,7 +496,7 @@ export function startIntro(options = {}) {
     state.phase = 'wake';
     options.onWakeStart?.();
     if (!composer) {
-      // (no post-processing to put the eyelids in: just fade the cover away)
+      // (no post-processing to put the shader in: just fade the cover away)
       root.style.transition = 'opacity 1.5s ease';
       root.style.opacity = '0';
       await wait(1500);

@@ -14,7 +14,8 @@ the armature placed at
 which lands the fresh mesh exactly where the old baked copy sat - verified against the old
 copy's world bounds (the bake froze the rest pose) before anything of it is removed; on a
 mismatch the append is rolled back and the room is left untouched, so a failed run costs
-nothing (the script never saves).
+nothing (the script never saves). A copy that is already wired to an armature (an earlier
+run of this script, or the rigs re-added by hand) is left exactly as placed instead.
 
 Run it inside the OPEN l2-atrium.blend GUI session (Scripting tab > Open this file > Run
 Script), then Ctrl+S. Do not run it headless while the GUI session has unsaved work.
@@ -65,11 +66,19 @@ else:
         if coll is None or old is None:
             print('%s: no collection or no %s object - skipped' % (room_name, old_name))
             continue
+        # already wired (an earlier run, or the rigs re-added by hand): leave the room exactly
+        # as placed - the verification below compares REST bounds, which a posed copy never
+        # matches, so a wired room must not go through the append-and-check path at all
+        mod = next((m for m in old.modifiers if m.type == 'ARMATURE' and m.object), None)
+        wired = mod.object if mod else (old.parent if old.parent and old.parent.type == 'ARMATURE' else None)
+        if wired is not None:
+            ad = wired.animation_data
+            print('%s: %s is already wired to %s (action %s) - left exactly as placed' % (
+                room_name, old.name, wired.name,
+                ad.action.name if ad and ad.action else 'none'))
+            continue
         target = world_bbox(old)
         frame = room_frame(coll)
-        # the rig a previous run left behind, if any (the shipped copies lost theirs)
-        mod = next((m for m in old.modifiers if m.type == 'ARMATURE' and m.object), None)
-        old_arm = mod.object if mod else (old.parent if old.parent and old.parent.type == 'ARMATURE' else None)
 
         stash = old.data.name
         old.data.name = stash + '_stash'     # keep the append from reusing the baked mesh data
@@ -101,8 +110,6 @@ else:
             continue
 
         drop(old)
-        if old_arm is not None:
-            drop(old_arm)
         mesh.name = old_name
         arm.name = arm_name
 

@@ -33,6 +33,12 @@ const FALL_LIMIT = -12;       // below this the player has fallen out of the wor
 
 const THIRD_PERSON_DISTANCE = 4.2;
 
+// Swimming (Level 3, outside, in the dive suit): the suit's thruster pack pushes him where he looks;
+// he drifts on when he lets go, and sinks slowly (the suit is heavy)
+const SWIM_SPEED = 2.6;
+const SWIM_BOOST = 4.6;       // Shift
+const SWIM_SINK = 0.25;       // m/s, drifting down when nothing is pushing
+
 export class PlayerController {
   constructor(camera, domElement, scene) {
     this.camera = camera;
@@ -221,11 +227,28 @@ export class PlayerController {
     return hit === null;
   }
 
+  // Swim (Level 3, outside) or walk. Swimming: no gravity, no stepping or snapping to the floor.
+  setSwimming(on) {
+    if (!!on === !!this.swimming || !this.kcc) return;
+    this.swimming = !!on;
+    if (on) {
+      this.kcc.disableSnapToGround();
+      this.kcc.disableAutostep();
+      if (this.crouched) this._setCrouched(false);
+      this.velocity.y = Math.min(this.velocity.y, 1.5);
+    } else {
+      this.kcc.enableAutostep(0.62, 0.15, false);
+      this.kcc.enableSnapToGround(0.35);
+      this.thrusting = false;
+    }
+  }
+
   // `canMove` is false while the player is frozen (e.g. the wake-up blink)
   update(delta, canMove = true) {
     if (!this.ready) return;
     const dt = Math.min(delta, 0.05);
     const k = this.keys;
+    if (this.swimming) return this._swim(dt, canMove);
 
     // Which way the player wants to go, relative to where the camera looks
     const yaw = this.camera.rotation.y;
@@ -324,6 +347,53 @@ export class PlayerController {
       verticalSpeed: this.velocity.y,
       camera: this.camera,
       bodyYaw: this.facing
+    });
+  }
+
+  // One frame of swimming: thrust toward where the camera looks (W/S, with its pitch), sideways
+  // (A/D), up (Space) and down (C); the velocity eases toward it, so he glides and drifts.
+  // swimLimit(position, velocity) lets the level hold him back (the cable has a length).
+  _swim(dt, canMove) {
+    const k = this.keys;
+    this.camera.getWorldDirection(this._camDir);
+    const yaw = this.camera.rotation.y;
+    this._right.set(Math.cos(yaw), 0, -Math.sin(yaw));
+    this._wish.set(0, 0, 0);
+    if (canMove && this.instance.isLocked) {
+      if (k.forward) this._wish.add(this._camDir);
+      if (k.back) this._wish.sub(this._camDir);
+      if (k.right) this._wish.add(this._right);
+      if (k.left) this._wish.sub(this._right);
+      if (k.jumpHeld) this._wish.y += 1;
+      if (k.crouch) this._wish.y -= 1;
+    }
+    const moving = this._wish.lengthSq() > 0;
+    if (moving) this._wish.normalize();
+    this.thrusting = moving;
+    const speed = (k.sprint ? SWIM_BOOST : SWIM_SPEED) * this.speedScale;
+    const ease = 1 - Math.exp(-(moving ? 1.6 : 0.8) * dt);
+    this.velocity.x += (this._wish.x * speed - this.velocity.x) * ease;
+    this.velocity.z += (this._wish.z * speed - this.velocity.z) * ease;
+    this.velocity.y += ((moving ? this._wish.y * speed : -SWIM_SINK) - this.velocity.y) * ease;
+    this.swimLimit?.(this.position, this.velocity, dt);
+
+    this.kcc.computeColliderMovement(this.collider, { x: this.velocity.x * dt, y: this.velocity.y * dt, z: this.velocity.z * dt });
+    const mv = this.kcc.computedMovement();
+    this.grounded = this.kcc.computedGrounded();
+    if (this.grounded && this.velocity.y < 0) this.velocity.y = 0;
+    const t = this.body_rb.translation();
+    this.body_rb.setNextKinematicTranslation({ x: t.x + mv.x, y: t.y + mv.y, z: t.z + mv.z });
+    this.physics.step(dt);
+    const n = this.body_rb.translation();
+    this.position.set(n.x, n.y - this.height / 2, n.z);
+    this._groundSpeed = 0;
+
+    this.eye += (EYE - this.eye) * (1 - Math.exp(-CROUCH_EASE * dt));
+    // (he turns toward where he swims, but not for straight up or down)
+    this._placeBodyAndCamera(dt, moving && Math.hypot(this._wish.x, this._wish.z) > 0.2);
+    this.character.update(dt, {
+      crouch: 0, running: false, grounded: true, speed: 0, verticalSpeed: 0,
+      camera: this.camera, bodyYaw: this.facing
     });
   }
 

@@ -27,7 +27,8 @@ Names the game reads: COL_ collision; TERRAIN_ rock (sediment settles on what fa
 vent chimneys (lava glows in their cracks); SEA_LIGHT_<n> the lights out here (0 the floodlight,
 1-3 over vents); PT_SeaBeacon the mast's red beacon; PT_Vent_<n> the top of each chimney (smoke),
 PT_VentBase_<n> its foot (glow); PT_Platform the platform's middle, PT_Outside where the
-objective marker points.
+objective marker points, PT_DiveGate the gap in the far rail, PT_CableAnchor where the cable leaves
+the collar.
 """
 import sys, os, math, random
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -280,10 +281,22 @@ def rail(p0, p1):
     beam(struct, 'l3_hazard', (p0.x, p0.y, FZ + 1.1), (p1.x, p1.y, FZ + 1.1), 0.08, 0.06)
 rail((PX0 + 0.1, PY0 + 0.1, 0), (PX1 - 0.3, PY0 + 0.1, 0))
 rail((PX0 + 0.1, PY1 - 0.1, 0), (PX1 - 0.3, PY1 - 0.1, 0))
-rail((PX0 + 0.1, PY0 + 0.1, 0), (PX0 + 0.1, PY1 - 0.1, 0))
+# the far rail has a gap, the dive gate, with striped posts and a striped edge: the way off
+GATE = 1.0                           # half its width
+rail((PX0 + 0.1, PY0 + 0.1, 0), (PX0 + 0.1, CY - GATE, 0))
+rail((PX0 + 0.1, CY + GATE, 0), (PX0 + 0.1, PY1 - 0.1, 0))
+for y in (CY - GATE, CY + GATE):
+    box(struct, 'l3_hazard', (PX0 + 0.02, y - 0.08, FZ), (PX0 + 0.18, y + 0.08, FZ + 1.6))
+for k in range(5):
+    y0 = CY - GATE + k * 0.4
+    box(struct, 'l3_hazard' if k % 2 == 0 else 'l3_dark', (PX0, y0, FZ), (PX0 + 0.5, y0 + 0.4, FZ + 0.01))
 col_box((PX0 - 0.2, PY0 - 0.2, FZ), (PX1, PY0 + 0.1, FZ + 3.0))
 col_box((PX0 - 0.2, PY1 - 0.1, FZ), (PX1, PY1 + 0.2, FZ + 3.0))
-col_box((PX0 - 0.2, PY0 - 0.2, FZ), (PX0 + 0.1, PY1 + 0.2, FZ + 3.0))
+col_box((PX0 - 0.2, PY0 - 0.2, FZ), (PX0 + 0.1, CY - GATE, FZ + 3.0))
+col_box((PX0 - 0.2, CY + GATE, FZ), (PX0 + 0.1, PY1 + 0.2, FZ + 3.0))
+empty('PT_DiveGate', (PX0, CY, FZ + 1.0))
+# where the uplink cable comes out of the collar onto the platform (it pays out from the reel inside)
+empty('PT_CableAnchor', (HULL_X - 0.3, C1 - 0.35, FZ + 0.05))
 # the floodlight mast in the far corner, a lamp on an arm, and a red beacon on top
 MX, MY = PX0 + 0.45, PY1 - 0.45
 beam(struct, 'l3_rust', (MX, MY, FZ), (MX, MY, FZ + 5.2), 0.18, 0.18)

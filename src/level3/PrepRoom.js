@@ -292,7 +292,7 @@ export class PrepRoom {
     // out on the platform for the first time
     if (!this._outside && p.x < PLATFORM_X) {
       this._outside = true;
-      this.game.ui.showToast('You are outside. This is as far as Level 3 goes for now: swimming out to the dish is the next part.', 9000);
+      this.game.ui.showToast('Outside. The gap in the far rail is the dive gate: go through it to swim.', 7000);
     }
   }
 
@@ -317,6 +317,11 @@ export class PrepRoom {
     if (z === this.zone) return;
     this.zone = z;
     const sea = this.s.sea;
+    // (what cannot be seen from where he is is not drawn: the drowned crew and the silt behind the
+    // hull while he is outside, the whole outside while he is back down on the deck)
+    for (const b of this.s.crew?.bodies || []) b.pivot.visible = z !== 'sea';
+    if (this.s.silt) this.s.silt.visible = z !== 'sea';
+    if (sea && (this.lock === 'outer' || this.lock === 'open')) sea.setShown(z !== 'deck');
     this.borrowed.forEach((b, i) => {
       const to = z === 'prep' ? b.to : z === 'sea' ? sea.lights[i] : null;
       const spec = z === 'prep' ? PREP_LIGHTS[i] : SEA.LIGHTS[i];
@@ -564,8 +569,10 @@ export class PrepRoom {
       case 'inner': return this._inLock(p) ? { text: 'Flood the lock', target: this.pos.panel, label: 'PANEL' }
         : { text: 'Enter the water lock', target: this.pos.mid, label: 'LOCK' };
       case 'sealing': case 'flooding': case 'full': return { text: 'Wait while the lock floods', target: null };
-      default: return this._outside ? { text: 'Look around (swimming out to the dish comes next)', target: null }
-        : { text: 'Go outside', target: this.s.sea?.points.outside || null, label: 'OUT' };
+      default:
+        if (!this._outside) return { text: 'Go outside', target: this.s.sea?.points.outside || null, label: 'OUT' };
+        if (!this.s.swim?._told) return { text: 'Swim out through the dive gate', target: this.s.sea?.points.gate || null, label: 'GATE' };
+        return { text: 'Explore outside (the dish comes next)', target: null };
     }
   }
 

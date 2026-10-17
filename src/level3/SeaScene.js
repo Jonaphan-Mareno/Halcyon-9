@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createGLTFLoader } from '../core/loaders.js';
 import { deckMaterial } from './DeckMaterials.js';
+import { SeaLife } from './SeaLife.js';
 
 // Outside the station (Blender/scripts/build_l3_outside.py): the platform beyond the water lock's
 // outer hatch, the station's hull above and below it, and the canyon from the opening cinematic:
@@ -14,7 +15,9 @@ import { deckMaterial } from './DeckMaterials.js';
 //     canyon has no visible end
 //   - marine snow: specks drifting round the camera wherever it goes (the points wrap round a box
 //     that follows the camera, in the vertex shader, so there are always some and they cost no
-//     work on the page)
+//     work on the page). Some of it is living plankton: swim through it and it flares blue
+//   - the tube worms by the vents sway in the current (their feet stay put: the shader knows
+//     where the seabed is, from the same shape the Blender script gives it)
 //   - smoke rising from each vent and a glow at its foot (billboards, one draw call each), and a
 //     few faint shafts of light from above
 //
@@ -84,7 +87,11 @@ export class SeaScene {
     this.model = model;
 
     const at = (name) => model.getObjectByName(name)?.getWorldPosition(new THREE.Vector3()) || null;
-    this.points = { platform: at('PT_Platform'), outside: at('PT_Outside'), beacon: at('PT_SeaBeacon') };
+    this.points = {
+      platform: at('PT_Platform'), outside: at('PT_Outside'), beacon: at('PT_SeaBeacon'),
+      gate: at('PT_DiveGate'), cableAnchor: at('PT_CableAnchor')
+    };
+    this._sway(model);
     for (let i = 0; i < 4; i++) this.lights.push(at('SEA_LIGHT_' + i));
     this.vents = [];
     for (let i = 0; i < 8; i++) {
@@ -97,6 +104,8 @@ export class SeaScene {
     this._smoke();
     this._glow();
     this._shafts();
+    // fish, jellyfish, vent bubbles, and something big far out (SeaLife.js)
+    this.life = new SeaLife(this.group, this.vents);
     this.scene.add(this.group);
   }
 
@@ -136,9 +145,17 @@ export class SeaScene {
     }
   }
 
-  update(dt, camera) {
+  // player: where the swimmer is (or null), stir: how hard he is moving (0..1)
+  update(dt, camera, player = null, stir = 0) {
     if (!this.group.visible) return;
     this.time += dt;
+    const su = this.snowMat?.userData.uniforms;
+    if (su) {
+      if (player) su.uPlayer.value.set(player.x, player.y + 1.0, player.z);
+      su.uStir.value += ((player ? stir : 0) - su.uStir.value) * (1 - Math.exp(-3 * dt));
+    }
+    if (this.swayUniforms) this.swayUniforms.uTime.value = this.time;
+    this.life?.update(dt, player, this.scene.fog);
     const fog = this.scene.fog;
     for (const m of [this.snowMat, this.smokeMat, this.glowMat, this.shaftMat]) {
       const u = m?.userData.uniforms;
@@ -148,6 +165,36 @@ export class SeaScene {
       if (u.uFogColor) u.uFogColor.value.copy(fog.color);
       if (u.uFogDensity) u.uFogDensity.value = fog.density;
     }
+  }
+
+  // The tube worms and their plumes lean and sway with the current, more the further up they are
+  _sway(model) {
+    const uniforms = { uTime: { value: 0 } };
+    this.swayUniforms = uniforms;
+    const done = new Set();
+    model.traverse((o) => {
+      if (!o.isMesh || !o.name.startsWith('SEA_Life')) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        if (done.has(m)) continue;
+        done.add(m);
+        m.onBeforeCompile = (shader) => {
+          shader.uniforms.uTime = uniforms.uTime;
+          shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', '#include <common>\nuniform float uTime;')
+            .replace('#include <begin_vertex>', `#include <begin_vertex>
+              {
+                // the seabed under this point (the Blender script's floor_z, in its own axes)
+                float bx = transformed.x, by = -transformed.z;
+                float floorY = -30.0 - 0.07 * max(0.0, -40.0 - bx) + 2.2 * sin(bx * 0.05) * cos(by * 0.07) - 0.3;
+                float h = clamp((transformed.y - floorY) / 2.4, 0.0, 1.4);
+                float w = uTime * 1.1 + bx * 1.3 + transformed.z * 0.7;
+                transformed.x += h * h * 0.22 * sin(w);
+                transformed.z += h * h * 0.16 * cos(w * 0.8 + 1.3);
+              }`);
+        };
+        m.customProgramCacheKey = () => 'sea-sway-' + m.name;
+      }
+    });
   }
 
   // ---------------------------------------------------------------- marine snow
@@ -166,7 +213,10 @@ export class SeaScene {
     const mat = new THREE.PointsMaterial({
       color: 0xb9cfc9, size: 0.05, map: dotTexture(), transparent: true, opacity: 0.7, depthWrite: false, sizeAttenuation: true
     });
-    const uniforms = { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uBox: { value: box } };
+    const uniforms = {
+      uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uBox: { value: box },
+      uPlayer: { value: new THREE.Vector3(0, -999, 0) }, uStir: { value: 0 }
+    };
     mat.userData.uniforms = uniforms;
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
@@ -175,13 +225,26 @@ export class SeaScene {
           attribute float aScale;
           uniform float uTime;
           uniform vec3 uCam;
-          uniform float uBox;`)
+          uniform float uBox;
+          uniform vec3 uPlayer;
+          uniform float uStir;
+          varying float vGlow;`)
         // each speck drifts and sinks slowly; the box of them wraps round the camera
         .replace('#include <begin_vertex>', `
           vec3 transformed = position + vec3(sin(uTime * 0.11 + position.y * 0.7) * 0.4, -uTime * 0.09,
                                              cos(uTime * 0.08 + position.x * 0.6) * 0.4);
           transformed = mod(transformed - uCam + uBox * 0.5, uBox) + uCam - uBox * 0.5;`)
-        .replace('gl_PointSize = size;', 'gl_PointSize = size * aScale;');
+        .replace('gl_PointSize = size;', `
+          // plankton round the swimmer flares blue while he moves through it (a third of it lives)
+          float alive = step(0.66, fract(aScale * 7.31));
+          vGlow = alive * uStir * smoothstep(2.8, 0.7, distance(transformed, uPlayer))
+                * (0.6 + 0.4 * sin(uTime * 7.0 + position.x * 31.0));
+          gl_PointSize = size * aScale * (1.0 + vGlow * 1.5);`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vGlow;')
+        .replace('#include <color_fragment>', `#include <color_fragment>
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.35, 0.85, 1.0) * 2.4, vGlow);
+          diffuseColor.a = min(1.0, diffuseColor.a + vGlow);`);
     };
     mat.customProgramCacheKey = () => 'sea-snow';
     const pts = new THREE.Points(geo, mat);

@@ -22,6 +22,7 @@ import { Water } from './Water.js';
 import { DrownedCrew } from './DrownedCrew.js';
 import { PrepRoom } from './PrepRoom.js';
 import { SeaScene } from './SeaScene.js';
+import { Swim } from './Swim.js';
 import '../ui/level3.css';
 import { LINES, TALKS } from './Level3Lines.js';
 import { disposeScene } from '../core/disposeScene.js';
@@ -217,6 +218,8 @@ export class DeckSession {
     await this.sea.ready;
     // through the gate: the stairs, the EVA prep room, the suit, the cable and the water lock
     this.prep = new PrepRoom(this, deck, at);
+    // out in the water: the thruster pack, the cable, the bubbles (Swim.js)
+    this.swim = new Swim(this);
   }
 
   // the window's glass: a faint green tint with a brighter rim, so the room behind reads as water
@@ -387,7 +390,11 @@ export class DeckSession {
     this.crew.update(dt);
     this._driftSilt(dt);
     this.prep?.update(dt, p, playing);
-    this.sea?.update(dt, g.camera.instance);
+    this.swim?.update(dt, playing);
+    // (the plankton stirs round him as he swims)
+    const outside = this.prep?.zone === 'sea';
+    const stir = this.controls.swimming ? Math.min(1, this.controls.velocity.length() / 4.6) : 0;
+    this.sea?.update(dt, g.camera.instance, outside ? p : null, stir);
     this._holding(dt, playing);
 
     this.hud.setVisible(playing);
@@ -537,6 +544,7 @@ export class DeckSession {
     window.removeEventListener('keydown', this._onKey);
     window.removeEventListener('keyup', this._onKeyUp);
     window.removeEventListener('resize', this._onResize);
+    this.swim?.dispose();
     this.prep?.dispose();
     this.sea?.dispose();
     this.holdEl?.remove();

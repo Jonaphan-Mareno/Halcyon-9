@@ -38,6 +38,7 @@ import { Inventory } from '../ui/Inventory.js';
 import { sleep, pauseClock } from '../core/PauseClock.js';
 import { vossSays, vossVoice } from '../audio/VossVoice.js';
 import { buildRoomProps } from './RoomProps.js';
+import { applyShellMetal } from './ShellMetal.js';
 import { disposeScene } from '../core/disposeScene.js';
 import '../ui/level2.css';
 
@@ -359,6 +360,10 @@ export class HabitatSession {
     });
     this.hubTextures = this.hubTextures || createHubTextures();
     applyHubMaterials(model, this.hubTextures);
+    // the bedroom shells ship as plain painted boxes: Kessler's (Cube.009) gets its walls and
+    // roof clad in the team's metal set, the floor slab keeping the room paint. Voss's shell
+    // is 'Cube' - add it to the list to clad both rooms
+    applyShellMetal(model, ['Cube.009']);
     // the bedrooms take the toon treatment the player wears: the cel banding and cyan rim
     // (the team's toon look), under this level's own lights. Scoped by material name - VCol.* /
     // Material.00* are the bedroom set the exporter writes, so the atrium's own materials

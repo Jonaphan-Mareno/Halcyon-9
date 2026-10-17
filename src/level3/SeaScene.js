@@ -53,7 +53,8 @@ const ATRIUM = {
   PANO: './assets/textures/l3/atrium_pano.jpg',
   L2_R: 17.5, L2_H: 12.5, EYE: [0, 2.0, 8.0],
   AXIS: [-2.0, -22.5], FLOOR: 15.6, ROOM_R: 43.8,
-  BRIGHT: 1.35                // (the photo is already tone-mapped once; this keeps it from going dull)
+  BRIGHT: 1.9,                // (the photo is already tone-mapped once; this keeps it from going dull)
+  WARM: [1.18, 0.97, 0.74]    // graded warm, lamp-lit, as the lounge glows in the cinematic
 };
 const GLOW_SCALE = {
   l3_lamp: 0.22, l3_alarm: 0.6, l3_window: 0.45, l3_porthole: 1.0, l3_lava: 1.0, l3_plume: 0.6,
@@ -236,10 +237,11 @@ export class SeaScene {
     const uniforms = {
       tPano: { value: pano }, uCentre: { value: C }, uRadius: { value: ATRIUM.ROOM_R },
       uFloor: { value: C.y }, uCeil: { value: C.y + ATRIUM.L2_H * k }, uEye: { value: eye },
-      uBright: { value: ATRIUM.BRIGHT }, uFogColor: { value: new THREE.Color() }, uFogDensity: { value: 0.02 }
+      uBright: { value: ATRIUM.BRIGHT }, uWarm: { value: new THREE.Vector3(...ATRIUM.WARM) }, uFogColor: { value: new THREE.Color() }, uFogDensity: { value: 0.02 }
     };
     const mat = new THREE.ShaderMaterial({
       uniforms,
+      side: THREE.DoubleSide,              // (some panes face in: the ring is open, so its faces are not all turned out)
       vertexShader: /* glsl */`
         varying vec3 vWorld;
         varying vec3 vNormal;
@@ -257,6 +259,7 @@ export class SeaScene {
         uniform float uCeil;
         uniform vec3 uEye;
         uniform float uBright;
+        uniform vec3 uWarm;
         uniform vec3 uFogColor;
         uniform float uFogDensity;
         varying vec3 vWorld;
@@ -277,13 +280,15 @@ export class SeaScene {
           vec3 dir = normalize(hit - uEye);
           dir = vec3(dir.z, dir.y, -dir.x);
           vec2 uv = vec2(atan(dir.x, -dir.z) / 6.2831853 + 0.5, asin(clamp(dir.y, -1.0, 1.0)) / 3.14159265 + 0.5);
-          vec3 room = texture2D(tPano, uv).rgb * uBright;
+          // (the dark parts lifted, as a lamp-lit room's shadows are soft)
+          vec3 room = pow(texture2D(tPano, uv).rgb, vec3(0.8)) * uBright * uWarm;
           // the glass: a faint reflection of the sea at a glancing angle, and a little grime low down
-          float glance = pow(1.0 - abs(dot(normalize(vNormal), -v)), 4.0);
-          vec3 col = mix(room, uFogColor * 1.6 + vec3(0.02, 0.05, 0.06), glance * 0.6);
+          float glance = pow(1.0 - abs(dot(normalize(vNormal), -v)), 6.0);
+          vec3 col = mix(room, uFogColor * 1.6 + vec3(0.02, 0.05, 0.06), glance * 0.35);
           col *= mix(0.75, 1.0, smoothstep(uFloor, uFloor + 2.5, vWorld.y));
           float depth = distance(vWorld, cameraPosition);
-          float fog = 1.0 - exp(-pow(uFogDensity * depth, 2.0));
+          // (the lit room's light carries further through the water than the hull can be seen)
+          float fog = 1.0 - exp(-pow(uFogDensity * 0.75 * depth, 2.0));
           gl_FragColor = vec4(mix(col, uFogColor, fog), 1.0);
         }`
     });

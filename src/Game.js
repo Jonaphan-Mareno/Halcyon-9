@@ -205,7 +205,7 @@ export class Game {
     this.renderer = new Renderer();
     // The physics engine (Rapier) is a separate download: start it now, alongside the level's
     // models, so it is ready for whichever level needs it
-    Physics.preload();
+    this._physicsLoaded = Physics.preload();
 
     // The music and the lighting mood belong to the whole game (they carry from level to level).
     // The music is your own files (see Soundtrack.js); it may only start after a click, and
@@ -596,11 +596,14 @@ export class Game {
   }
 
   // ---------------------------------------------------------
-  // The opening cinematic (intro/intro-cinematic.js) plays over the page while the game loads
-  // behind it: no menu, no start button. Voss wakes up through the cinematic's eyelid shader,
-  // ARIA greets him, and the first click takes the mouse (a browser needs a click for that).
+  // The opening cinematic (intro/intro-cinematic.js) plays first: no menu, no start button. The
+  // game is built once the screen has gone black (building it stalls the page for a second or
+  // so, which would make the video stutter), draws nothing until the cinematic lets it, and Voss
+  // wakes up through the cinematic's eyelid shader. ARIA greets him, and the first click takes
+  // the mouse (a browser needs a click for that).
   // ---------------------------------------------------------
   beginOpening() {
+    this.renderHeld = true;
     this.init();
     this.state = 'WAKING';
     this.ui.blink.style.display = 'none';          // (the eyelid shader wakes him up instead)
@@ -610,7 +613,8 @@ export class Game {
     this._lockHint.id = 'lock-hint';
     this._lockHint.textContent = 'Click to look around';
     document.getElementById('ui-layer').appendChild(this._lockHint);
-    return this.currentLevel.ready;                // resolves once the first room is built
+    // ready once the first room is built and the physics engine (for Level 2) has loaded
+    return Promise.all([this.currentLevel.ready, this._physicsLoaded]);
   }
 
   // The eyes are open: hand him over
@@ -892,6 +896,8 @@ export class Game {
       requestAnimationFrame(loop);
       const delta = (time - this.lastTime) / 1000;
       this.lastTime = time;
+      // (behind the opening cinematic nothing is drawn, so the video has the machine to itself)
+      if (this.renderHeld) return;
       if (this.state !== 'PAUSED') this.mood?.update(Math.min(delta, 0.05));
       this._steerMusic();
       this.pauseMenu?.update(this.state);

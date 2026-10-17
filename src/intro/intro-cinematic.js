@@ -9,7 +9,8 @@ import { settings } from '../core/Settings.js';
 //   2. a few seconds in, at the music's drop, the title and then the subtitle fade in
 //   3. near the end the picture, the titles and the sound fade to black together
 //   4. a short black hold
-//   5. the wake-up: the game (already loaded behind the black) is seen through Voss's eyes
+//   5. the wake-up: the game (built during the black, so nothing heavy runs while the video plays)
+//      is seen through Voss's eyes
 //      opening, blinking, opening again, hazy and sharpening. This is a fragment shader added as
 //      the last effect before FXAA in the game's post-processing chain, and it is taken out
 //      again when it is done.
@@ -20,8 +21,10 @@ import { settings } from '../core/Settings.js';
 // Use (see main.js):
 //   startIntro({
 //     getComposer: () => game.renderer.composer,       // the game's EffectComposer, once it exists
-//     whenGameReady: () => promise,                    // resolves when Level 1 has loaded
-//     onStarted: () => {},                             // the video is playing: start loading the game
+//     whenGameReady: () => promise,                    // called once the screen is black: build the game,
+//                                                      // and resolve when Level 1 has loaded
+//     setGameRendering: (on) => {},                    // the game draws nothing until the eyelids are in place
+//     onStarted: () => {},                             // the video is playing
 //     onWakeStart: () => {}, onWakeEnd: () => {},      // the eyelids start / the wake-up is over
 //     onAriaCue: () => {},                             // time for ARIA's first line
 //     onComplete: () => {},                            // everything is done and cleaned up
@@ -40,7 +43,7 @@ export const INTRO_CONFIG = {
   LOAD_TIMEOUT: 4.0,          // wait this long for the video (canplaythrough), then skip the cinematic
   VIDEO_FADE_IN: 0.8,         // the picture fades up from black
 
-  MUSIC_DROP_TIME: 3.0,       // the title appears, this far into the video
+  MUSIC_DROP_TIME: 1.5,       // the title appears, this far into the video
   TITLE_FADE: 1.2,
   SUBTITLE_DELAY: 0.8,        // after the title starts to appear
   SUBTITLE_FADE: 1.0,
@@ -52,11 +55,25 @@ export const INTRO_CONFIG = {
   FADE_START: null,           // when the fade to black starts, in video seconds; null: duration minus FADE_OUT_BEFORE_END
   FADE_OUT_BEFORE_END: 1.5,
   FADE_OUT: 1.5,              // picture, titles and sound fade together over this long
-  BLACK_HOLD: 0.6,            // then black, before the eyes open
+  BLACK_HOLD: 0.6,            // then black, before the eyes open (longer while the game is still loading)
   SKIP_FADE: 0.5,             // the quick fade to black when Space is pressed
   SKIP_HINT_DELAY: 1.0,       // "Press Space to skip" shows after this long
 
   GAME_READY_TIMEOUT: 20,     // wait this long (in black) for Level 1 to load before waking up anyway
+  WARMUP_MAX: 3.0,            // then, still in black, let the game draw until its frames come smoothly (at most this long)
+  WARMUP_FRAMES: 12,          // this many smooth frames in a row...
+  WARMUP_FRAME_MS: 40,        // ...each under this many milliseconds
+
+  // Fetched quietly while the video plays (network only, no work on the page), so the game's
+  // files are already here when it is built in the black
+  PREFETCH: [
+    './assets/models/controlroom.glb',
+    './assets/models/cell.glb',
+    './assets/models/aria-head.glb',
+    './assets/models/torch.glb',
+    './assets/textures/aria_components/aria-idle.mp4',
+    './assets/textures/screen_wear.jpg'
+  ],
 
   // The wake-up: [time, how open the eyes are (0 shut, 1 the whole screen), haze (1 blurred and
   // grey, 0 sharp)]. Values between the keys are eased. Eyes open slowly, shut again, open more
@@ -153,13 +170,13 @@ export const EyeShader = {
       if (uHaze > 0.01) {
         vec3 soft = blurred(uv, uHaze * 0.03);
         col = soft;
-        // a bloom: the bright parts bleed
+        // a soft glow round the brightest parts only (the room as a whole stays as bright as it
+        // is: the lighting must not jump while he wakes)
         float bl = dot(soft, vec3(0.299, 0.587, 0.114));
-        col += soft * smoothstep(0.25, 0.9, bl) * 0.9 * uHaze;
+        col += soft * smoothstep(0.55, 1.0, bl) * 0.35 * uHaze;
         lum = dot(col, vec3(0.299, 0.587, 0.114));
-        // grey and milky
+        // washed out: the colour drains, the brightness does not change
         col = mix(vec3(lum), col, 1.0 - 0.7 * uHaze);
-        col = mix(col, vec3(0.42, 0.45, 0.48), 0.14 * uHaze);
       }
       // tunnel vision, closing in when hazy
       vec2 d = (vUv - 0.5) * vec2(uAspect, 1.0);
@@ -311,6 +328,7 @@ export function startIntro(options = {}) {
     video.load();
     root.remove();
     style.remove();
+    options.setGameRendering?.(true);
     if (eyePass && composer) {
       composer.removePass(eyePass);
       eyePass.dispose();                // its material and full-screen quad
@@ -372,6 +390,9 @@ export function startIntro(options = {}) {
     }
     state.phase = 'playing';
     options.onStarted?.();
+    for (const url of cfg.PREFETCH) {
+      try { fetch(url, { priority: 'low' }).then((r) => r.blob()).catch(() => {}); } catch (e) { /* only a head start */ }
+    }
     video.style.transition = `opacity ${cfg.VIDEO_FADE_IN}s ease`;
     requestAnimationFrame(() => { video.style.opacity = '1'; });
     later(() => { if (state.phase === 'playing') skipHint.classList.add('on'); }, cfg.SKIP_HINT_DELAY * 1000);
@@ -380,15 +401,19 @@ export function startIntro(options = {}) {
     const duration = isFinite(video.duration) ? video.duration : 10;
     const fadeStart = cfg.FADE_START ?? Math.max(0, duration - cfg.FADE_OUT_BEFORE_END);
     let titleShown = false, fadeBegan = 0, stopDrive = () => {};
-    const setFade = (p) => {                       // picture, titles and sound together
-      fade.style.opacity = String(p);
+    // The picture and titles fade under a black layer animated by CSS (smooth even if the page is
+    // busy); the sound follows it down from here
+    const fadeTo = (seconds) => {
+      fade.style.transition = `opacity ${seconds}s linear`;
+      fade.style.opacity = '1';
+    };
+    const setSound = (p) => {
       state.fadeGain = 1 - p;
       if (!unlocking) video.volume = Math.max(0, Math.min(1, volume() * state.fadeGain));
     };
 
     await new Promise((resolve) => {
       state.skipResolve = resolve;
-      video.addEventListener('ended', () => { if (!fadeBegan) fadeBegan = performance.now() - cfg.FADE_OUT * 1000; }, { once: true });
       const tick = () => {
         if (state.skip) return resolve();
         const t = video.currentTime;
@@ -401,13 +426,14 @@ export function startIntro(options = {}) {
             sub.style.opacity = '1';
           }, cfg.SUBTITLE_DELAY * 1000);
         }
-        if (!fadeBegan && t >= fadeStart) {
+        if (!fadeBegan && (t >= fadeStart || video.ended)) {
           fadeBegan = performance.now();
           skipHint.classList.remove('on');
+          fadeTo(cfg.FADE_OUT);
         }
         if (fadeBegan) {
           const p = Math.min(1, (performance.now() - fadeBegan) / (cfg.FADE_OUT * 1000));
-          setFade(p);
+          setSound(p);
           if (p >= 1) resolve();
         }
       };
@@ -419,12 +445,17 @@ export function startIntro(options = {}) {
     if (state.skip) {
       skipHint.classList.remove('on');
       soundHint.classList.remove('on');
-      const from = parseFloat(fade.style.opacity) || 0;
+      const from = parseFloat(getComputedStyle(fade).opacity) || 0;
+      fade.style.transition = 'none';
+      fade.style.opacity = String(from);
+      void fade.offsetWidth;
+      fadeTo(cfg.SKIP_FADE * (1 - from));
+      const gain0 = state.fadeGain;
       const t0 = performance.now();
       await new Promise((resolve) => {
         const stop = drive(() => {
-          const p = Math.min(1, (performance.now() - t0) / (cfg.SKIP_FADE * 1000));
-          setFade(from + (1 - from) * p);
+          const p = Math.min(1, (performance.now() - t0) / (cfg.SKIP_FADE * 1000 * Math.max(0.05, 1 - from)));
+          setSound(1 - gain0 * (1 - p));
           if (p >= 1) { stop(); resolve(); }
         });
       });
@@ -436,11 +467,11 @@ export function startIntro(options = {}) {
     titles.style.display = 'none';
     soundHint.classList.remove('on');
 
-    // ---- black hold, while the game finishes loading behind it ----
-    await wait(cfg.BLACK_HOLD * 1000);
-    if (options.whenGameReady) {
-      await Promise.race([Promise.resolve(options.whenGameReady()).catch(() => {}), wait(cfg.GAME_READY_TIMEOUT * 1000)]);
-    }
+    // ---- black: the game is built now (at least BLACK_HOLD long, longer if it needs it) ----
+    const gameReady = options.whenGameReady
+      ? Promise.race([Promise.resolve().then(() => options.whenGameReady()).catch(() => {}), wait(cfg.GAME_READY_TIMEOUT * 1000)])
+      : Promise.resolve();
+    await Promise.all([wait(cfg.BLACK_HOLD * 1000), gameReady]);
 
     // ---- the wake-up: the eyelid pass goes on before the black cover comes off ----
     composer = options.getComposer?.() || null;
@@ -453,9 +484,23 @@ export function startIntro(options = {}) {
       eyePass.uniforms.uOpen.value = 0;
       eyePass.uniforms.uHaze.value = 1;
       composer.insertPass(eyePass, Math.max(0, composer.passes.length - 1));     // before FXAA
-      // let a black frame draw (a hidden tab draws none, so do not wait for one for long)
-      await Promise.race([new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))), wait(250)]);
     }
+    // Still in black: let the game draw (the first frames compile its shaders and upload its
+    // textures, which stalls) until its frames come smoothly, so the eyes open on a smooth picture
+    options.setGameRendering?.(true);
+    await new Promise((resolve) => {
+      let last = performance.now(), smooth = 0;
+      const start = last;
+      const frame = () => {
+        const now = performance.now();
+        smooth = now - last < cfg.WARMUP_FRAME_MS ? smooth + 1 : 0;
+        last = now;
+        if (smooth >= cfg.WARMUP_FRAMES || now - start > cfg.WARMUP_MAX * 1000) return resolve();
+        requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+      later(resolve, (cfg.WARMUP_MAX + 0.5) * 1000);     // (a hidden tab draws no frames)
+    });
     state.phase = 'wake';
     options.onWakeStart?.();
     if (!composer) {

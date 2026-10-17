@@ -18,7 +18,7 @@ function loadRapier() {
 export class Physics {
   // Start downloading Rapier without waiting for it
   static preload() {
-    loadRapier().catch(() => {});
+    return loadRapier().catch(() => {});
   }
 
   // Rapier's WebAssembly has to be initialised once before a world can exist

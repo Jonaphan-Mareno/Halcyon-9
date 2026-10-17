@@ -51,8 +51,8 @@ function setUpStartScreen() {
 if (classic) {
   setUpStartScreen();
 } else {
-  // The game is built behind the video (a moment after it starts playing, so the picture does not
-  // stutter) and the wake-up waits for it.
+  // The game is built once the screen has gone black after the video (building it stalls the page,
+  // which would make the video stutter) and the wake-up waits for it.
   let begun = false;
   let resolveReady;
   const ready = new Promise((resolve) => { resolveReady = resolve; });
@@ -69,8 +69,8 @@ if (classic) {
 
   startIntro({
     getComposer: () => game.renderer?.composer,
-    whenGameReady: () => ready,
-    onStarted: () => setTimeout(begin, 1200),
+    whenGameReady: () => { begin(); return ready; },
+    setGameRendering: (on) => { game.renderHeld = !on; },
     onWakeEnd: () => game.endOpeningWake(),
     onAriaCue: () => game.openingAriaLine(),
     // The video would not load or play: start the game normally

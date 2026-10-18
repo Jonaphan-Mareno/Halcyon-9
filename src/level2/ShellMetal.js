@@ -25,7 +25,7 @@ function shellMetalMaterial() {
   };
   metal = new THREE.MeshStandardMaterial({
     name: 'bed_shell_metal',
-    color: 0xE0F0FF,
+    color: 0xA8C8FF,
     map: load('metal_plate_02_diff_1k.jpg', true),
     normalMap: load('metal_plate_02_nor_gl_1k.jpg', false),
     normalScale: new THREE.Vector2(1.2, 1.2),
@@ -33,7 +33,7 @@ function shellMetalMaterial() {
     metalnessMap: load('metal_plate_02_metal_1k.jpg', false),
     metalness: 1.0,
     roughness: 0.9,
-    envMapIntensity: 2.0,
+    envMapIntensity: 1.5,
     side: THREE.DoubleSide        // like the room's toon shell: seen from the inside
   });
   return metal;

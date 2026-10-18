@@ -362,7 +362,8 @@ export class HabitatSession {
     applyHubMaterials(model, this.hubTextures);
     // the bedroom shells ship as plain painted boxes: Kessler's (Cube.009) gets its walls and
     // roof clad in the team's metal set, the floor slab keeping the room paint. Voss's shell
-    applyShellMetal(model, ['Cube009', 'Cube']);
+    // and the west wall closures (Kess_WallW, Voss_WallW) are clad in the same metal set.
+    applyShellMetal(model, ['Cube009', 'Cube', 'Kess_WallW', 'Voss_WallW']);
     // the bedrooms take the toon treatment the player wears: the cel banding and cyan rim
     // (the team's toon look), under this level's own lights. Scoped by material name - VCol.* /
     // Material.00* are the bedroom set the exporter writes, so the atrium's own materials
@@ -490,6 +491,21 @@ export class HabitatSession {
     if (clues.ration) this.interact.add({ id: 'ration', position: clues.ration, radius: 0.2, label: 'Look at the tray', use: () => this.say('ration') });
     const pods = at('PT_PodDoor', 0);
     if (pods) this.interact.add({ id: 'pods', position: pods, radius: 1.2, label: 'Read the sign on the pod door', use: () => this.say('pods') });
+    // FuseBox interaction (Bedroom 2)
+    const fuseBoxObj = atrium.getObjectByName('FuseBox00001') || atrium.getObjectByName('FuseBox00.001') || atrium.getObjectByName('COL_Kess_FuseBox00');
+    if (fuseBoxObj) {
+      const fusePos = new THREE.Box3().setFromObject(fuseBoxObj).getCenter(new THREE.Vector3());
+      // Nudge slightly towards room interior (+X) so raycast is completely clear of the wall collider
+      fusePos.x += 0.12;
+      this.interact.add({
+        id: 'fusebox',
+        position: fusePos,
+        radius: 0.6,
+        reach: 2.8,
+        label: 'Use FuseBox',
+        use: () => this.game.ui.showToast('FuseBox used.', 2500)
+      });
+    }
 
     // what holds him back (scenes 2.2 to 2.9): the stair bulkheads, the hatch and its keypad,
     // Kessler's door (it wants her card and the lab's authorisation)

@@ -1,16 +1,15 @@
 import * as THREE from 'three';
 
 // The bedroom shells ship as plain painted boxes. This clads one in the team's metal set
-// (public/assets/textures/Metals: ambientCG Metal046B, CC0, credited in CREDITS.md) - walls
-// and roof only, the floor slab band at the bottom of the box keeps the room's own paint
-// (the DoubleSide toon material shows that band as the floor you walk on).
+// (public/assets/textures/Metals/Metal_plate: Poly Haven Metal Plate 02, CC0, credited in CREDITS.md) - walls,
+// roof and floor clad in scratched steel plate.
 //
 // The shell's authored UVs are one 0..1 squash over the whole box, so every corner gets a
 // world-space box projection at a fixed metre scale instead; the mesh is rebuilt unindexed
 // (it is a few hundred corners) so each corner carries its own normal and the projection
 // stays crisp across the hard edges.
 
-const DIR = './assets/textures/Metals/';
+const DIR = './assets/textures/Metals/Metal_plate/';
 const TILE = 2.2;   // metres per texture repeat
 
 let metal = null;
@@ -26,13 +25,15 @@ function shellMetalMaterial() {
   };
   metal = new THREE.MeshStandardMaterial({
     name: 'bed_shell_metal',
-    map: load('Metal046B_1K-JPG_Color.jpg', true),
-    normalMap: load('Metal046B_1K-JPG_NormalGL.jpg', false),
-    roughnessMap: load('Metal046B_1K-JPG_Roughness.jpg', false),
-    metalnessMap: load('Metal046B_1K-JPG_Metalness.jpg', false),
-    metalness: 1,
-    roughness: 0.65,
-    envMapIntensity: 2,
+    color: 0xE0F0FF,
+    map: load('metal_plate_02_diff_1k.jpg', true),
+    normalMap: load('metal_plate_02_nor_gl_1k.jpg', false),
+    normalScale: new THREE.Vector2(1.2, 1.2),
+    roughnessMap: load('metal_plate_02_rough_1k.jpg', false),
+    metalnessMap: load('metal_plate_02_metal_1k.jpg', false),
+    metalness: 1.0,
+    roughness: 0.9,
+    envMapIntensity: 2.0,
     side: THREE.DoubleSide        // like the room's toon shell: seen from the inside
   });
   return metal;
@@ -47,7 +48,7 @@ export function applyShellMetal(root, names, tile = TILE) {
   const n = new THREE.Vector3();
   const p = new THREE.Vector3();
   for (const name of names) {
-    const o = root.getObjectByName(name);
+    const o = root.getObjectByName(name) || root.getObjectByName(name.replace(/\./g, ''));
     if (!o || !o.isMesh) continue;
     o.updateWorldMatrix(true, false);
     const mw = o.matrixWorld;
@@ -69,8 +70,8 @@ export function applyShellMetal(root, names, tile = TILE) {
         n.add(p.fromBufferAttribute(nrm, t * 3 + k).applyMatrix3(nrmMat));
       }
       n.normalize();
-      // the slab the room stands on: horizontal faces in the bottom band of the box
-      (Math.abs(n.y) > 0.7 && c.y / 3 < floorY ? kept : clad).push(t);
+      // Clad all faces (walls, roof, and floor)
+      clad.push(t);
     }
     if (!clad.length) {
       if (split) split.dispose();

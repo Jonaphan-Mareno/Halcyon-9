@@ -137,7 +137,7 @@ export class HabitatSession {
     const root = document.getElementById('ui-layer');
     // Voss's health (integrity), the same as in Level 1, on the same HUD
     this.player = new PlayerStats();
-    this.hud = new HUD(root, { onRestart: () => {} });
+    this.hud = new HUD(root, { onRestart: () => { } });
     this.fightHelp = new FightHelp(root);
     // everything he reads, hears or watches upstairs (the game waits while it is open)
     this.reader = new Readables(root, {
@@ -254,7 +254,7 @@ export class HabitatSession {
       await this._load();
       await this._precompile();
       this.ready = true;
-    this.game.applySettings?.();
+      this.game.applySettings?.();
       this.loadingEl.classList.remove('visible');
       game.ui.showToast('WASD to move, Space to jump, E to use things, V to switch camera.', 7000);
     }).catch((e) => console.error('Level 2 atrium failed to load.', e));
@@ -362,8 +362,7 @@ export class HabitatSession {
     applyHubMaterials(model, this.hubTextures);
     // the bedroom shells ship as plain painted boxes: Kessler's (Cube.009) gets its walls and
     // roof clad in the team's metal set, the floor slab keeping the room paint. Voss's shell
-    // is 'Cube' - add it to the list to clad both rooms
-    applyShellMetal(model, ['Cube.009']);
+    applyShellMetal(model, ['Cube009', 'Cube']);
     // the bedrooms take the toon treatment the player wears: the cel banding and cyan rim
     // (the team's toon look), under this level's own lights. Scoped by material name - VCol.* /
     // Material.00* are the bedroom set the exporter writes, so the atrium's own materials
@@ -402,8 +401,10 @@ export class HabitatSession {
     });
     this.roomLights = this.roomLights || [];
     for (const room of litRooms) {
-      const l = new THREE.PointLight(0xffeeda, 30, 10, 2);
+      const l = new THREE.PointLight(0xffeeda, 30, 10, 1.5);
+      l.intensity *= 1.5;
       l.position.copy(room.centre);
+      l.position.y -= 0.7; // offset down from ceiling panels so light illuminates ceiling, walls, and floor
       this.game.scene.add(l);
       this.roomLights.push({ light: l, base: l.intensity, color: l.color.clone() });
     }
@@ -426,9 +427,12 @@ export class HabitatSession {
     this.atrium = atrium;
     this.lab = lab;
 
-    // arrive in the lift, facing the hall (north)
+    // arrive in the lift, facing the hall (north) 
     const spawn = atrium.getObjectByName('SPAWN_Lift').getWorldPosition(new THREE.Vector3());
     this.controls.attach(this.physics, spawn.setY(spawn.y + 0.1), 0);
+    // Temporary test spawn: inside Dr. Kessler's room facing into the room
+    // const spawn = new THREE.Vector3(14.0, 5.65, -15.5);
+    // this.controls.attach(this.physics, spawn, -2.35);
     if (lift) {
       this._placeLift(lift.scene, atrium);
     } else {
@@ -552,8 +556,10 @@ export class HabitatSession {
     // the sea outside the big window: a looping video, the window's exact shape (16:9: 4.2 m tall,
     // 7.47 m wide along the inside of the 17 m wall, so 12.58 degrees either side of north)
     const winHalf = THREE.MathUtils.radToDeg((4.2 * 16 / 9) / 17) / 2;
-    this.sea = new VideoWindow({ src: './assets/video/sea_loop.mp4', radius: 17.9, wallRadius: 17,
-      a0: 90 - winHalf, a1: 90 + winHalf, bottom: 0.8, height: 4.2 });
+    this.sea = new VideoWindow({
+      src: './assets/video/sea_loop.mp4', radius: 17.9, wallRadius: 17,
+      a0: 90 - winHalf, a1: 90 + winHalf, bottom: 0.8, height: 4.2
+    });
     scene.add(this.sea.mesh);
 
     // Two lights only: a soft sky light and the sun through the skylight (which also casts every
@@ -928,8 +934,10 @@ export class HabitatSession {
     this.gates?.update(dt);
     if (this.garden) {
       this._head.set(p.x, p.y + 1.6, p.z);
-      this.garden.update({ dt, feet: p, head: this._head, playing,
-        canWake: this._arrivalDone && this.story.has('leftLift') && !this.story.has('gardenCleared') });
+      this.garden.update({
+        dt, feet: p, head: this._head, playing,
+        canWake: this._arrivalDone && this.story.has('leftLift') && !this.story.has('gardenCleared')
+      });
       this.garden.updateTease(dt);
       // a drone glimpsed far across the hall the first time he walks into it (scene 2.2)
       if (playing && !this._teased && this.story.has('leftLift') && !this.story.has('dronesWoken') && p.z < 9) {

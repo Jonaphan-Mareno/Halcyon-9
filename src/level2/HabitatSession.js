@@ -402,7 +402,7 @@ export class HabitatSession {
     this.roomLights = this.roomLights || [];
     for (const room of litRooms) {
       const l = new THREE.PointLight(0xffeeda, 30, 10, 1.5);
-      l.intensity *= 1.5;
+      l.intensity = 10;
       l.position.copy(room.centre);
       l.position.y -= 0.7; // offset down from ceiling panels so light illuminates ceiling, walls, and floor
       this.game.scene.add(l);
@@ -430,7 +430,7 @@ export class HabitatSession {
     // arrive in the lift, facing the hall (north) 
     const spawn = atrium.getObjectByName('SPAWN_Lift').getWorldPosition(new THREE.Vector3());
     this.controls.attach(this.physics, spawn.setY(spawn.y + 0.1), 0);
-    // Temporary test spawn: inside Dr. Kessler's room facing into the room
+    // Temporary test spawn: inside Dr.Kessler's room facing into the room
     // const spawn = new THREE.Vector3(14.0, 5.65, -15.5);
     // this.controls.attach(this.physics, spawn, -2.35);
     if (lift) {

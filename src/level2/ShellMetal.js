@@ -25,15 +25,15 @@ function shellMetalMaterial() {
   };
   metal = new THREE.MeshStandardMaterial({
     name: 'bed_shell_metal',
-    color: 0xA8C8FF,
+    color: 0xC9DDFF,
     map: load('metal_plate_02_diff_1k.jpg', true),
     normalMap: load('metal_plate_02_nor_gl_1k.jpg', false),
-    normalScale: new THREE.Vector2(1.2, 1.2),
+    normalScale: new THREE.Vector2(1.5, 1.5),
     roughnessMap: load('metal_plate_02_rough_1k.jpg', false),
     metalnessMap: load('metal_plate_02_metal_1k.jpg', false),
-    metalness: 1.0,
-    roughness: 0.9,
-    envMapIntensity: 1.5,
+    metalness: 0.3,
+    roughness: 0.65,
+    envMapIntensity: 2.2,
     side: THREE.DoubleSide        // like the room's toon shell: seen from the inside
   });
   return metal;

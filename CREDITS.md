@@ -7,9 +7,9 @@ synthesised in the browser (src/audio). The background music is the team's own c
 
 ## ambientCG (CC0 1.0, public domain)
 
-Used in Level 3 (the drowned deck). CC0 needs no credit, but we credit the site anyway. The
-1K-JPG packs were downloaded from ambientcg.com and packed into small WebP files in
-`public/assets/textures/l3/` (colour, normal, and occlusion/roughness/metalness).
+Used in Level 3 (the drowned deck). CC0 needs no credit, but we credit the site anyway.
+The 1K-JPG packs were downloaded from ambientcg.com; the deck's were packed into small WebP files
+in `public/assets/textures/l3/` (colour, normal, and occlusion/roughness/metalness).
 
 | Material | Used for | Link |
 |---|---|---|
@@ -23,8 +23,8 @@ Suggested credits-screen line: *"Rust, concrete and rock textures from ambientCG
 
 ## Poly Haven (CC0 1.0, public domain)
 
-Used in Level 2 (the habitat atrium) and Level 1 (monitor glass). CC0 needs no credit, but we
-credit the artists anyway. The models are downloaded by `Blender/scripts/fetch_plants.cjs`.
+Used in Level 2 (the habitat atrium and bedroom shell) and Level 1 (monitor glass). CC0 needs
+no credit, but we credit the artists anyway. The models are downloaded by `Blender/scripts/fetch_plants.cjs`.
 
 | Model | Author(s) | Used for | Link |
 |---|---|---|---|
@@ -44,6 +44,7 @@ credit the artists anyway. The models are downloaded by `Blender/scripts/fetch_p
 |---|---|---|---|
 | Farm Soil (colour + displacement, packed into `public/assets/textures/soil_farm.webp`) | Amal Kumar | the soil in every planter, garden bed and pot in the atrium (colour, and the displacement drives the parallax depth) | https://polyhaven.com/a/farm_soil |
 | Blue Metal Plate (roughness map, cropped clear of the plate seams) | Rob Tuytel | smudges, scratches and grime on the glass of level 1's glitching and broken monitors (`public/assets/textures/screen_wear.jpg`) | https://polyhaven.com/a/blue_metal_plate |
+| Metal Plate 02 | Rob Tuytel | scratched steel: Kessler's bedroom shell (`public/assets/textures/Metals/Metal_plate/`) | https://polyhaven.com/a/metal_plate_02 |
 
 Suggested credits-screen line: *"Plant and food models and textures from Poly Haven (polyhaven.com,
 CC0) by Rob Tuytel, Rico Cilliers, James Ray Cock, Oliver Harries, Kuutti Siitonen, Jan Martens and Amal Kumar."*

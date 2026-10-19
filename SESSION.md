@@ -1,167 +1,166 @@
 # Session Notes — Level 2 Atrium & Crew Quarters
 
-Status snapshot of the Level 2 habitat atrium work: the two hand-authored crew quarters
-(Voss + Kessler) attached to the atrium with full collision, sliding quarter doors, the toon
-look, and room lighting — plus the conventions and pitfalls discovered along the way.
-This file consolidates the old root `SESSION.md` and `docs/voss-crew-quarter.md` (both
-removed at the end of this session) and extends them with this session's work.
+Record of the session on the Level 2 habitat atrium: restoring the RoboArm animation and rigs, regenerating room collision and placements, fixing the Sci-fi-Bed export textures, clad texturing both entire bedroom shells (walls, roof, and floor) with Poly Haven Metal Plate 02, diagnosing and fixing the untextured bedroom corner (`Kess_WallW`), and adding the interactive Bedroom 2 FuseBox with the standard prompt textbox.
 
-## Current state
+## Reload / re-export commands
 
-- **Two bedrooms** ship inside the atrium model (placed by hand in `l2-atrium.blend`):
-  - `Bedroom1` (Voss, east, behind `DOOR_VOSS`): scale 2.363, rot z −179.75°, loc (21.79, 2.038, 5.721).
-  - `Bedroom2` (Kessler, north-east, behind `DOOR_KESSLER`): scale 2.363, rot z −134.24°, loc (13.869, 16.843, 5.720).
-  - Bedroom2 was a GUI full-duplicate of Bedroom1, so its objects are renamed
-    (`Shelf00.001`, `Cube.005`…) — the exporter matches them back by geometry signature.
-- **Collision** (per room): 8 thin envelope boxes (floor/ceiling/4 walls/doorway seals) plus
-  23 exact OBB colliders for the furniture, all baked world-space into Rapier trimeshes under
-  `COL_Voss*` / `COL_Kess*` nodes.
-- **Quarter doors** (`DOOR_VOSS`, `DOOR_KESSLER`): slide up 3.4 m over 1.2 s when the player is
-  within 4 m and close again beyond it, like the lab doors. The collider is removed while open
-  and re-baked at the closed position on fully closing.
-- **Toon look**: both bedrooms render with `MeshToonMaterial` + the 3-step ramp + faint cyan rim
-  (the `Shaders.js` aesthetic), converted at load time and scoped by material name.
-- **Room lighting**: the light-panel materials (`Material.002`–`Material.005`, emissive white in
-  the glb) keep their glow in the toon conversion, and each room gets one warm `PointLight`
-  (`0xffeeda`, intensity 30, range 10, decay 2) at the centre of its panel cluster.
-- Known nit: `BedCrew00` in both rooms inherited a ~4 % smaller scale (2.269 vs 2.363) from the
-  GUI duplicate — visual only (colliders use per-object bounds). Fix in the GUI + re-export if
-  it bothers.
+From the repo root, in this order:
+
+```bash
+# 1. save the .blend in the Blender GUI (Ctrl+S). NEVER File > Export - a manual GUI
+#    export bypasses the colour graft and the collider generation entirely.
+
+# 2. export (the wrapper is safe whether or not the blend currently contains the
+#    RoboArm rigs: it reports wired rooms as "already wired … left exactly as placed")
+/home/vmuser/Downloads/blender-5.2.2-linux-x64/blender -b --factory-startup \
+  Blender/l2-atrium.blend --python Blender/scripts/export_l2_atrium_with_rigs.py
+
+#    plain variant (opens the blend itself; use once the rigs are saved into the blend)
+/home/vmuser/Downloads/blender-5.2.2-linux-x64/blender -b --factory-startup \
+  --python Blender/scripts/export_l2_atrium.py -- [out.glb]
+
+# 3. verify the shipped file (skins, animations, COLOR_0, colliders, textured props)
+python3 Blender/scripts/verify_l2_glb.py
+
+# 4. optional: refresh the placement JSONs (only needed after moving/renaming props)
+/home/vmuser/Downloads/blender-5.2.2-linux-x64/blender -b --factory-startup \
+  --python Blender/scripts/export_bedroom_placements.py
+
+# 5. hard-refresh the browser (Ctrl+Shift+R) - .glb files are cached aggressively.
+#    Dev server: npm run dev, then http://localhost:5173/?level=2 spawns at the lift.
+```
+
+Export log lines to expect: the rig line per room (`already wired …` or the append +
+verify), any prop-texture repairs (`Sci-fi-Bed: 2 texture(s) rewired to UV, rebuilt
+['Material.008', 'Material.007'], 5851 faces box-projected`), the collider lines
+(`Bedroom1: door local z …, 8 envelope + 23 object colliders`, `Bedroom2: … 8 envelope +
+29 object colliders`), then `exported …/l2-atrium.glb`. The verifier's healthy output:
+
+```
+meshes 203  nodes 289  skins 2  animations 2  materials 91
+meshes with COLOR_0: 41/203
+collider nodes: 72   (Voss: 31, Kess: 37, each room's Floor bounds printed)
+animation: RoboArmAtureAction (21 channels)  +  RoboArmAtureAction.001
+textured prop: Sci-fi-Bed  Fibra de carbono / aluminio / Display
+```
+
+## Summary of work done this session
+
+1. **Re-adding RoboArm animations & armature rigs.**
+   - Restored the RoboArm armature modifier and parent wiring in both `Bedroom1` (Voss) and `Bedroom2` (Kessler).
+   - `Blender/scripts/readd_roboarm_rigs.py` was updated so that it skips rooms already wired in the `.blend` rather than flagging false-alarm "rollbacks" when comparing rest poses against posed armatures.
+   - Verified that `RoboArmAtureAction` and `RoboArmAtureAction.001` export cleanly into `l2-atrium.glb` (2 skins, 2 animations).
+   - `Blender/bedroom1.json` and `Blender/bedroom2.json` regenerated with complete transforms, bounds, and parent fields.
+
+2. **Reworking room models & collision pipeline.**
+   - Regenerated room colliders: 8 envelope box colliders plus exact furniture OBB colliders per room, baked into Rapier trimeshes under `COL_Voss*` / `COL_Kess*`.
+   - Fixed door gap bounds and doorway west wall closures (`Kess_WallW`, `Voss_WallW`).
+   - Extended `Blender/scripts/verify_l2_glb.py` as a permanent validator for skins, animations, `COLOR_0`, colliders, and WebP textures.
+
+3. **The striped Sci-fi-Bed — root cause and exporter fix.**
+   - Investigated why the user-authored Sci-fi-Bed exported white with orange stripes.
+   - Identified that glTF exporters drop textures using `Generated`/`Object` coordinates, `Mix Shader` nodes, or inputs routed through `Normal`.
+   - `export_l2_atrium.py` was updated to repair user-authored props in memory during export: rewires coordinates to UV, performs world-normalized box projection, and rebuilds material trees into standard Principled Base Color and live Emission.
+
+4. **Whole-room metal cladding (walls, roof, and floor).**
+   - Created `src/level2/ShellMetal.js` to clad the bedroom shells in scratched industrial steel plate.
+   - Switched from ambientCG Metal046B to Poly Haven **Metal Plate 02** (diffuse, normal GL, roughness, metalness), credited in `CREDITS.md`.
+   - Expanded cladding from only walls/roof to clad **the whole room** (walls, ceiling, and floor slab), rebuilding geometry unindexed with dominant-axis world-space box-projected UVs (`TILE = 2.2m`) and `DoubleSide` rendering.
+   - Applied metal cladding to both bedroom shells: Voss's shell (`Cube`) and Kessler's shell (`Cube009`).
+
+5. **Diagnosing and fixing the untextured bedroom corner (`Kess_WallW` / `Voss_WallW`).**
+   - Investigated the visual bug where the corner wall of Bedroom 2 showed the metal plate texture from the outside, but appeared flat grey on the inside.
+   - **Root Cause**: In `export_l2_atrium.py`, the exporter generates separate wall closure slabs (`Kess_WallW` and `Voss_WallW`) to seal the side slivers of the open doorway. `applyShellMetal` was originally only called on `['Cube009', 'Cube']`, omitting `Kess_WallW`. Because `Kess_WallW` retained `Material.001`, the downstream toon pass converted it to untextured flat grey paint. Sitting on the interior side of `Cube009`, it concealed the outer shell's texture.
+   - **Fix**: Updated `applyShellMetal(model, ['Cube009', 'Cube', 'Kess_WallW', 'Voss_WallW'])` in `HabitatSession.js`. Both closure slabs are now cladded with the exact same world-space UV projection, eliminating the flat grey wall and seamlessly texturing the entire corner.
+
+6. **Interactive FuseBox in Bedroom 2.**
+   - Registered `FuseBox00.001` in Bedroom 2 as an interactable spot using the game's `Interact` system.
+   - Handled Three.js GLTF node name sanitization (`FuseBox00001` vs `FuseBox00.001` vs `COL_Kess_FuseBox00`).
+   - Corrected a 4.6 m pivot offset by computing the mesh's true geometric bounding-box center (`Box3.setFromObject(...).getCenter(...)`) and nudging `fusePos.x` forward into the room so physics line-of-sight raycasts are completely unobstructed.
+   - Bound to the standard in-game interaction prompt textbox (`#interact-prompt`) displaying `E   Use FuseBox`, with action feedback via `ui.showToast('FuseBox used.', 2500)` without triggering Voss speech.
+
+---
+
+## Detailed Technical Notes
+
+### 1. The Striped Sci-fi-Bed (Bedroom 2)
+The bed is authored directly in the atrium `.blend`. In the viewport it looks correct; in the game it went out white with orange stripes because the glTF exporter silently drops image textures when:
+- Sampled through `Texture Coordinate → Generated` (or Object) — glTF only samples by UV.
+- Routed through a **Mix Shader** surface (carbon-fibre body: `Generated → Diffuse → Mix`).
+- Feeding the **Normal** input (aluminium trim: `Generated → Principled.Normal` over an orange metallic base colour; with the normal texture dropped, that base colour was the stripes).
+
+`export_l2_atrium.py` repairs user-authored props at export time in memory: textures wired through Generated/Object are rewired to UV and their faces box-projected (dominant-axis projection normalized to object bounds), and trees the exporter cannot carry are rebuilt around their first image texture into a Principled Base Color.
+
+### 2. Whole-Room Shell Metal Cladding (`ShellMetal.js`)
+- `src/level2/ShellMetal.js` loads the Poly Haven Metal Plate 02 set from `public/assets/textures/Metals/Metal_plate/`:
+  - `metal_plate_02_diff_1k.jpg` (sRGB Base Color)
+  - `metal_plate_02_nor_gl_1k.jpg` (Normal GL, scale 1.5)
+  - `metal_plate_02_rough_1k.jpg` (Roughness)
+  - `metal_plate_02_metal_1k.jpg` (Metalness)
+- Meshes are converted to non-indexed geometry (`toNonIndexed()`).
+- UVs are reconstructed in world metres:
+  ```javascript
+  const ax = Math.abs(n.x) >= Math.abs(n.y) && Math.abs(n.x) >= Math.abs(n.z) ? 0
+    : (Math.abs(n.y) >= Math.abs(n.z) ? 1 : 2);
+  uv.setXY(i, (ax === 0 ? p.z : p.x) / tile, (ax === 1 ? p.z : p.y) / tile);
+  ```
+- All faces (walls, roof, floor) take `bed_shell_metal` with `side: THREE.DoubleSide` and `TILE = 2.2`.
+- Called in `HabitatSession.js`:
+  ```javascript
+  applyShellMetal(model, ['Cube009', 'Cube', 'Kess_WallW', 'Voss_WallW']);
+  ```
+
+### 3. The Untextured West Corner Bug
+- **Geometry Setup**: `Cube009` (Kessler's shell) was authored as an open extrusion facing the west corridor. `export_l2_atrium.py` generated `Kess_WallW` (and `Voss_WallW`) to cap the side sliver next to the door.
+- **The Bug**: `applyShellMetal` was originally called only on `['Cube009', 'Cube']`. `Kess_WallW` on the inside of the room kept `Material.001` and was converted to toon grey by `HabitatSession._loadModel`. From the outside, `Cube009` showed metal; from the inside, `Kess_WallW` covered it in flat grey.
+- **The Solution**: Adding `Kess_WallW` and `Voss_WallW` to `applyShellMetal` clads both closure slabs in `bed_shell_metal` with the same world-space UV projection, ensuring complete, seamless metal plating throughout the room.
+
+### 4. Bedroom 2 FuseBox Interaction
+- In `HabitatSession.js`, the FuseBox was hooked into `this.interact`:
+  ```javascript
+  const fuseBoxObj = atrium.getObjectByName('FuseBox00001') || atrium.getObjectByName('FuseBox00.001') || atrium.getObjectByName('COL_Kess_FuseBox00');
+  if (fuseBoxObj) {
+    const fusePos = new THREE.Box3().setFromObject(fuseBoxObj).getCenter(new THREE.Vector3());
+    fusePos.x += 0.12; // nudge into the room to ensure clear line of sight
+    this.interact.add({
+      id: 'fusebox',
+      position: fusePos,
+      radius: 0.6,
+      reach: 2.8,
+      label: 'Use FuseBox',
+      use: () => this.game.ui.showToast('FuseBox used.', 2500)
+    });
+  }
+  ```
+- Using `Box3.getCenter()` fixed the 4.6 m pivot offset where `getWorldPosition()` pointed to the empty node origin far away in the wall.
+- Using `label: 'Use FuseBox'` activates the standard `#interact-prompt` UI box (`E   Use FuseBox`).
+- Using `ui.showToast()` provides clean interactive feedback without triggering Voss monologue subtitles.
+
+---
 
 ## Files
 
 | File | Role |
 |---|---|
-| `Blender/bedroom.blend` | **Content source.** The room at the origin, vertex-coloured furniture (`Col` attribute), materials, and the `RoboArmAture` rig + action. Edit geometry/colours here. |
-| `Blender/l2-atrium.blend` | **Placement source.** Atrium + `Bedroom1` + `Bedroom2` collections, moved/rotated/scaled into the wall gaps. Edit placement here. |
-| `Blender/scripts/export_l2_atrium.py` | Exports as placed to `public/assets/models/l2-atrium.glb`: copies colours/materials from `bedroom.blend`, builds both rooms' collision. Never writes to any `.blend`. |
-| `public/assets/models/l2-atrium.glb` | Runtime model: atrium + both rooms + collision in one file. |
-| `src/level2/HabitatSession.js` | Loads the glb, colliders, doors, toon conversion, panel lights. |
-| `src/entities/Player.js` | Exports `makeToonRamp()` / `toonFrom()` — the shared toon material conversion. |
+| `Blender/bedroom.blend` | **Content source.** The room at origin, vertex-coloured furniture, materials, the RoboArm rig + action. |
+| `Blender/l2-atrium.blend` | **Placement source.** Atrium + `Bedroom1` + `Bedroom2` collections. Edit placement here; save before exporting. |
+| `Blender/scripts/export_l2_atrium.py` | Exports to `public/assets/models/l2-atrium.glb`: grafts colours/materials, builds collision envelopes + furniture colliders, generates `Kess_WallW` / `Voss_WallW`, repairs user-prop textures. |
+| `Blender/scripts/export_l2_atrium_with_rigs.py` | Export wrapper: verifies/restores missing RoboArm rigs in memory, then runs export. |
+| `Blender/scripts/readd_roboarm_rigs.py` | Rig restore logic; skips rooms already wired and preserves manual posing. |
+| `Blender/scripts/verify_l2_glb.py` | Post-export validator: skins, animations, `COLOR_0`, colliders, and textured props. |
+| `Blender/scripts/export_bedroom_placements.py` | Generates `Blender/bedroom1.json` and `bedroom2.json` (transforms, dimensions, hierarchy). |
+| `src/level2/HabitatSession.js` | Loads the GLB, colliders, doors, toon materials, panel lights, shell metal cladding, and interactions. |
+| `src/level2/ShellMetal.js` | Full-room metal cladding module (Poly Haven Metal Plate 02) with world-space box-projected UVs. |
+| `src/level2/Interact.js` | Raycast-based interaction targeting system. |
+| `src/ui/UIManager.js` | Manages `#interact-prompt` (`E   <label>`), toasts, objective waypoints, and dialogue boxes. |
+| `CREDITS.md` | Attribution for textures and CC0 assets. |
 
-Superseded but kept for history: `Blender/scripts/build_l2_voss.py`, `Blender/l2-voss.blend`,
-`public/assets/models/l2-voss.glb`, `Blender/l2-atrium.no-bedroom.bak.blend`.
+---
 
-## Export pipeline
+## Pitfalls & Key Rules to Remember
 
-From the repo root:
-
-```bash
-/home/vmuser/Downloads/blender-5.2.2-linux-x64/blender -b --factory-startup \
-  --python Blender/scripts/export_l2_atrium.py
-```
-
-Expected log lines:
-
-```
-coloured 48/48 meshes from bedroom.blend
-Bedroom1: door local z … , 8 envelope + 23 object colliders
-Bedroom2: door local z … , 8 envelope + 23 object colliders
-exported /home/vmuser/Halcyon-9/public/assets/models/l2-atrium.glb
-```
-
-Then **hard-refresh the browser (Ctrl+Shift+R)** at `http://localhost:5173/?level=2` — `.glb`
-files are cached aggressively, and editing a `.blend` alone changes nothing until the export
-runs and the browser reloads.
-
-## What the export script does (two rooms)
-
-1. Opens `l2-atrium.blend`; deletes leftover `COL_Voss*` / `COL_Kess*` / `*WallW` objects
-   (idempotent re-runs).
-2. For each room, resolves every placed mesh back to its `bedroom.blend` source by geometry
-   signature (vertex/polygon counts + rounded local bounds) — robust to Blender's rename-on-
-   duplicate. Sources are appended once, materials + the `Col` attribute are copied onto the
-   placed meshes (topology must match), the appended objects are cleaned up.
-3. Rewires `Attribute → Diffuse BSDF` trees into `Color Attribute → Principled BSDF` so the
-   glTF exporter emits `COLOR_0`. Emission materials (light panels) pass through unchanged.
-4. Derives the room's placement frame (the modal object transform), samples the atrium wall arc
-   across the door gap, and builds the envelope colliders in the room frame — so any rotation
-   works. Furniture colliders are exact OBBs from each object's own `bound_box` × its own
-   `matrix_world`; objects flush with the open face inside the doorway band are skipped (the
-   envelope seals them).
-5. Exports GLB (`export_apply`, Y-up, WebP).
-
-## Runtime (HabitatSession)
-
-- `_loadModel()`: root nodes prefixed `COL_` / `DOOR_` get Rapier trimesh colliders; `COL_`
-  nodes are removed from the render scene. `DOOR_` colliders land in `this.doorColliders`.
-- Quarter doors: `this.quarterDoors` — trigger point is the node's `Box3` centre nudged 2.2 m
-  into the hall (the `DOOR_` empties sit at the origin, so `getWorldPosition()` is useless).
-  Within 4 m: open; beyond: close; collider re-created only at full close (it is baked at the
-  closed position).
-- Toon pass: after `applyHubMaterials`, bedroom materials (`VCol.*` / `Material.00*` — the
-  exporter's naming, disjoint from every atrium material) swap to `MeshToonMaterial` with
-  `vertexColors` on only for meshes that actually carry `COLOR_0` (the shells don't).
-- Panel lights: emissive bedroom meshes are clustered by proximity; one warm point light per
-  cluster. A future Bedroom3 gets its light automatically.
-
-## Authoring workflow
-
-- **Change a room's look**: edit `bedroom.blend`, save, re-export. Object names must stay the
-  same and topology must not change — otherwise re-append the object into
-  `l2-atrium.blend` and re-place it.
-- **Move / rotate / rescale a room**: edit the room's objects in `l2-atrium.blend`, save,
-  re-export. Collision follows automatically (rotations are handled).
-- Before saving `l2-atrium.blend`, check the Outliner shows `Bedroom1` and `Bedroom2`. The
-  placement was lost once by saving a stale GUI session; do not run `build_l2_atrium.py` on
-  the current file — it regenerates the atrium and discards the bedrooms.
-
-## RoboArm animation — why it is missing in the game
-
-The animation exists only in `bedroom.blend`, and it never reaches the game:
-
-1. It lives on the rig, not the mesh: `RoboArm00` is parented to the armature `RoboArmAture`
-   (7 bones, ARMATURE modifier), and the action `RoboArmAtureAction` (18 fcurves, frames
-   0–200 at 24 fps ≈ 8.3 s) poses the bones.
-2. `l2-atrium.blend` contains **zero actions** — the room was copied in as meshes only; the
-   armature and its action never came along.
-3. Therefore `l2-atrium.glb` has `animations: []`.
-4. Even with a clip in the glb, `HabitatSession` has no `AnimationMixer` (only the Player
-   mixes `gltf.animations`), so nothing would play it yet.
-
-To get it working later: append `RoboArmAture` into `l2-atrium.blend` alongside `RoboArm00`
-(keep the parent + armature modifier), re-export, then in `HabitatSession` create a mixer for
-the atrium model and play the clip. Check that `export_apply` does not bake the armature
-deform to the rest pose — if the arm comes out frozen, that is the knob to revisit.
-
-## Proposed interactables (design candidates — Blender object names)
-
-- `FuseBox00` (+ `FuseBox00.001` in Bedroom2) — repair/electrical minigame, quarter power.
-- `PictureFrame00` (+ `.001`) — inspectable, story/flavour text.
-- `RoboArm00` (+ `.001`, rig `RoboArmAture`, action `RoboArmAtureAction`) — animated prop once
-  the animation chain above is restored.
-- `AlarmLamp00` (+ `.001`) — natural candidate for a red-alert state tied to level events.
-
-## No interactables yet
-
-The rooms are pure environment right now: nothing in either bedroom can be interacted with —
-no pickups, no usable objects, no dialogue triggers. The only scripted behaviour is the
-proximity doors. Everything in "Proposed interactables" above is design intent, not code.
-
-## Pitfalls worth keeping
-
-- **The export log can lie**: "coloured N/N" and "exported" do not prove the glb is good. An
-  export from a half-saved `.blend` once dropped every `COLOR_0` and all `COL_` nodes while
-  still reporting success. Verify the glb contents (material/`COLOR_0`/`COL_` counts), not
-  just the final line.
-- `bpy.data.libraries.load(path, link=False)` reuses an existing same-name local ID — rename
-  stale IDs (`OLD_` prefix) before appending. `data_to.objects = my_list` fills `my_list` in
-  place; `bpy.data` is restricted inside the `with` block — compute names beforehand.
-- The user's visible Blender work may exist only in the open GUI session or an autosave;
-  always dump the on-disk file headlessly before concluding a script is wrong.
-- `DOOR_` nodes get permanent static colliders in `_loadModel`; any door that opens must have
-  its collider removed first, or the player bumps into an invisible wall.
-- GLTFLoader strips dots from node names but keeps material names intact — the bedroom
-  material scoping (`VCol.` / `Material.` prefixes) relies on that.
-- Toon materials ignore `scene.environment` (no env-map fill) and need real lights — hence the
-  per-room point lights. `MeshToonMaterial` does support emissive; carry it or glowing things
-  go dark.
-
-## AI declaration
-
-All code and script changes in this session — `Blender/scripts/export_l2_atrium.py` (two-room
-rewrite), `src/level2/HabitatSession.js` (doors, toon pass, panel lights) and
-`src/entities/Player.js` (exported toon helpers) — were generated and reviewed by the Qoder AI
-coding assistant from the user's instructions and the on-disk `.blend`/`.glb` state. The
-Blender assets themselves (modelling, vertex colours, placement, the RoboArm rig and action)
-are the user's own work.
+1. **GLTFLoader Node Name Sanitization**: Three.js `PropertyBinding.sanitizeNodeName` strips dots from node names (`FuseBox00.001` becomes `FuseBox00001`), but material names retain dots (`Material.001`). Always support both naming conventions when looking up nodes.
+2. **Object Origin vs Mesh Geometry**: In Blender, an object's pivot point may not align with its vertices. Always compute bounding-box centers (`new THREE.Box3().setFromObject(obj).getCenter(...)`) when placing interaction spots or collision bounds.
+3. **Physics Raycast Occlusion**: `Interact.js` casts a ray from the player's eye to `spot.position`. If `spot.position` lies inside a mesh or static collider, the ray hits the obstacle and fails the `_clear` test. Nudge interaction targets slightly off the wall into the room.
+4. **glTF Texture Drops**: Always verify exported GLBs with `verify_l2_glb.py`. Generated coordinates, mix shaders, and texture-in-normal nodes are dropped silently by standard glTF exporters.
+5. **Always Save Before Exporting**: The exporter runs on the on-disk `.blend` file. Never use Blender's manual GUI Export dialog; run `export_l2_atrium_with_rigs.py`.

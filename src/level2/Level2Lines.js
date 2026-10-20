@@ -109,8 +109,9 @@ export const LINES = {
 // live, LogHead.js): head (the character), condition (0 healthy .. 4 most worn, FaceWear.js) and
 // face (the FaceRig preset: how he talks). Its beats are his acting, each at the words it starts on
 // (`at`, the first place they appear in the words or the spoken lines after): what LogHead.cue takes
-// (face, look, lean, gesture, tic, laugh, stare, still, mood, hold), and for the reveal without a
-// recording, pause (seconds before those words) and rate (the reading speed from there on, 1 normal).
+// (face, look, lean, gesture, tic, laugh, stare, still, mood, hold; a face's brows are brow, worry
+// and skew, see FaceRig), and for the reveal without a recording, pause (seconds before those
+// words) and rate (the reading speed from there on, 1 normal).
 // Kept small and forward-facing in log-8: he never turns enough to show the wound.
 export const LOGS = {
   bunkLogA: { kind: 'audio', title: 'CREW LOG (unnamed)',
@@ -131,12 +132,12 @@ export const LOGS = {
       { at: 'she woke up', face: { smile: 0.5, brow: 0.6 }, lean: 0.12, hold: 2.5 },
       { at: 'Her.', pause: 0.7, face: { smile: 0.8, brow: 0.5 }, hold: 2.2 },
       { at: 'She asked me', look: [0.2, -0.06, 3], face: { smile: 0.3, brow: 0.3 }, hold: 2.5 },
-      { at: 'Kessler says', face: { smile: 0.15, frown: 0.1, brow: -0.25 }, gesture: 'shake', amp: 0.7, hold: 2.5 },
+      { at: 'Kessler says', face: { smile: 0.15, frown: 0.1, brow: -0.25, skew: 0.6 }, gesture: 'shake', amp: 0.7, hold: 2.5 },
       { at: 'The scans are the whole point', lean: 0.12, face: { smile: 0, brow: -0.35 }, gesture: 'nod', hold: 2 },
       { at: 'This could change everything', pause: 0.4, lean: 0.18, face: { smile: 0.7, brow: 0.5 }, hold: 3 },
       // Kessler from the doorway: he looks over to her, then back to the lens with a smirk
       { at: 'Off-camera', look: [0.45, 0, 8], face: { smile: 0, frown: 0.25, brow: -0.2 }, hold: 2.8 },
-      { at: '"In a minute."', face: { smile: 0.45 }, hold: 4 }
+      { at: '"In a minute."', face: { smile: 0.45, skew: 0.5 }, hold: 4 }
     ] },
   'log-1': { kind: 'video', head: 'voss', condition: 1, face: 'tense', title: 'J. VOSS, PROJECT LOG: MEMORIES', who: "The living Voss, before the disaster, while experimenting with the crew's memories",
     text: "I found ways to not only scan and copy my colleagues' memories, but also selectively alter them. ARIA can now freely think for herself. I think the team is starting to realise something's wrong.",
@@ -152,7 +153,7 @@ export const LOGS = {
     beats: [
       { at: 'I woke up', look: [-0.2, 0, 10], hold: 0.6 },
       { at: 'A cell.', pause: 0.6, face: { frown: 0.45, brow: 0.65 }, hold: 1.6 },
-      { at: 'She said', look: [0.12, 0, 4], face: { smile: 0.2, frown: 0.3, brow: -0.2 }, hold: 1.8 },
+      { at: 'She said', look: [0.12, 0, 4], face: { smile: 0.2, frown: 0.3, brow: -0.2, skew: -0.5 }, hold: 1.8 },
       { at: 'Then I found', lean: 0.12, face: { brow: 0.5 }, hold: 3 },
       { at: 'I built her', pause: 0.5, face: { frown: 0.4, brow: 0.8 }, hold: 2 },
       { at: "I don't remember", gesture: 'shake' },
@@ -172,7 +173,7 @@ export const LOGS = {
       { at: "She's warm", pause: 0.6, face: { smile: 0.6, frown: 0.2, tired: 0.6 }, still: 0.8, hold: 2.2 },
       { at: 'She makes it easy', tic: true, still: 0, face: { frown: 0.5, brow: 0.6 }, hold: 1.6, rate: 1.2 },
       { at: 'Every time I get', lean: 0.15, hold: 4, rate: 1.3 },
-      { at: 'just so', pause: 0.6, face: { smile: 0.45, brow: 0.5, tired: 0.7 }, hold: 1.4, rate: 0.8 },
+      { at: 'just so', pause: 0.6, face: { smile: 0.45, brow: 0.4, worry: 0.3, tired: 0.7 }, hold: 1.4, rate: 0.8 },
       { at: 'and I put the cable down', face: { frown: 0.65, brow: 0.75 }, gesture: 'shake', hold: 2.2, rate: 1 },
       { at: 'Next time', pause: 0.4, look: [-0.35, 0, 12], hold: 0.7 },
       { at: "I'll hide", lean: 0.24, face: { frown: 0.3, brow: -0.35 }, hold: 4, rate: 0.85 },
@@ -185,8 +186,8 @@ export const LOGS = {
       { at: "If you're watching", still: 0.75, stare: 3 },
       { at: 'again', pause: 0.5, look: [0.05, 0.14, 2], face: { frown: 0.4, tired: 0.9 }, hold: 1.6 },
       { at: "Don't trust her", lean: 0.12, still: 0.9, face: { frown: 0.45, brow: -0.3 }, hold: 2.5 },
-      { at: 'But you will', pause: 0.9, laugh: 0.7, face: { smile: 0.3, frown: 0.3, tired: 0.9 }, hold: 1.6 },
-      { at: 'I did, every time', look: [0.08, 0.12, 2], hold: 2 },
+      { at: 'But you will', pause: 0.9, laugh: 0.7, face: { smile: 0.3, frown: 0.3, worry: 0.5, tired: 0.9 }, hold: 1.6 },
+      { at: 'I did, every time', look: [0.08, 0.12, 2], face: { frown: 0.35, worry: 0.6, tired: 0.9 }, hold: 2 },
       { at: 'Take the card', lean: 0.1, gesture: 'nod', amp: 0.5, hold: 3 },
       { at: 'Find out what we did', pause: 0.6, tic: true, face: { frown: 0.5, brow: 0.55 }, hold: 2.5 },
       { at: "And when you're out there", lean: 0.2, still: 1, stare: 12, hold: Infinity, rate: 0.8 },

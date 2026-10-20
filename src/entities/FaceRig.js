@@ -1,6 +1,7 @@
 // A talking face for any character whose head has these morph targets (as ARIA's face does):
 //   jaw_open, mouth_wide, mouth_pucker, mouth_smile, blink, brow_up, brow_down
-// and, on the humans (Voss, Kessler), eyes_tired and mouth_frown too.
+// and, on the humans (Voss, Kessler), eyes_tired and mouth_frown too; Voss also has
+//   brow_inner_up (the inner ends raised: worry), brow_up_L and brow_up_R (one brow alone)
 //
 // Three ways to drive the mouth, best first:
 //   1. audio: a playing <audio>/<video> element, read by a Web Audio analyser (loudness opens the
@@ -12,8 +13,12 @@
 // With none of these the face rests: mouth shut, breathing, blinking.
 //
 // Expression presets set the resting face, how wide the jaw goes, how the eyes blink and how the
-// head moves. update(dt) eases everything and writes the morph influences; head motion is given
-// out as `head` ({ yaw, pitch, roll } in radians) for the owner to apply to its neck or head bone.
+// head moves. The brows: `brow` raises (+) or knits (-) them; raised while frowning they become
+// worried (the inner ends go up, not the whole forehead, on a face that has brow_inner_up);
+// `worry` adds that on its own, and `skew` cocks one brow (+ his left, - his right). Talking moves
+// them too: a lift (or, scowling, a deeper knit) on some stressed words, questions and exclamations.
+// update(dt) eases everything and writes the morph influences; head motion is given out as `head`
+// ({ yaw, pitch, roll } in radians) for the owner to apply to its neck or head bone.
 //
 // Acting on top of the preset (the video logs cue these on words, LogHead.cue): pose() a passing
 // expression, look() away, gesture() a nod or a shake, tic(), laugh(), stare() (no blinking),
@@ -24,24 +29,32 @@
 // the mouth is shut, so a closed mouth looks exactly as modelled.
 
 const PRESETS = {
-  //            resting face                              jaw range  blinks: gap (s), length, lids      head: bow, sway, sag
-  neutral:  { smile: 0,    frown: 0,   brow: 0,    tired: 0,    jaw: 1.0,  blink: [2, 6],   blinkLen: 0.16, lids: 0,    bow: 0,    sway: 1,   sag: 0 },
-  // log-0: the living Voss, pleased with himself
-  smug:     { smile: 0.45, frown: 0,   brow: 0.25, tired: 0,    jaw: 0.9,  blink: [2, 5],   blinkLen: 0.14, lids: 0.08, bow: -0.04, sway: 1.2, sag: 0 },
+  //            resting face                                                          jaw range  blinks: gap (s), length, lids      head: bow, sway, sag
+  neutral:  { smile: 0,    frown: 0,    brow: 0,     worry: 0,    skew: 0,   tired: 0,    jaw: 1.0,  blink: [2, 6],   blinkLen: 0.16, lids: 0,    bow: 0,    sway: 1,   sag: 0 },
+  // log-0: the living Voss, pleased with himself (one brow cocked)
+  smug:     { smile: 0.45, frown: 0,    brow: 0.2,   worry: 0,    skew: 0.3, tired: 0,    jaw: 0.9,  blink: [2, 5],   blinkLen: 0.14, lids: 0.08, bow: -0.04, sway: 1.2, sag: 0 },
   // log-1: the same man, under strain he will not admit
-  tense:    { smile: 0.05, frown: 0.2, brow: -0.3, tired: 0.08, jaw: 0.8,  blink: [1.5, 4], blinkLen: 0.14, lids: 0,    bow: 0.02, sway: 0.8, sag: 0 },
+  tense:    { smile: 0.05, frown: 0.2,  brow: -0.3,  worry: 0,    skew: 0,   tired: 0.08, jaw: 0.8,  blink: [1.5, 4], blinkLen: 0.14, lids: 0,    bow: 0.02, sway: 0.8, sag: 0 },
   // log-2: whispering, awake all night: a small mouth, head down toward the camera
-  whisper:  { smile: 0,    frown: 0.2, brow: 0.35, tired: 0.2,  jaw: 0.45, blink: [1.2, 3], blinkLen: 0.2,  lids: 0,    bow: 0.12, sway: 0.6, sag: 0.02 },
+  whisper:  { smile: 0,    frown: 0.2,  brow: 0.35,  worry: 0.2,  skew: 0,   tired: 0.2,  jaw: 0.45, blink: [1.2, 3], blinkLen: 0.2,  lids: 0,    bow: 0.12, sway: 0.6, sag: 0.02 },
   // log-5: strained, bargaining
-  strained: { smile: 0,    frown: 0.4, brow: 0.5,  tired: 0.5,  jaw: 0.75, blink: [1.5, 4], blinkLen: 0.24, lids: 0,    bow: 0.06, sway: 1.1, sag: 0.05 },
+  strained: { smile: 0,    frown: 0.4,  brow: 0.5,   worry: 0.25, skew: 0,   tired: 0.5,  jaw: 0.75, blink: [1.5, 4], blinkLen: 0.24, lids: 0,    bow: 0.06, sway: 1.1, sag: 0.05 },
   // log-8: calm, tired, resigned: low energy, long slow blinks, the gaze drifting
-  resigned: { smile: 0,    frown: 0.3, brow: 0.1,  tired: 0.8,  jaw: 0.6,  blink: [3, 6],   blinkLen: 0.42, lids: 0,    bow: 0.1,  sway: 0.5, sag: 0.1 },
+  resigned: { smile: 0,    frown: 0.3,  brow: 0.1,   worry: 0.3,  skew: 0,   tired: 0.8,  jaw: 0.6,  blink: [3, 6],   blinkLen: 0.42, lids: 0,    bow: 0.1,  sway: 0.5, sag: 0.1 },
   // Kessler, calm and resolved; and anyone arguing hard (the flashback)
-  calm:     { smile: 0,    frown: 0.1, brow: -0.1, tired: 0.1,  jaw: 0.7,  blink: [2.5, 6], blinkLen: 0.17, lids: 0,    bow: 0,    sway: 0.6, sag: 0 },
+  calm:     { smile: 0,    frown: 0.1,  brow: -0.1,  worry: 0,    skew: 0,   tired: 0.1,  jaw: 0.7,  blink: [2.5, 6], blinkLen: 0.17, lids: 0,    bow: 0,    sway: 0.6, sag: 0 },
   // Kessler: composed and stern, her lids resting a little heavy
-  composed: { smile: 0,    frown: 0.15, brow: -0.15, tired: 0.3, jaw: 0.7,  blink: [2.5, 6], blinkLen: 0.18, lids: 0,    bow: 0,    sway: 0.5, sag: 0 },
-  arguing:  { smile: 0,    frown: 0.3, brow: -0.55, tired: 0,   jaw: 1.0,  blink: [1.5, 4], blinkLen: 0.13, lids: 0,    bow: -0.03, sway: 1.6, sag: 0 }
+  composed: { smile: 0,    frown: 0.15, brow: -0.15, worry: 0,    skew: 0,   tired: 0.3,  jaw: 0.7,  blink: [2.5, 6], blinkLen: 0.18, lids: 0,    bow: 0,    sway: 0.5, sag: 0 },
+  arguing:  { smile: 0,    frown: 0.3,  brow: -0.55, worry: 0,    skew: 0,   tired: 0,    jaw: 1.0,  blink: [1.5, 4], blinkLen: 0.13, lids: 0,    bow: -0.03, sway: 1.6, sag: 0 }
 };
+
+// How far a frown turns raised brows into worried ones (frown 0.5 and over: all of it)
+const WORRY_PER_FROWN = 2;
+// Brows stressing words while talking: the chance at each new word, the size, and the size on a
+// question or an exclamation (always stressed)
+const EMPHASIS_CHANCE = 0.16;
+const EMPHASIS = 0.32;
+const EMPHASIS_ASK = 0.55;
 
 // letter -> [jaw, wide, pucker]: a rough viseme for each letter as it is revealed (jaw_open at 1 is
 // a wide-open mouth; talking uses up to about three quarters of it, so the teeth and tongue show)
@@ -100,7 +113,7 @@ export class FaceRig {
     this.time = 0;
     this.gain = 1;                 // how far the smile, frown and brows go (Voss's morphs are mild)
     this.preset = PRESETS.neutral;
-    this.expr = { smile: 0, frown: 0, brow: 0, tired: 0, bow: 0 };
+    this.expr = { smile: 0, frown: 0, brow: 0, worry: 0, skew: 0, tired: 0, bow: 0 };
     this.setPreset(preset, true);
     this.head = { yaw: 0, pitch: 0, roll: 0 };
     this.gaze = 0;
@@ -140,6 +153,9 @@ export class FaceRig {
     this._gesture = null;
     this._jolt = { yaw: 0, pitch: 0, roll: 0 };
     this._browKick = 0;
+    this._emph = 0;
+    this._wordStart = true;
+    this._loud = false;
     this._laughT = -1;
     this._laughLen = 0;
     this.laughing = 0;
@@ -152,7 +168,8 @@ export class FaceRig {
   }
 
   // ------------------------------------------------------------------ acting
-  // A passing expression ({ smile, frown, brow, tired, bow }, any of them) held for `hold` seconds
+  // A passing expression ({ smile, frown, brow, worry, skew, tired, bow }, any of them) held for
+  // `hold` seconds
   pose(face, hold = 1.5) {
     this._pose = face;
     this._poseUntil = this.time + hold;
@@ -208,11 +225,15 @@ export class FaceRig {
   }
 
   // A newly revealed letter: its mouth shape, with a little random size so it is not mechanical.
-  // Spaces close the mouth a little; stops ('.', '?', '!', '-', ...) close it.
+  // Spaces close the mouth a little; stops ('.', '?', '!', '-', ...) close it. Now and then a new
+  // word is stressed with the brows; a question or an exclamation always is.
   say(ch) {
     if (this.mode !== 'text') this.speakText();
     const c = ch.toLowerCase();
     this._shapeT = 0;
+    if (c === '?' || c === '!') this.emphasis(EMPHASIS_ASK);
+    else if (VISEME[c] && this._wordStart && Math.random() < EMPHASIS_CHANCE) this.emphasis(EMPHASIS * (0.7 + Math.random() * 0.6));
+    this._wordStart = !VISEME[c];
     if (VISEME[c]) {
       this._shape = VISEME[c];
       this._amp = 0.75 + Math.random() * 0.4;
@@ -250,6 +271,11 @@ export class FaceRig {
     }
   }
 
+  // The brows stress a word: a quick lift, or a deeper knit on a scowling face
+  emphasis(amount) {
+    this._emph = Math.max(this._emph, amount);
+  }
+
   // Wordless talking (speed 1 = normal; faster when frantic)
   startBabble(speed = 1) {
     this.mode = 'babble';
@@ -284,6 +310,7 @@ export class FaceRig {
     this._jolt.pitch *= Math.exp(-9 * dt);
     this._jolt.roll *= Math.exp(-9 * dt);
     this._browKick *= Math.exp(-7 * dt);
+    this._emph *= Math.exp(-4.5 * dt);
     this._fidget(dt);
 
     // the laugh: a few quick breaths out, fading
@@ -305,14 +332,12 @@ export class FaceRig {
     const e = this.expr;
     const jaw = Math.min(1, Math.max(this.jaw * p.jaw, laughJaw));
     const smile = Math.min(1, e.smile + this.laughing * 0.35) * this.gain;
-    const brow = Math.max(-1.6, Math.min(1.6, (e.brow + this._browKick) * this.gain));
     this._set('jaw_open', jaw);
     this._set('mouth_wide', this.wide * p.jaw);
     this._set('mouth_pucker', this.pucker * Math.min(1, p.jaw + 0.2));
     this._set('mouth_smile', smile * (1 - jaw * 0.6));
     this._set('mouth_frown', e.frown * this.gain * (1 - jaw * 0.5));
-    this._set('brow_up', Math.max(0, brow));
-    this._set('brow_down', Math.max(0, -brow));
+    this._brows(e);
     // the lids: a blink closes them from wherever they rest (heavy, tired lids rest lower)
     const rest = Math.max(e.tired, p.lids);
     this._set('eyes_tired', rest * (1 - this.blink));
@@ -379,6 +404,22 @@ export class FaceRig {
     }
   }
 
+  // The brows: raised, knit, worried (raised while frowning, or `worry`), one cocked (`skew`), and
+  // stressing words. A face without brow_inner_up raises the whole brow instead of worrying.
+  _brows(e) {
+    const lively = 1 - 0.6 * e.tired;          // (a tired face hardly stresses its words)
+    const emph = this._emph * lively;
+    const brow = e.brow + this._browKick + (e.brow < -0.15 ? -emph : emph);
+    const raise = Math.max(0, brow) * this.gain;
+    const inner = !!this.slots.brow_inner_up;
+    const worried = inner ? clamp01(e.frown * WORRY_PER_FROWN) : 0;
+    this._set('brow_up', Math.min(1.6, raise * (1 - worried)));
+    this._set('brow_inner_up', Math.min(1.6, raise * worried + Math.max(0, e.worry) * this.gain));
+    this._set('brow_down', Math.min(1.6, Math.max(0, -brow) * this.gain));
+    this._set('brow_up_L', Math.min(1.4, Math.max(0, e.skew) * this.gain));
+    this._set('brow_up_R', Math.min(1.4, Math.max(0, -e.skew) * this.gain));
+  }
+
   _set(name, value) {
     const s = this.slots[name];
     if (!s) return;
@@ -397,6 +438,9 @@ export class FaceRig {
       const rms = Math.sqrt(sum / this._timeData.length);
       this._peak = Math.max(AUDIO_PEAK_MIN, rms, this._peak * Math.exp(-dt / AUDIO_PEAK_DECAY));
       jaw = rms < this._peak * AUDIO_GATE ? 0 : Math.pow(clamp01(rms / (this._peak * 0.8)), 0.8);
+      // a loud syllable after a quieter stretch is stressed, now and then, with the brows
+      if (jaw > 0.85 && !this._loud && Math.random() < EMPHASIS_CHANCE * 2) this.emphasis(EMPHASIS);
+      this._loud = jaw > 0.85 ? true : jaw < 0.4 ? false : this._loud;
       this.analyser.getByteFrequencyData(this._freqData);
       let low = 0, high = 0;
       for (let i = 2; i <= 12; i++) low += this._freqData[i];

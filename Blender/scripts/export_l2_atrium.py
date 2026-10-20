@@ -383,7 +383,7 @@ for r in rooms:
             continue
         bb = [Vector(c) for c in o.bound_box]
         a, b = Vector(map(min, *bb)), Vector(map(max, *bb))
-        box('COL_%s_%s' % (prefix, resolve(o)), a, b, matrix=o.matrix_world)
+        box('COL_%s_%s' % (prefix, resolve(o) or o.name), a, b, matrix=o.matrix_world)   # (a prop of its own: its own name)
         n_obj += 1
     print('%s: door local z %.2f..%.2f, %d envelope + %d object colliders' % (r['coll'].name, zg0, zg1, n_env, n_obj))
 

@@ -951,7 +951,7 @@ export class HabitatSession {
     if (this.garden) {
       this._head.set(p.x, p.y + 1.6, p.z);
       this.garden.update({
-        dt, feet: p, head: this._head, playing,
+        dt, feet: p, head: this._head, playing, player: this.controls.character,
         canWake: this._arrivalDone && this.story.has('leftLift') && !this.story.has('gardenCleared')
       });
       this.garden.updateTease(dt);

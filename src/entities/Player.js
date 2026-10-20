@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createGLTFLoader, createFBXLoader } from '../core/loaders.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { FaceWear } from './FaceWear.js';
+import { ArmIK } from './ArmIK.js';
 
 // Voss, the scientist (human_scientist.glb, built in Blender from cvg.blend; human_scientist_v2.glb
 // adds his face's morph targets and the wound, see scripts/build-voss-v2.mjs).
@@ -82,10 +83,16 @@ export function makeToonRamp() {
   return tex;
 }
 
+// Inside a face's mouth (gums, lining, teeth): shaded by vertex colours toward the throat, and
+// without the rim (at their grazing angles it speckled the teeth and gums cyan)
+const MOUTH_PARTS = ['M_MouthInner', 'M_Teeth'];
+
 // Toon material with the level shader's faint cyan rim. `overrides` lets other users of
 // the look carry extra settings (the bedrooms add their vertex colours). Emissive is
 // carried too, so glowing things (the bedroom light panels) keep their glow
 export function toonFrom(src, ramp, overrides = {}) {
+  const mouth = MOUTH_PARTS.includes(src.name);
+  if (mouth) overrides = { vertexColors: true, ...overrides };
   const mat = new THREE.MeshToonMaterial({
     map: src.map || null,
     color: src.color ? src.color.clone() : new THREE.Color(0xffffff),
@@ -108,6 +115,7 @@ export function toonFrom(src, ramp, overrides = {}) {
     mat.alphaTest = 0.5;
     mat.depthWrite = true;
   }
+  if (mouth) return mat;
   mat.onBeforeCompile = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <opaque_fragment>',
@@ -232,8 +240,7 @@ export class Player {
     const ramp = makeToonRamp();
     const materials = new Map();
     const toon = (m) => {
-      // (M_MouthInner: its vertex colours darken the inside of the mouth toward the throat)
-      if (!materials.has(m)) materials.set(m, toonFrom(m, ramp, { vertexColors: m.name === 'M_MouthInner' }));
+      if (!materials.has(m)) materials.set(m, toonFrom(m, ramp));
       return materials.get(m);
     };
 
@@ -299,6 +306,12 @@ export class Player {
     this.rightArm = this._bone(bodyRoot, /R_UpperArm/);
     this.fpRightArm = this._bone(fpRoot, /R_UpperArm/);
     this.fpRightShoulder = this._bone(fpRoot, /R_Clavicle/);
+    // the hands on something he holds (see hold)
+    const turn = (bone, q) => this._turnWorld(bone, q);
+    this._arms = {
+      third: { root: bodyRoot, R: new ArmIK(bodyRoot, 'R', turn), L: new ArmIK(bodyRoot, 'L', turn) },
+      first: { root: fpRoot, R: new ArmIK(fpRoot, 'R', turn), L: new ArmIK(fpRoot, 'L', turn) }
+    };
 
     this.ready = true;
     this.setMode(this.mode);
@@ -478,6 +491,17 @@ export class Player {
     if (this.ready) this._reachT = 0;
   }
 
+  // Hands on something he holds, for this frame (call after update, every frame it is held):
+  // right and left are grips for ArmIK (either may be null), on whichever body the camera shows.
+  // Undone, like the reach, before the next update's clips
+  hold(right, left) {
+    if (!this.ready) return;
+    const arms = this._arms[this.mode === 'first' ? 'first' : 'third'];
+    arms.root.updateWorldMatrix(true, true);
+    if (right) arms.R.hold(right);
+    if (left) arms.L.hold(left);
+  }
+
   // A jump has just started (the controller pushed the body upward)
   jumped() {
     if (!this.ready) return;
@@ -499,7 +523,8 @@ export class Player {
       this.neck.quaternion.copy(this._neckBase);
       this.head.quaternion.copy(this._headBase);
     }
-    for (const [bone, q, pos] of this._reachUndo) {
+    for (let i = this._reachUndo.length - 1; i >= 0; i--) {     // (newest first: a bone may have moved twice)
+      const [bone, q, pos] = this._reachUndo[i];
       bone.quaternion.copy(q);
       bone.position.copy(pos);
     }

@@ -84,17 +84,19 @@ export class FaceWear {
     const px = CM[0] * W;                   // pixels per cm across
     const rnd = random(9);                  // (the same sequence at every level, so the wear only adds up)
 
-    // the face area of the texture (the eyeballs and teeth are elsewhere on it)
-    const face = () => {
-      const [x0] = at('earFrontR'), [x1] = at('earFrontL');
+    // all the skin of the texture (the face, ears, neck, scalp): all of it but the strip down the
+    // right edge holding the eyeballs and the mouth's parts, which keep their own colours
+    const skin = () => {
+      const left = FACE_UV.eyeballL.box[0] - 0.02, bottom = FACE_UV.eyeballL.box[3] + 0.03;
       g.beginPath();
-      g.ellipse((x0 + x1) / 2, at('noseTip')[1], (x1 - x0) * 0.62, (at('chin')[1] - at('foreheadMid')[1]) * 0.85, 0, 0, Math.PI * 2);
+      g.rect(0, 0, left * W, H);                                  // everything left of the strip
+      g.rect(0, bottom * H, W, H);                                // everything below it
     };
 
     // pallor: less colour, a cooler and greyer skin
     if (c.pallor > 0) {
       g.save();
-      face();
+      skin();
       g.clip();
       g.globalCompositeOperation = 'saturation';
       g.fillStyle = `rgba(128,128,128,${0.55 * c.pallor})`;

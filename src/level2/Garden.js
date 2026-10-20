@@ -26,7 +26,8 @@ const COLD_SNAP_COOLDOWN = 5;
 const JET_RANGE = 18;            // the water reaches about this far
 const DRONE_HIT_RADIUS = 1.0;    // a water droplet this close to a drone soaks it (its whole width, arms and all)
 const SOAK_PER_DROP = 0.06;      // so five droplets make it wet enough to freeze
-const CLOSE_JET = 3;             // right in front of the nozzle (before the droplets spread out)
+const GRIP_TILT = 0.35;          // the nozzle's grip leans its top forward this much (radians)
+const CLOSE_JET = 3;            // right in front of the nozzle (before the droplets spread out)
 const SOAK_PER_SECOND = 2.2;     //   a drone in the jet's path soaks this fast
 const ATTACK_GAP = [1.8, 3.2];   // seconds between one drone's dive and the next one's lock-on
 const HUNT_GAP = [3.5, 5.5];     // the same before he has the pipe (one drone hunting him, slowly)
@@ -149,7 +150,7 @@ export class Garden {
     tip.position.z = 0.36;
     const grip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.2, 0.08), black);
     grip.position.set(0, -0.14, -0.08);
-    grip.rotation.x = 0.35;
+    grip.rotation.x = GRIP_TILT;
     const band = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.018, 6, 16), brass);
     band.position.z = -0.2;
     n.add(body, tip, grip, band);
@@ -382,6 +383,7 @@ export class Garden {
     this.nozzle.position.copy(this._v);
     this.nozzle.lookAt(this._w.copy(this._v).add(this._dir));
     this._tip.copy(this._v).addScaledVector(this._dir, 0.48);
+    this._holdNozzle(ctx.player);
 
     const spraying = this.spraying && ctx.playing;
     this.audio.hiss(spraying);
@@ -400,6 +402,36 @@ export class Garden {
       if (hit !== null && Math.random() < 0.5) this.fx.mist(this._w.copy(this._tip).addScaledVector(this._dir, hit), ctx.dt, 20);
     }
     this._updateHose(ctx.dt);
+  }
+
+  // His hands on the nozzle: the right round the grip, as on a pistol (palm against its right side,
+  // fingers round its front), the left over the back of the body, by the hose, fingers across the
+  // top. Worked out in the nozzle's own frame (+z where it points, +x his left, +y its top)
+  _holdNozzle(player) {
+    if (!player?.hold) return;
+    const g = this._grips || (this._grips = {
+      right: { wrist: new THREE.Vector3(), fingers: new THREE.Vector3(), palm: new THREE.Vector3(), pole: new THREE.Vector3(),
+        curl: [1.3, 1.4, 0.9], thumb: [0.35, 0.5, 0.4] },
+      left: { wrist: new THREE.Vector3(), fingers: new THREE.Vector3(), palm: new THREE.Vector3(), pole: new THREE.Vector3(),
+        curl: [0.9, 1.0, 0.7], thumb: [0.3, 0.3, 0.2] }
+    });
+    const n = this.nozzle;
+    n.updateMatrixWorld();
+    const q = n.quaternion;
+    const at = (v, x, y, z) => n.localToWorld(v.set(x, y, z));
+    const dirOf = (v, x, y, z) => v.set(x, y, z).applyQuaternion(q).normalize();
+    // the grip leans its top forward (GRIP_TILT); the hand points forward across it
+    const r = g.right;
+    at(r.wrist, -0.04, -0.14 + 0.06 * Math.sin(GRIP_TILT), -0.08 - 0.06 * Math.cos(GRIP_TILT));
+    dirOf(r.fingers, 0, -Math.sin(GRIP_TILT), Math.cos(GRIP_TILT));
+    dirOf(r.palm, 1, 0, 0);
+    r.pole.copy(this._right).multiplyScalar(0.6).addScaledVector(this._up, -1).addScaledVector(this._dir, -0.3);
+    const l = g.left;
+    at(l.wrist, 0.06, 0.11, -0.24);
+    dirOf(l.fingers, -1, 0, 0);
+    dirOf(l.palm, 0, -1, 0);
+    l.pole.copy(this._right).multiplyScalar(-0.6).addScaledVector(this._up, -1).addScaledVector(this._dir, -0.3);
+    player.hold(r, l);
   }
 
   _updateHose(dt) {

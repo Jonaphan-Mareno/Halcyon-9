@@ -15,8 +15,10 @@ What it makes:
     blink         upper lids (and lashes) rolled down over the eyeballs to meet the lower lids
     eyes_tired    upper lids lowered about 40% of the way (heavy lids)
     brow_up       brows and forehead raised
-    brow_down     inner brows pulled down and together
-  The same names as ARIA's face (AriaHead.js), plus eyes_tired and mouth_frown.
+    brow_down     brows knit: the inner ends pulled down and together, the whole brow lowered a little
+    brow_inner_up the inner ends of the brows raised and drawn in (worry, grief, pleading)
+    brow_up_L     his left brow raised alone (a cocked, sceptical brow); brow_up_R his right
+  The same names as ARIA's face (AriaHead.js), plus eyes_tired, mouth_frown and the brow extras.
 
   The wound (Cycle 9 and the reconstructed Vosses): a shaved patch on the lower back of the skull,
   slightly right of centre, with a red gash (a darker rim, a touch of glow so it reads under the
@@ -24,7 +26,9 @@ What it makes:
   at the head. The hair cards over the patch are cut away by the node script (hair_cut).
 
 Voss's head already has a mouth (teeth, gums, a tongue behind separate lips) and eyeballs behind
-open lids, so nothing is added inside.
+open lids, so nothing is added inside. The JSON lists the inside of the mouth (mouthInner: gums,
+tongue, lining, the back of the throat) and the teeth (teeth) so the node script can give each a
+material of its own.
 
 Run (from the repo root), then the node script:
   blender -b --factory-startup --python Blender/scripts/build_voss_face.py -- \
@@ -221,19 +225,31 @@ def rot_x(p, centre, a):
 
 
 # ---------------------------------------------------------------- the shapes
-SHAPES = ['jaw_open', 'mouth_wide', 'mouth_pucker', 'mouth_smile', 'mouth_frown', 'blink', 'eyes_tired', 'brow_up', 'brow_down']
+SHAPES = ['jaw_open', 'mouth_wide', 'mouth_pucker', 'mouth_smile', 'mouth_frown', 'blink', 'eyes_tired', 'brow_up', 'brow_down',
+          'brow_inner_up', 'brow_up_L', 'brow_up_R']
 D = {k: [Vector() for _ in range(N)] for k in SHAPES}
 
-# Inside the mouth: a tooth goes whole (with the jaw if it sits below the lip line); the big soft
-# pieces (gums, tongue, the mouth's lining) bend at the lip line, vertex by vertex
+# Inside the mouth every piece goes whole, with the jaw if it sits below the lip line (the teeth,
+# the gums). The two linings (the big soft pieces across the lip line) are open bags, one hung from
+# each lip: at the front they stay with their own lip, so nothing stretches across in front of the
+# teeth (bent at the lip line, they hung there like a curtain); deeper in, behind the front teeth,
+# they stretch from the palate down to the floor of the mouth, so the cavity stays closed.
+INNER_FRONT = (-0.050, -0.038)   # (y) from just inside the lips to behind the front teeth
+INNER_SPAN = (1.237, 1.253)      # (z) the deep lining stretches over this height
 inner_w = {}
 for ids in mouth_jaw + mouth_static:
-    if len(ids) >= 40:
-        for i in ids:
-            inner_w[i] = 1.0 - smooth(MOUTH_Z - 0.0025, MOUTH_Z + 0.0025, V[i].z)
-    else:
-        for i in ids:
-            inner_w[i] = 1.0 if ids in mouth_jaw else 0.0
+    whole = 1.0 if ids in mouth_jaw else 0.0
+    zs = [V[i].z for i in ids]
+    lining = len(ids) >= 40 and min(zs) < MOUTH_Z < max(zs)
+    for i in ids:
+        if lining:
+            deep = smooth(INNER_FRONT[0], INNER_FRONT[1], V[i].y)
+            inner_w[i] = whole * (1 - deep) + (1.0 - smooth(*INNER_SPAN, V[i].z)) * deep
+        else:
+            inner_w[i] = whole
+# the teeth: the small pieces reaching the front of the mouth (the rest, a plate at the back of the
+# throat, is lining)
+teeth = sorted(i for ids in mouth_jaw + mouth_static if len(ids) < 40 and min(V[i].y for i in ids) < -0.03 for i in ids)
 
 def jaw_weight(i):
     p = V[i]
@@ -246,19 +262,22 @@ def jaw_weight(i):
     t = min(1.0, max(0.0, (p.y - MOUTH_Y) / (JAW_PIVOT.y - MOUTH_Y)))
     zs = MOUTH_Z + (JAW_PIVOT.z - MOUTH_Z) * t
     soft = 1.0 - smooth(zs - 0.007, zs + 0.004, p.z)
-    # across the lips themselves the split is sharp: the lower lip goes, the upper lip stays
+    # across the lips themselves the split is sharp: the lower lip goes, the upper lip stays. Toward
+    # the corners the two lips share the movement more and more, meeting at half each, so the
+    # mouth opens in a lens that closes smoothly into its corners (not a slot with ragged ends)
     near = 1.0 - smooth(CORNER_X - 0.004, CORNER_X + 0.006, abs(p.x))
     if near > 0 and p.y < -0.045 and abs(p.z - MOUTH_Z) < 0.012:
-        if i in lip_side:
-            hard = 1.0 if lip_side[i] < 0 else 0.0
-        else:
-            hard = 1.0 if p.z < MOUTH_Z else 0.0
+        lower = lip_side[i] < 0 if i in lip_side else p.z < MOUTH_Z
+        LOWER_LIP[i] = lower
+        share = 0.5 * smooth(CORNER_X * 0.45, CORNER_X + 0.002, abs(p.x))
+        hard = 1.0 - share if lower else share
         soft = soft * (1 - near) + hard * near
     neck = smooth(NECK_FADE[0], NECK_FADE[1], p.z)
     back = 1.0 - smooth(0.0, 0.02, p.y)
     return soft * neck * back
 
 
+LOWER_LIP = {}                  # lip vertex -> on the lower lip (filled in by jaw_weight)
 JW = [jaw_weight(i) for i in range(N)]
 for i in range(N):
     if JW[i] > 0:
@@ -274,8 +293,12 @@ for f in bm.faces:
     if not all(i in main_set for i in ids):
         continue
     if all(abs(V[i].x) < CORNER_X + 0.0015 and V[i].y < -0.05 and abs(V[i].z - MOUTH_Z) < 0.003 for i in ids):
+        # a face from one lip to the other, where they part. Toward the corners, where they hardly
+        # part, the faces stay and stretch a little, closing the corner (cut there, each left a
+        # small ragged hole)
         ws = [JW[i] for i in ids]
-        if max(ws) - min(ws) > 0.5:
+        sides = set(LOWER_LIP.get(i, V[i].z < MOUTH_Z) for i in ids)
+        if len(sides) == 2 and max(ws) - min(ws) > 0.35:
             lip_seal.append(f)
 print('lip seal faces cut', len(lip_seal))
 
@@ -344,19 +367,32 @@ for ids in lashes:
             D['blink'][i] = rot_x(p, c, -(gap * 0.22) * across) - p
 print('lashes upper/lower', [(round(bbox(ids)[1].z, 4)) for ids in lashes])
 
-# the brows
+# the brows (painted on the skin, along z ~1.318; the inner ends at |x| ~0.011)
+BROW_Z = 1.318
 for i in main:
     p = V[i]
     if p.y > -0.03 or p.z < 1.296:
         continue
+    side = 1.0 if p.x >= 0 else -1.0
     front = smooth(-0.03, -0.045, p.y)
+    above_lids = smooth(1.302, 1.31, p.z)
+    # raised: the brows and the forehead over them lift together
     up = front * smooth(1.300, 1.312, p.z) * (1 - smooth(1.345, 1.375, p.z)) * (1 - smooth(0.045, 0.06, abs(p.x)))
     if up > 0:
-        D['brow_up'][i] = Vector((0, 0, 0.0028 * up))
-    inner = math.exp(-(((abs(p.x) - 0.014) / 0.014) ** 2 + ((p.z - 1.320) / 0.008) ** 2)) * front * smooth(1.302, 1.31, p.z)
-    if inner > 0.01:
-        side = 1.0 if p.x >= 0 else -1.0
-        D['brow_down'][i] = Vector((-side * 0.0011, -0.0004, -0.0022)) * inner
+        D['brow_up'][i] = Vector((0, 0, 0.0034 * up))
+        # one brow alone (his left is +x), fading across the middle of the forehead
+        D['brow_up_L'][i] = D['brow_up'][i] * smooth(-0.008, 0.008, p.x)
+        D['brow_up_R'][i] = D['brow_up'][i] * smooth(-0.008, 0.008, -p.x)
+    # knit: the inner ends pulled down, together and a little forward, the whole brow lowered a little
+    inner = math.exp(-(((abs(p.x) - 0.014) / 0.014) ** 2 + ((p.z - 1.320) / 0.008) ** 2)) * front * above_lids
+    whole = math.exp(-((p.z - BROW_Z) / 0.009) ** 2) * (1 - smooth(0.04, 0.055, abs(p.x))) * front * above_lids
+    if inner > 0.01 or whole > 0.01:
+        D['brow_down'][i] = Vector((-side * 0.0014, -0.0006, -0.0028)) * inner + Vector((0, 0, -0.0008)) * whole
+    # worry: the inner ends lifted and drawn in, the outer ends left where they are (the oblique
+    # brow of grief and pleading)
+    worry = math.exp(-(((abs(p.x) - 0.009) / 0.012) ** 2 + ((p.z - 1.321) / 0.011) ** 2)) * front * above_lids
+    if worry > 0.01:
+        D['brow_inner_up'][i] = Vector((-side * 0.0008, 0, 0.0036)) * worry
 
 
 # ---------------------------------------------------------------- the wound
@@ -539,9 +575,10 @@ out = {
     'hairCut': {'center_x': gl(Vector((cx, 0, cz)))[0], 'center_y': gl(Vector((cx, 0, cz)))[1],
                 'radius_x': hair_cut['radii'][0], 'radius_y': hair_cut['radii'][1],
                 'behind_z': -hair_cut['behind_y']},
-    # the gums, tongue and the mouth's lining: textured pink, they fill an open mouth, so the node
-    # script gives them a dark material of their own (they never show while the mouth is shut)
-    'mouthInner': sorted(i for ids in mouth_jaw + mouth_static if len(ids) >= 40 for i in ids),
+    # the gums, the mouth's lining and the back of the throat, and the teeth: the node script gives
+    # each a material of their own (they never show while the mouth is shut)
+    'mouthInner': sorted(set(i for ids in mouth_jaw + mouth_static for i in ids) - set(teeth)),
+    'teeth': teeth,
     # triangles (vertex index triples) of the sealed lip crease (M_LipSeal in the node script)
     'cutFaces': [sorted(v.index for v in f.verts) for f in lip_seal],
 }

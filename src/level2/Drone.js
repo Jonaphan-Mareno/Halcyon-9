@@ -18,8 +18,8 @@ import { withHubLighting } from '../graphics/HubMaterials.js';
 // Wet (from the water jet) it darkens and glistens, drips, sparks and slows down: sparking means
 // ARIA can freeze it. Nothing here allocates per frame.
 
-const RANGE = [4.2, 6.5];        // metres from Voss it keeps
-const HOVER = [2.0, 2.6];        // its height: a little above his eyes (1.6 m)
+const RANGE = [3.5, 5.0];        // metres from Voss it keeps (tightened so they feel close)
+const HOVER = [1.8, 2.2];        // its height: just above his eyes (1.6 m)
 const SPREAD = 0.9;              // how far round from straight ahead it starts (radians)
 const BEHIND = 1.1;              // further round than this from where he faces, it comes back round
 const COME_ROUND = 0.9;          //   at this many radians a second
@@ -30,6 +30,9 @@ const RECOVER = 0.9;
 const DRY_SECONDS = 9;           // a soaked drone dries out again in this long
 const FREEZE_WET = 0.3;          // this wet (a third of a second under the jet) and it can be frozen
 const MAX_SPEED = 6;             // metres a second while circling (so one far off comes in, not teleports)
+const HIT_RADIUS = 0.5;          // direct hit: drone must be this close (3D) to the player
+const GRAZE_RADIUS = 0.9;        // graze: drone passed within this distance
+const HIT_HEIGHT = 1.2;          // but only if the drone is within this much above/below the player
 const YELLOW = new THREE.Color(0xb8952a);
 
 let shared = null;
@@ -223,15 +226,16 @@ export class Drone {
       case 'dive': {
         p.addScaledVector(this.velocity, dt);
         const d = p.distanceTo(player);
-        if (d < this.closest) this.closest = d;
-        if (!this.hitDone && d < 0.75) {
+        const dy = Math.abs(p.y - player.y);
+        if (d < this.closest && dy < HIT_HEIGHT) this.closest = d;
+        if (!this.hitDone && d < HIT_RADIUS && dy < HIT_HEIGHT) {
           this.hitDone = true;
           ctx.onHit?.('direct');
         }
         this.timer -= dt;
         // past him (getting further away), into the floor, or out of time: pull up
         if (this.timer <= 0 || p.y < 0.6 || (this.closest < 3 && d > this.closest + 1.2)) {
-          if (!this.hitDone && this.closest < 1.4) ctx.onHit?.('graze');
+          if (!this.hitDone && this.closest < GRAZE_RADIUS) ctx.onHit?.('graze');
           this.state = 'recover';
           this.timer = RECOVER;
           this.eyeMat.color.setRGB(0.3, 1.6, 1.8);

@@ -27,6 +27,7 @@ import { buildHallClues } from './HallClues.js';
 import { Gates } from './Gates.js';
 import { KeypadUI } from '../ui/KeypadUI.js';
 import { Garden } from './Garden.js';
+import { Robot } from '../entities/Robot.js';
 import { PlayerStats, MAX_INTEGRITY } from '../player/PlayerStats.js';
 import { HUD } from '../ui/HUD.js';
 import { FightHelp } from '../ui/FightHelp.js';
@@ -427,6 +428,9 @@ export class HabitatSession {
     ]);
     this.atrium = atrium;
     this.lab = lab;
+
+    // Preload the robot model so the first spawn is instant
+    Robot.preload().catch((e) => console.warn('Robot preload failed:', e));
 
     // arrive in the lift, facing the hall (north) 
     const spawn = atrium.getObjectByName('SPAWN_Lift').getWorldPosition(new THREE.Vector3());

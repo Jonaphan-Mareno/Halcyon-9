@@ -11,7 +11,8 @@ import { ArmIK } from './ArmIK.js';
 //   Idle, Walk, Run, Jump, Jump_Up, Fall, Land  - the full body, all in place
 //   Crouch                                      - a pose, layered additively over Idle/Walk
 //   FP_Idle, FP_Walk, FP_Run, FP_Jump           - the arms only, posed for the first-person view
-// A Mixamo export of the same rig, Sprint.fbx, replaces the glb's Run (see _mixamoClip)
+// A Mixamo export of the same rig, Sprint.fbx, replaces the glb's Run (see _mixamoClip).
+// Two more, Swimming.fbx and Treading Water.fbx, are Level 3's Swim and Tread (see loadSwim)
 // Body parts are separate meshes so a view can show just some of them:
 //   Coat_Torso, Sleeves, Hands, Shirt, Pants, Head, Hair, Glasses, Wound
 // Wound is the gash on the back of his skull (the Cycle 9 Voss is a reconstruction): shown by
@@ -27,6 +28,8 @@ import { ArmIK } from './ArmIK.js';
 
 const MODEL = './assets/models/human_scientist_v2.glb';
 const RUN_FBX = './assets/models/Sprint.fbx';
+const SWIM_FBX = './assets/models/Swimming.fbx';
+const TREAD_FBX = './assets/models/Treading Water.fbx';
 
 // The model is authored at 1.39 m; the game's Voss is 1.8 m
 const MODEL_HEIGHT = 1.394;
@@ -46,6 +49,18 @@ const RUN_MIN_SPEED = 4.0;
 const GAIT_PHASE = { Walk: 0.32, Run: 0.3 };
 const GLB_RUN_PHASE = 0.0;
 
+// In the water (Level 3): the stroke plays while he thrusts along at least this fast (m/s, flat),
+// otherwise he treads water. At SWIM_CLIP_SPEED the stroke plays at its own pace.
+const SWIM_MIN_SPEED = 0.6;
+const SWIM_CLIP_SPEED = 2.6;           // PlayerController's SWIM_SPEED
+// The stroke lies him flat with his hips low; lifted (model units) so he floats round the middle
+// of the capsule rather than along its bottom
+const SWIM_LIFT = 0.15;
+// The dive helmet rides on his shoulders (DiveSuit), so the swim clips leave his neck and head
+// alone: the crawl's turns of the head for a breath would put his face through the helmet
+const SUITED_HEAD = /Neck1|neck1|Head1/;
+const SWIM_FADE = 0.5;                 // into and out of the water clips: prone to upright takes a moment
+
 const FIRST_PERSON_PARTS = ['Sleeves', 'Hands'];
 
 // How far the head turns from the body before it stops (radians), and the share of it the neck takes
@@ -62,6 +77,9 @@ const REACH_TIME = 0.28;                          // seconds, out and back
 const REACH_FORWARD = 0.24;                       // first person: the arm pushes forward this far (m)
 const REACH_IN = 0.1;                             // first person: and turns a little toward the middle (radians)
 const REACH_RAISE = 1.1;                          // third person: the arm lifts forward (radians)
+// Swimming in first person the arms take turns at that reach: one starts every SWIM_STROKE_TIME
+// seconds, so between strokes both rest a moment
+const SWIM_STROKE_TIME = 0.5;
 
 // The first-person arms sit a little back and down from where the model's eyes put them, so less
 // of the forearms covers the screen (view space, metres: +z is back, toward the player)
@@ -148,6 +166,11 @@ class Animator {
     return !!this.actions[name];
   }
 
+  // A clip that arrives after the rest (the swim clips, loaded only for Level 3)
+  add(clip) {
+    this.actions[clip.name] = this.mixer.clipAction(clip);
+  }
+
   // Loops unless `once`; a one-shot holds its last frame until something else plays.
   // `phaseFrom`: start at the same point in the cycle as the clip being replaced
   // (offsets per clip in GAIT_PHASE), so walk <-> run keeps the feet in step.
@@ -198,6 +221,7 @@ export class Player {
   constructor(scene) {
     this.scene = scene;
     this.ready = false;
+    this.whenReady = new Promise((resolve) => { this._resolveReady = resolve; });
     this.scale = 1.8 / MODEL_HEIGHT;
 
     // 'first': only the hands, from the view model. 'third': the whole body.
@@ -230,6 +254,9 @@ export class Player {
     this._eyeOffset = new THREE.Vector3();
     this._reachT = REACH_TIME;          // time into the current reach; finished when >= REACH_TIME
     this._reachUndo = [];               // the arm moves of the last frame, undone before the mixer runs
+    this._stroking = false;             // swimming and pushing along: the first-person arms stroke in turn
+    this._strokeT = SWIM_STROKE_TIME;   // time into the current stroke; the next may start at SWIM_STROKE_TIME
+    this._strokeSide = 'L';             // the arm of the current stroke (the first one is the right)
     this._qReach = new THREE.Quaternion();
     this._axis = new THREE.Vector3();
     this._reachMove = new THREE.Vector3();
@@ -304,8 +331,10 @@ export class Player {
     this.anim.play('Idle', { fade: 0 });
     this.fpAnim.play('FP_Idle', { fade: 0 });
     this.rightArm = this._bone(bodyRoot, /R_UpperArm/);
-    this.fpRightArm = this._bone(fpRoot, /R_UpperArm/);
-    this.fpRightShoulder = this._bone(fpRoot, /R_Clavicle/);
+    this._fpArms = {
+      R: { arm: this._bone(fpRoot, /R_UpperArm/), shoulder: this._bone(fpRoot, /R_Clavicle/) },
+      L: { arm: this._bone(fpRoot, /L_UpperArm/), shoulder: this._bone(fpRoot, /L_Clavicle/) }
+    };
     // the hands on something he holds (see hold)
     const turn = (bone, q) => this._turnWorld(bone, q);
     this._arms = {
@@ -315,7 +344,24 @@ export class Player {
 
     this.ready = true;
     this.setMode(this.mode);
+    this._resolveReady(this);
     return this;
+  }
+
+  // Level 3's water clips, Swim and Tread, on this body (once; later calls share the first load).
+  // Mixamo exports of the fresh Voss's rig, which this Voss shares bone for bone, so they play on
+  // him as he is: his worn face, the wound, and the dive suit dressed onto this body
+  loadSwim() {
+    this._swimLoad ||= Promise.all([this._loadFBX(SWIM_FBX), this._loadFBX(TREAD_FBX), this.whenReady])
+      .then(([swimFbx, treadFbx]) => {
+        // (YZX: lying flat, his hips pitch near 90 degrees, where YXZ's yaw and lean lock together)
+        const opts = { order: 'YZX', skip: SUITED_HEAD };
+        const swim = this._mixamoClip(swimFbx, 'Swim', SWIM_FBX, { ...opts, lift: SWIM_LIFT });
+        const tread = this._mixamoClip(treadFbx, 'Tread', TREAD_FBX, opts);
+        for (const clip of [swim, tread]) if (clip) this.anim.add(clip);
+        return this;
+      });
+    return this._swimLoad;
   }
 
   // The worn face on this body only (its own copies of the head materials). The clean face texture
@@ -361,7 +407,9 @@ export class Player {
   // the origin, the vertical bob kept. Any turn over the cycle and the average sideways lean come
   // out too, so the cycle loops on the spot facing straight ahead. The FBX's own scene and meshes
   // are thrown away, never added to the game.
-  _mixamoClip(fbx, name, url) {
+  // order: the Euler order the hips' turn is split in (the middle angle must stay clear of 90
+  // degrees); lift: raises the hips (model units); skip: bones left out of the clip.
+  _mixamoClip(fbx, name, url, { order = 'YXZ', lift = 0, skip = null } = {}) {
     if (!fbx) return null;
     try {
       const src = fbx.animations[0];
@@ -375,18 +423,18 @@ export class Player {
       const mixer = new THREE.AnimationMixer(fbx);
       const action = mixer.clipAction(src).play();
       const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
-      const e = new THREE.Euler(0, 0, 0, 'YXZ');
+      const e = new THREE.Euler(0, 0, 0, order);
       const angles = [], heights = [];
       for (const t of times) {
         action.time = t;
         mixer.update(0);
         fbx.updateMatrixWorld(true);
         fbxRoot.matrixWorld.decompose(p, q, s);
-        e.setFromQuaternion(q, 'YXZ');
+        e.setFromQuaternion(q, order);
         const prev = angles[angles.length - 1];
         const yaw = prev ? prev[1] + Math.atan2(Math.sin(e.y - prev[1]), Math.cos(e.y - prev[1])) : e.y;
         angles.push([e.x, yaw, e.z]);
-        heights.push(p.y / s.y); // the FBX world is in centimetres, the rig in metres
+        heights.push(p.y / s.y + lift); // the FBX world is in centimetres, the rig in metres
       }
       mixer.uncacheRoot(fbx);
 
@@ -399,7 +447,7 @@ export class Player {
       const quats = new Float32Array(n * 4);
       const centre = new THREE.Vector3();
       for (let i = 0; i < n; i++) {
-        q.setFromEuler(e.set(angles[i][0], yaws[i] - meanYaw, angles[i][2] - meanLean, 'YXZ'));
+        q.setFromEuler(e.set(angles[i][0], yaws[i] - meanYaw, angles[i][2] - meanLean, order));
         q.toArray(quats, i * 4);
         centre.add(p.copy(pelvis.position).applyQuaternion(q));
       }
@@ -415,7 +463,7 @@ export class Player {
       this.bodyRoot.traverse((o) => { if (o.isBone) bones.add(o.name); });
       const tracks = src.tracks.filter((t) => {
         const [node, prop] = t.name.split('.');
-        return prop === 'quaternion' && bones.has(node) && node !== rootJoint.name;
+        return prop === 'quaternion' && bones.has(node) && node !== rootJoint.name && !skip?.test(node);
       });
       tracks.push(
         new THREE.QuaternionKeyframeTrack(rootJoint.name + '.quaternion', times, quats),
@@ -515,7 +563,9 @@ export class Player {
   // speed: horizontal ground speed (m/s). camera: the game camera. bodyYaw: body facing.
   // crouch: 0 standing .. 1 fully crouched (eased by the controller).
   // running: the run key is held (and Voss is not crouched).
-  update(dt, { grounded, speed, verticalSpeed, camera, bodyYaw, crouch = 0, running: runKey = false }) {
+  // swimming: out in the water (speed is then his flat speed through it); thrusting: the suit's
+  // thrusters are pushing him (a key held).
+  update(dt, { grounded, speed, verticalSpeed, camera, bodyYaw, crouch = 0, running: runKey = false, swimming = false, thrusting = false }) {
     if (!this.ready) return;
     // Undo last frame's head turn first: the mixer must only ever see the clips' own pose,
     // otherwise a crossfade blends the old turn back in and the next turn adds to it
@@ -529,11 +579,14 @@ export class Player {
       bone.position.copy(pos);
     }
     this._reachUndo.length = 0;
-    const moving = speed > 0.4;
+    const moving = !swimming && speed > 0.4;
     const running = runKey && speed > RUN_MIN_SPEED && crouch < 0.5;
     const gait = !moving ? 'Idle' : running && this.anim.has('Run') ? 'Run' : 'Walk';
 
-    // ---------- third-person body: idle / walk / jump / fall / land ----------
+    // ---------- third-person body: idle / walk / jump / fall / land, or swim / tread ----------
+    // (the controller reports him grounded while he swims, so none of the landing below happens)
+    const wasSwimming = this.state === 'swim';
+    this._stroking = swimming && thrusting;
     if (!grounded) this._airTime += dt;
     if (grounded && !this._wasGrounded) {
       // Landed: absorb it unless it was only a tiny drop off a step
@@ -548,7 +601,14 @@ export class Player {
     }
     this._wasGrounded = grounded;
 
-    if (!grounded) {
+    if (swimming) {
+      // The stroke while the thrusters push him along, otherwise treading water (Idle until the
+      // swim clips have loaded)
+      this.state = 'swim';
+      const stroke = thrusting && speed > SWIM_MIN_SPEED && this.anim.has('Swim');
+      this.anim.play(stroke ? 'Swim' : this.anim.has('Tread') ? 'Tread' : 'Idle', { fade: SWIM_FADE });
+      if (this.anim.actions.Swim) this.anim.actions.Swim.timeScale = THREE.MathUtils.clamp(speed / SWIM_CLIP_SPEED, 0.7, 1.6);
+    } else if (!grounded) {
       const rising = this.state === 'jump' && verticalSpeed > 0 && !this.anim.finished('Jump_Up');
       // Walking off a ledge: fall once properly airborne
       if (!rising && (this.state === 'jump' || this._airTime > 0.15)) {
@@ -560,7 +620,7 @@ export class Player {
       if (moving && this._landTimer < 0.18) this._landTimer = 0; // moving off quickly: blend straight into the walk
     } else {
       this.state = 'ground';
-      this.anim.play(gait, { fade: moving ? 0.18 : 0.25, phaseFrom: this.gaitPhase });
+      this.anim.play(gait, { fade: wasSwimming ? SWIM_FADE : moving ? 0.18 : 0.25, phaseFrom: this.gaitPhase });
     }
     this.crouchAction?.setEffectiveWeight(THREE.MathUtils.clamp(crouch, 0, 1));
 
@@ -598,24 +658,41 @@ export class Player {
   // The reach, on top of whatever the clips did: the first-person arm pushes forward from the
   // shoulder (the shoulder itself is never on screen), the third-person arm lifts forward. Both
   // ease out and back over REACH_TIME.
+  // Swimming, the first-person arms make the same reach in turn, right then left, while he pushes
+  // along (the swim stroke); a stroke under way always finishes.
   _applyReach(dt, camera) {
-    if (this._reachT >= REACH_TIME) return;
-    this._reachT += dt;
-    const e = Math.sin(Math.PI * Math.min(this._reachT / REACH_TIME, 1));
-    if (this.fpRightShoulder) {
-      const shoulder = this.fpRightShoulder;
+    if (this._reachT < REACH_TIME) {
+      this._reachT += dt;
+      const e = Math.sin(Math.PI * Math.min(this._reachT / REACH_TIME, 1));
+      this._reachFirstPerson('R', e, camera);
+      if (this.rightArm) {
+        this.body.getWorldQuaternion(this._qBody);
+        this._turnWorld(this.rightArm, this._qReach.setFromAxisAngle(this._axis.set(1, 0, 0).applyQuaternion(this._qBody), e * REACH_RAISE));
+      }
+    }
+    if (this._strokeT < SWIM_STROKE_TIME) this._strokeT += dt;
+    else if (this._stroking) {
+      this._strokeT = 0;
+      this._strokeSide = this._strokeSide === 'R' ? 'L' : 'R';
+    }
+    if (this._strokeT < REACH_TIME) {
+      this._reachFirstPerson(this._strokeSide, Math.sin(Math.PI * this._strokeT / REACH_TIME), camera);
+    }
+  }
+
+  // One first-person arm (side 'R' or 'L') at e of its reach (0 at rest, 1 fully out)
+  _reachFirstPerson(side, e, camera) {
+    const { shoulder, arm } = this._fpArms[side];
+    if (shoulder) {
       this._reachUndo.push([shoulder, shoulder.quaternion.clone(), shoulder.position.clone()]);
       const target = shoulder.getWorldPosition(this._axis)
         .add(this._reachMove.set(0, 0, -e * REACH_FORWARD).applyQuaternion(camera.quaternion));
       shoulder.position.copy(shoulder.parent.worldToLocal(target));
       shoulder.updateWorldMatrix(false, true);
     }
-    if (this.fpRightArm) {
-      this._turnWorld(this.fpRightArm, this._qReach.setFromAxisAngle(this._axis.set(0, 1, 0).applyQuaternion(camera.quaternion), e * REACH_IN));
-    }
-    if (this.rightArm) {
-      this.body.getWorldQuaternion(this._qBody);
-      this._turnWorld(this.rightArm, this._qReach.setFromAxisAngle(this._axis.set(1, 0, 0).applyQuaternion(this._qBody), e * REACH_RAISE));
+    if (arm) {
+      const inward = side === 'R' ? REACH_IN : -REACH_IN;     // (toward the middle: the left arm turns the other way)
+      this._turnWorld(arm, this._qReach.setFromAxisAngle(this._axis.set(0, 1, 0).applyQuaternion(camera.quaternion), e * inward));
     }
   }
 

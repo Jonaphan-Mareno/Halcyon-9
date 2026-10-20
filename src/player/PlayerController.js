@@ -392,8 +392,8 @@ export class PlayerController {
     // (he turns toward where he swims, but not for straight up or down)
     this._placeBodyAndCamera(dt, moving && Math.hypot(this._wish.x, this._wish.z) > 0.2);
     this.character.update(dt, {
-      crouch: 0, running: false, grounded: true, speed: 0, verticalSpeed: 0,
-      camera: this.camera, bodyYaw: this.facing
+      crouch: 0, running: false, grounded: true, speed: Math.hypot(this.velocity.x, this.velocity.z), verticalSpeed: 0,
+      camera: this.camera, bodyYaw: this.facing, swimming: true, thrusting: this.thrusting
     });
   }
 

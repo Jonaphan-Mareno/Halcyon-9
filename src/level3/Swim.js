@@ -3,7 +3,8 @@ import { dotTexture } from './SeaScene.js';
 
 // Swimming outside the station (Level 3). The dive suit has a thruster pack on its back (real
 // hard-shell diving suits have them): out in the water Voss flies slowly where he looks, drifting
-// on when he lets go, sinking a little (PlayerController.setSwimming does the moving).
+// on when he lets go, sinking a little (PlayerController.setSwimming does the moving; Player plays
+// the stroke while he pushes along and treads water otherwise).
 //
 //   - he swims once he goes off the platform through the dive gate (or presses Space on it), and
 //     walks again when he settles back onto its deck or goes back into the collar
@@ -35,6 +36,7 @@ export class Swim {
     this._nextBreath = 2;
     this._emit = 0;
     this.c.swimLimit = (pos, vel) => this._limit(pos, vel);
+    this.c.character?.loadSwim();      // his stroke and treading water (Player plays them while he swims)
     this._rope();
     this._bubbles();
   }

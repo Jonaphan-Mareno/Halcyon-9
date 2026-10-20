@@ -48,12 +48,13 @@ const BODY = [
 ];
 
 // His quarter in the atrium model's world space: the room's bounds, where he stands (his feet) and
-// the way he faces (north, his back to the bunk), so his shelf (the photo, the plant) is over one
-// shoulder and the bunk's white end panel over the other
-const ROOM = { min: [17.2, 5.3, -5.6], max: [26, 9.2, 3.2], stand: [21.5, 5.5, -0.5], facing: [0, 0, 1] };
+// the way he faces (north, his back to the bunk, about two metres behind him), so his shelf (the
+// photo, the plant) is over one shoulder and the bunk's locker over the other
+const ROOM = { min: [17.2, 5.3, -5.6], max: [26, 9.2, 3.2], stand: [21.5, 5.5, -2.45], facing: [0, 0, 1] };
 // what he has put up, on sheets laid on surfaces that face him (+z), centre and size in metres:
-// the tally on the bunk's end panel, the notes on the wall above the shelf
-const TALLY = { at: [22.13, 7.3, -2.54], w: 0.5, h: 0.9 };
+// the tally on the door of the locker at the bunk's head (build_voss_bunk.py), the notes on the
+// wall above the shelf
+const TALLY = { at: [22.10, 7.3, -4.375], w: 0.5, h: 0.9 };
 const NOTES = { at: [20.2, 8.4, -5.4], w: 2.2, h: 0.5 };
 // per condition level: the cycles scratched into the wall as a tally, and the notes pinned up
 const MARKS = [
@@ -63,6 +64,61 @@ const MARKS = [
   { tally: 5, notes: 4 },
   { tally: 8, notes: 7 }
 ];
+const ROOM_TALLY = 9;      // the tally in the quarter itself, now (Cycle 9)
+const TALLY_SEED = 7;
+
+// A sheet laid over a surface in his quarter (a spot: centre and size, facing +z), with a canvas to
+// draw on
+function wallSheet({ at, w, h }) {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(512 * Math.min(1, w / h));
+  canvas.height = Math.round(canvas.width * h / w);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+  mesh.position.set(...at);
+  mesh.matrixAutoUpdate = false;
+  mesh.updateMatrix();
+  return { canvas, tex, mesh };
+}
+
+// The tally of cycles in marker, in fives (four strokes and one across), drawn with rnd: the log
+// starts it from the same seed as the room's own (tallyInRoom), so each count adds to the last
+function drawTally(canvas, tally, rnd) {
+  const g = canvas.getContext('2d');
+  g.clearRect(0, 0, canvas.width, canvas.height);
+  g.strokeStyle = 'rgba(30,22,22,0.9)';
+  g.lineCap = 'round';
+  g.lineWidth = 9;
+  for (let i = 0; i < tally; i++) {
+    const row = Math.floor(i / 5), j = i % 5;
+    const x0 = 40 + rnd() * 10, y0 = 70 + row * 230 + rnd() * 10;
+    g.beginPath();
+    if (j < 4) {
+      const x = x0 + j * 42 + (rnd() - 0.5) * 8;
+      g.moveTo(x, y0);
+      g.lineTo(x + (rnd() - 0.5) * 14, y0 + 150 + rnd() * 20);
+    } else {
+      g.moveTo(x0 - 20, y0 + 130);
+      g.lineTo(x0 + 160, y0 + 20);
+    }
+    g.stroke();
+  }
+}
+
+// The same seeded random as the log's marks
+const seeded = (seed) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+// The tally on his bunk's locker in the quarter itself, as the gameplay Voss finds it: one
+// more than the last log's (Cycle 8), the cycle he is living now. Add to the scene, not the atrium
+// (LogHead.quarterOf copies the atrium's meshes into the logs, which draw their own tally)
+export function tallyInRoom(count = ROOM_TALLY) {
+  const sheet = wallSheet(TALLY);
+  drawTally(sheet.canvas, count, seeded(TALLY_SEED));
+  sheet.mesh.name = 'VossTally';
+  return sheet.mesh;
+}
 
 export class LogHead {
   // source: { root (the loaded character, already in its toon materials), idle (AnimationClip),
@@ -370,54 +426,26 @@ export class LogHead {
     this.roomLight.updateMatrix();
     set.add(this.roomLight);
 
-    this.sheets = [TALLY, NOTES].map(({ at, w, h }) => {
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(512 * Math.min(1, w / h));
-      canvas.height = Math.round(canvas.width * h / w);
-      const tex = new THREE.CanvasTexture(canvas);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false });
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
-      mesh.position.set(...at);
-      mesh.matrixAutoUpdate = false;
-      mesh.updateMatrix();
-      set.add(mesh);
-      return { canvas, tex, mesh };
+    this.sheets = [TALLY, NOTES].map((spot) => {
+      const sheet = wallSheet(spot);
+      set.add(sheet.mesh);
+      return sheet;
     });
     this.set = set;
     this.scene.add(set);
   }
 
-  // What is up in his quarter at this condition: the tally of cycles in marker on the bunk's end
-  // panel, notes pinned over the shelf (the last of them: DON'T TRUST HER)
+  // What is up in his quarter at this condition: the tally of cycles in marker on his bunk's
+  // locker, notes pinned over the shelf (the last of them: DON'T TRUST HER)
   _markWall({ tally, notes }) {
     if (!this.sheets) return;
-    let seed = 7;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const rnd = seeded(TALLY_SEED);
     const [t, n] = this.sheets;
 
-    let g = t.canvas.getContext('2d');
-    g.clearRect(0, 0, t.canvas.width, t.canvas.height);
-    g.strokeStyle = 'rgba(30,22,22,0.9)';
-    g.lineCap = 'round';
-    g.lineWidth = 9;
-    for (let i = 0; i < tally; i++) {
-      const row = Math.floor(i / 5), j = i % 5;
-      const x0 = 40 + rnd() * 10, y0 = 70 + row * 230 + rnd() * 10;
-      g.beginPath();
-      if (j < 4) {
-        const x = x0 + j * 42 + (rnd() - 0.5) * 8;
-        g.moveTo(x, y0);
-        g.lineTo(x + (rnd() - 0.5) * 14, y0 + 150 + rnd() * 20);
-      } else {
-        g.moveTo(x0 - 20, y0 + 130);
-        g.lineTo(x0 + 160, y0 + 20);
-      }
-      g.stroke();
-    }
+    drawTally(t.canvas, tally, rnd);
     t.tex.needsUpdate = true;
 
-    g = n.canvas.getContext('2d');
+    const g = n.canvas.getContext('2d');
     const cw = n.canvas.width, ch = n.canvas.height;
     g.clearRect(0, 0, cw, ch);
     for (let i = 0; i < notes; i++) {

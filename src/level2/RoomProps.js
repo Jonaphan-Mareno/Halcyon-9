@@ -229,18 +229,22 @@ export function buildRoomProps(scene) {
   // ---- the crew bunk (x 17.3 to 25.9, z -5.4 to 3.0): south wall z 3, north wall z -5.4
   spots.personalLog = monitor(scene, 24.05, BENCH, 2.3, Math.PI, ['J. VOSS', 'PERSONAL LOG', 'PLAY MEMORIES >'], '#00e5ff');
   spots.bunkLogA = wallScreen(scene, 18.35, 7.0, -5.35, 0, ['CREW LOG', 'AUDIO  0:41'], '#7fd6ff');
-  spots.bunkLogB = wallScreen(scene, 21.79, 6.55, -4.1, -Math.PI / 2, ['CREW LOG', 'AUDIO  0:22'], '#7fd6ff');
+  // (on the door of the locker at the first bunk's head, under his tally: its face is at z -4.385)
+  spots.bunkLogB = wallScreen(scene, 22.1, 6.3, -4.365, 0, ['CREW LOG', 'AUDIO  0:22'], '#7fd6ff');
   spots.corkboard = corkboard(scene, 17.46, 7.25, -3.15, Math.PI / 2);   // (the wall's face is at x 17.42)
-  // the crew lockers along the south wall, shut (nothing in them to find)
+  // the crew lockers, one for each of the four bunked here, along the east wall (its face at x
+  // 28.56) facing into the room, Voss's nearest the bunks; shut (nothing in them to find)
   spots.lockerBodies = [];
-  for (const [x, name] of [[18.85, 'A. OKAFOR'], [19.7, 'J. VOSS'], [20.55, 'T. LINDQVIST']]) {
-    spots.lockerBodies.push(locker(scene, x, 2.72, Math.PI, name, false).body);
+  for (const [z, name] of [[-2.6, 'J. VOSS'], [-1.8, 'R. NAVARRO'], [-1.0, 'S. PARK'], [-0.2, 'D. ITO']]) {
+    spots.lockerBodies.push(locker(scene, 28.29, z, -Math.PI / 2, name, false).body);
   }
-  // name plates on the bunks' front rails (the bunk's open side faces south, at z -2.56): the
-  // lower bunks' bases and the upper bunks' rails, one bunk each end
-  for (const [x, y, name] of [[22.85, 5.86, 'J. VOSS'], [24.8, 5.86, 'R. NAVARRO'], [22.85, 7.38, 'S. PARK'], [24.8, 7.38, 'D. ITO']]) {
-    const tag = nameTag(name, 0.52, 0.13);
-    tag.position.set(x, y, -2.535);
+  // name plates on the two bunks along the north wall (Blender/scripts/build_voss_bunk.py; heads at
+  // x 22.4 and 24.6, fronts facing south): each lower berth's on its plinth above the drawers
+  // (face at z -4.44), each upper berth's on the deck's edge (face at z -4.40)
+  for (const [x, y, z, name] of [[22.95, 5.74, -4.435, 'J. VOSS'], [25.15, 5.74, -4.435, 'R. NAVARRO'],
+    [22.95, 6.955, -4.392, 'S. PARK'], [25.15, 6.955, -4.392, 'D. ITO']]) {
+    const tag = nameTag(name, 0.34, 0.07);
+    tag.position.set(x, y, z);
     scene.add(tag);
     if (name === 'J. VOSS') spots.myBunk = tag.position.clone();
   }

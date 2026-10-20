@@ -32,13 +32,13 @@ import { HUD } from '../ui/HUD.js';
 import { FightHelp } from '../ui/FightHelp.js';
 import { Readables } from './Readables.js';
 import { Flashback } from './Flashback.js';
-import { LogHead } from './LogHead.js';
+import { LogHead, tallyInRoom } from './LogHead.js';
 import { Flashback3D } from './Flashback3D.js';
 import { Inventory } from '../ui/Inventory.js';
 import { sleep, pauseClock } from '../core/PauseClock.js';
 import { vossSays, vossVoice } from '../audio/VossVoice.js';
 import { buildRoomProps } from './RoomProps.js';
-import { applyShellMetal } from './ShellMetal.js';
+import { applyBedroomShell } from './BedroomShell.js';
 import { disposeScene } from '../core/disposeScene.js';
 import '../ui/level2.css';
 
@@ -360,10 +360,10 @@ export class HabitatSession {
     });
     this.hubTextures = this.hubTextures || createHubTextures();
     applyHubMaterials(model, this.hubTextures);
-    // the bedroom shells ship as plain painted boxes: Kessler's (Cube.009) gets its walls and
-    // roof clad in the team's metal set, the floor slab keeping the room paint. Voss's shell
-    // and the west wall closures (Kess_WallW, Voss_WallW) are clad in the same metal set.
-    applyShellMetal(model, ['Cube009', 'Cube', 'Kess_WallW', 'Voss_WallW']);
+    // the bedroom shells ship as plain painted boxes: both quarters (Kessler's Cube.009, Voss's
+    // crew room Cube) and the west wall closures (Kess_WallW, Voss_WallW) are finished as rooms
+    // people live in: cream panels over a wood wainscot, a carpet, a soft ceiling
+    applyBedroomShell(model, ['Cube009', 'Cube', 'Kess_WallW', 'Voss_WallW']);
     // the bedrooms take the toon treatment the player wears: the cel banding and cyan rim
     // (the team's toon look), under this level's own lights. Scoped by material name - VCol.* /
     // Material.00* are the bedroom set the exporter writes, so the atrium's own materials
@@ -427,6 +427,8 @@ export class HabitatSession {
     ]);
     this.atrium = atrium;
     this.lab = lab;
+    // his tally on his bunk's locker, in his quarter (the logs show it growing up to Cycle 8)
+    scene.add(tallyInRoom());
 
     // arrive in the lift, facing the hall (north) 
     const spawn = atrium.getObjectByName('SPAWN_Lift').getWorldPosition(new THREE.Vector3());

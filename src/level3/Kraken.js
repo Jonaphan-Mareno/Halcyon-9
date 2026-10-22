@@ -6,28 +6,36 @@ import { createGLTFLoader } from '../core/loaders.js';
 // The source holds four tentacles out straight; this one has ten, and they move: the arm repeated
 // eight times round the underside of the body and the long tentacle twice, from its sides.
 //
-// Each tentacle is a curve through five points (Catmull-Rom), worked out here every frame, and the
+// Each tentacle is a curve through nine points (Catmull-Rom), worked out here every frame, and the
 // vertex shader lays the straight model along it (its length along the curve, its cross-section
-// turned to follow), so one draw call draws all eight arms and one both long tentacles. The five
-// points come from a chain: each link a quarter of the tentacle long, each turned a little from the
-// last (waves running down it, a curl toward the tip). When a tentacle reaches for something, its
-// chain is pulled toward it (FABRIK), so it keeps its length whatever it does.
+// turned to follow), so one draw call draws all eight arms and one both long tentacles. The points
+// come from a chain of eight links, each turned a little from the last: waves run out along it
+// from the body to the tip, up and down and side to side at different speeds, as an octopus's arms
+// ripple, and the tip curls. When a tentacle reaches for something its chain is pulled toward it
+// (FABRIK, so it keeps its length) and still ripples along the way. The shader adds a fine ripple
+// of its own running down each one.
+//
+// The body breathes and rolls a little as it hangs in the water, and its lower jaw hinges (in the
+// vertex shader: the face's lower half turns about a line behind the mouth), so it opens and
+// shuts its mouth.
 //
 // The textures are one atlas (see the Blender script): each vertex's u carries its tile as whole
 // hundreds, and the shader samples (tile + fract(uv)) / 4.
 //
-// What it does is driven from outside (Trench.js): where it sits, what each tentacle reaches for,
-// how much a tentacle glows (the warning before it strikes) and how wide the mouth glows (its weak
-// spot). Positions handed in and out are world positions.
+// What it does is driven from outside (KrakenFight.js): where it sits, what each tentacle reaches
+// for, how much a tentacle glows (the warning before it strikes), the jaw, and how brightly its
+// mouth glows (its weak spot). Positions handed in and out are world positions.
 
 const MODEL = './assets/models/l3-kraken.glb';
 const ARMS = 8, WHIPS = 2;
-const LINKS = 4;                       // links in each tentacle's chain (five points)
+const LINKS = 8;                       // links in each tentacle's chain (nine points)
 // the body, in the model's own units (it faces +z, its belly at y ~ -0.5)
 const ARM_RING = { y: 0.25, z: 0.55, rx: 1.55, rz: 1.25 };   // where the arms leave the body
 const WHIP_ROOT = { x: 2.45, y: 0.45, z: 1.5 };                // and the long tentacles, at its sides
-export const MOUTH = new THREE.Vector3(0, 2.05, 2.15);        // its screaming mouth: the weak spot
-const EYES = [new THREE.Vector3(-0.5, 2.95, 2.25), new THREE.Vector3(0.5, 2.95, 2.25)];
+export const MOUTH = new THREE.Vector3(0, 2.0, 1.95);         // in its mouth: the weak spot
+const JAW = { y: 2.0, z: 1.0 };                                // the line its lower jaw turns about
+// the waves along a tentacle: radians a link (more toward the tip), how fast, how long
+const WAVE = { curl: 0.42, sway: 0.5, speed: { arm: 1.3, whip: 1.8 }, length: 5.5 };
 
 export class Kraken {
   // parent: what it goes in (the sea's group); scale: model units to metres
@@ -35,6 +43,7 @@ export class Kraken {
     this.root = new THREE.Group();
     this.root.name = 'Kraken';
     this.root.scale.setScalar(scale);
+    this.root.rotation.order = 'YXZ';
     if (position) this.root.position.copy(position);
     this.root.rotation.y = yaw;
     parent.add(this.root);
@@ -42,11 +51,16 @@ export class Kraken {
     this.time = 0;
     this.tents = [];
     this.mouthGlow = 0;                 // 0..1: its mouth lit (open to the harpoon)
-    this.eyeGlow = 0.35;
-    this.uniforms = { uTime: { value: 0 } };
+    this.jaw = 0;                       // radians: + opens wider than the model's own scream, - shuts it
+    this.jawTarget = -0.2;
+    this.jawRate = 10;
+    this.avoid = [];                    // [{ centre (world), radius, top }]: upright cylinders its tentacles keep out of
+    this.uniforms = { uTime: { value: 0 }, uJaw: { value: 0 }, uMouthGlow: { value: 0 } };
     this._v = new THREE.Vector3();
     this._w = new THREE.Vector3();
-    this._q = new THREE.Quaternion();
+    this._a = new THREE.Vector3();
+    this._b = new THREE.Vector3();
+    this._d = new THREE.Vector3();
     this.ready = this._load().catch((e) => console.error('The kraken failed to load.', e));
   }
 
@@ -73,7 +87,6 @@ export class Kraken {
       const out = new THREE.Vector3(sx, -0.15, 0.55).normalize();
       this.tents.push(this._tent('whip', i, root, out, this.whips));
     }
-    this._eyes();
     this.update(0);
   }
 
@@ -88,7 +101,9 @@ export class Kraken {
       target: null,                     // a point (model units) it reaches for, or null
       reach: 0,                         // 0..1: how far it gives in to the reach
       glow: 0,                          // 0..1: its tip glows (about to strike)
-      curl: 0.25,                       // how far it curls (radians a link)
+      curl: 0.25,                       // how far it curls down along its length
+      tip: 0.5,                         // and how far its tip curls in
+      wave: 1,                          // how strongly the waves run along it
       thick: kind === 'arm' ? 1.25 : 1.0,
       floor: null                       // a height (model units) the points keep above, or null
     };
@@ -99,25 +114,24 @@ export class Kraken {
   _material(map, tentacle) {
     const mat = new THREE.MeshStandardMaterial({ map, roughness: 0.55, metalness: 0.0, side: THREE.DoubleSide, alphaTest: 0.5 });
     const u = this.uniforms;
+    const pts = Array.from({ length: LINKS + 1 }, (_, j) => j);
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = u.uTime;
+      shader.uniforms.uJaw = u.uJaw;
+      shader.uniforms.uMouthGlow = u.uMouthGlow;
       shader.uniforms.uLen = { value: tentacle || 1 };
       shader.uniforms.uMouth = { value: MOUTH };
-      shader.uniforms.uMouthGlow = this._mouthU ||= { value: 0 };
       let vs = shader.vertexShader.replace('#include <common>', `#include <common>
         uniform float uTime;
         uniform float uLen;
+        uniform float uJaw;
         varying vec2 vKTile;
         varying float vKGlow;
         varying vec3 vKLocal;
         #ifdef TENTACLE
-          attribute vec3 aC0;
-          attribute vec3 aC1;
-          attribute vec3 aC2;
-          attribute vec3 aC3;
-          attribute vec3 aC4;
+          ${pts.map((j) => `attribute vec3 aC${j};`).join('\n')}
           attribute vec3 aSide;     // which way its suckers face (near enough)
-          attribute vec4 aShape;    // x: thickness, y: twist over its length, z: tip glow
+          attribute vec4 aShape;    // x: thickness, y: twist over its length, z: tip glow, w: its phase
           vec3 kCR(vec3 a, vec3 b, vec3 c, vec3 d, float f) {
             return 0.5 * (2.0 * b + (c - a) * f + (2.0 * a - 5.0 * b + 4.0 * c - d) * f * f + (3.0 * b - a - 3.0 * c + d) * f * f * f);
           }
@@ -133,27 +147,45 @@ export class Kraken {
       if (tentacle) {
         vs = vs.replace('#include <beginnormal_vertex>', `
           float kt = clamp(position.y / uLen, 0.0, 1.0);
-          vec3 kP[7];
-          kP[0] = 2.0 * aC0 - aC1; kP[1] = aC0; kP[2] = aC1; kP[3] = aC2; kP[4] = aC3; kP[5] = aC4; kP[6] = 2.0 * aC4 - aC3;
-          float ks = kt * 4.0;
-          int ki = int(min(floor(ks), 3.0));
+          vec3 kP[${LINKS + 3}];
+          kP[0] = 2.0 * aC0 - aC1;
+          ${pts.map((j) => `kP[${j + 1}] = aC${j};`).join(' ')}
+          kP[${LINKS + 2}] = 2.0 * aC${LINKS} - aC${LINKS - 1};
+          float ks = kt * ${LINKS}.0;
+          int ki = int(min(floor(ks), ${LINKS - 1}.0));
           float kf = ks - float(ki);
           vec3 kCentre = kCR(kP[ki], kP[ki + 1], kP[ki + 2], kP[ki + 3], kf);
           vec3 kT = normalize(kCRd(kP[ki], kP[ki + 1], kP[ki + 2], kP[ki + 3], kf) + vec3(0.0, 1e-5, 0.0));
           vec3 kRef = abs(dot(normalize(aSide), kT)) > 0.97 ? vec3(1.0, 0.0, 0.0) : aSide;
           vec3 kS = normalize(kRef - dot(kRef, kT) * kT);
-          float ka = aShape.y * kt + sin(uTime * 1.3 + kt * 6.0 + aShape.w) * 0.12;
+          float ka = aShape.y * kt + sin(uTime * 1.3 + kt * 6.0 + aShape.w) * 0.15;
           kS = kS * cos(ka) + cross(kT, kS) * sin(ka);
           vec3 kX = cross(kT, kS);
+          // a fine ripple running down it, more toward the tip
+          kCentre += (kX * sin(uTime * 2.6 - kt * 14.0 + aShape.w) + kS * sin(uTime * 2.1 - kt * 11.0 + aShape.w * 1.7)) * 0.07 * kt;
           vec3 objectNormal = kX * normal.x + kT * normal.y + kS * normal.z;
           vKGlow = aShape.z * smoothstep(0.45, 1.0, kt);`);
         vs = vs.replace('#include <begin_vertex>', `
           vec3 transformed = kCentre + (kX * position.x + kS * position.z) * aShape.x;
           vKLocal = transformed;`);
       } else {
-        vs = vs.replace('#include <begin_vertex>', `#include <begin_vertex>
+        // the jaw: the lower half of the face turns about a line behind the mouth (fading out
+        // toward the hinge, the back of the head and its hands, so nothing tears)
+        vs = vs.replace('#include <beginnormal_vertex>', `
+          float kJw = smoothstep(${(JAW.y - 0.05).toFixed(2)}, ${(JAW.y - 0.5).toFixed(2)}, position.y)
+            * smoothstep(1.25, 1.85, position.z) * smoothstep(1.55, 1.05, abs(position.x));
+          float kJa = uJaw * kJw;
+          float kJc = cos(kJa), kJs = sin(kJa);
+          vec3 objectNormal = vec3(normal.x, normal.y * kJc - normal.z * kJs, normal.z * kJc + normal.y * kJs);`);
+        vs = vs.replace('#include <begin_vertex>', `
+          vec3 transformed = position;
+          {
+            vec2 kD = vec2(position.z - ${JAW.z.toFixed(2)}, position.y - ${JAW.y.toFixed(2)});
+            transformed.z = ${JAW.z.toFixed(2)} + kD.x * kJc + kD.y * kJs;
+            transformed.y = ${JAW.y.toFixed(2)} + kD.y * kJc - kD.x * kJs;
+          }
           vKGlow = 0.0;
-          vKLocal = position;`);
+          vKLocal = transformed;`);
       }
       shader.vertexShader = vs;
       shader.fragmentShader = shader.fragmentShader
@@ -200,7 +232,7 @@ export class Kraken {
       geo.setAttribute(name, a);
       return a;
     };
-    const cps = [0, 1, 2, 3, 4].map((j) => attr('aC' + j, 3));
+    const cps = Array.from({ length: LINKS + 1 }, (_, j) => attr('aC' + j, 3));
     const side = attr('aSide', 3), shape = attr('aShape', 4);
     src.computeBoundingBox();
     const len = src.boundingBox.max.y;
@@ -209,29 +241,6 @@ export class Kraken {
     const mesh = new THREE.Mesh(geo, this._material(map, len));
     this.root.add(mesh);
     return { mesh, cps, side, shape, len };
-  }
-
-  // two small lights in its eyes, always faintly on (brighter when it hunts)
-  _eyes() {
-    const c = document.createElement('canvas');
-    c.width = c.height = 64;
-    const g = c.getContext('2d');
-    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    grad.addColorStop(0, 'rgba(255,240,200,1)');
-    grad.addColorStop(0.25, 'rgba(255,170,60,0.8)');
-    grad.addColorStop(1, 'rgba(255,90,20,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 64, 64);
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    this.eyeMat = new THREE.SpriteMaterial({ map: tex, color: 0xffb060, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: true });
-    this.eyeSprites = EYES.map((p) => {
-      const s = new THREE.Sprite(this.eyeMat);
-      s.position.copy(p);
-      s.scale.setScalar(0.4);
-      this.root.add(s);
-      return s;
-    });
   }
 
   // ------------------------------------------------------------------ moving
@@ -253,9 +262,9 @@ export class Kraken {
     const s = Math.min(t, 0.9999) * LINKS;
     const i = Math.floor(s), f = s - i;
     const P = tent.pts;
-    const a = i === 0 ? this._w.copy(P[0]).multiplyScalar(2).sub(P[1]) : P[i - 1];
+    const a = i === 0 ? this._a.copy(P[0]).multiplyScalar(2).sub(P[1]) : P[i - 1];
     const b = P[i], c = P[i + 1];
-    const d = i + 2 <= LINKS ? P[i + 2] : this._v.copy(P[LINKS]).multiplyScalar(2).sub(P[LINKS - 1]);
+    const d = i + 2 <= LINKS ? P[i + 2] : this._b.copy(P[LINKS]).multiplyScalar(2).sub(P[LINKS - 1]);
     const f2 = f * f, f3 = f2 * f;
     out.set(0, 0, 0)
       .addScaledVector(a, -0.5 * f + f2 - 0.5 * f3)
@@ -268,9 +277,9 @@ export class Kraken {
   // how near a world point comes to a tentacle (metres), sampled along it
   distanceTo(tent, world, from = 0.25) {
     let best = Infinity;
-    const p = new THREE.Vector3();
-    for (let k = 0; k <= 12; k++) {
-      const t = from + (1 - from) * k / 12;
+    const p = this._d;
+    for (let k = 0; k <= 16; k++) {
+      const t = from + (1 - from) * k / 16;
       best = Math.min(best, this.pointOn(tent, t, p).distanceTo(world));
     }
     return best;
@@ -278,38 +287,56 @@ export class Kraken {
 
   update(dt) {
     this.time += dt;
-    this.uniforms.uTime.value = this.time;
+    const t = this.time;
+    this.uniforms.uTime.value = t;
     if (!this.body) return;
+    // the body: it breathes, and rolls and pitches a little as it hangs in the water
+    const br = Math.sin(t * 1.4);
+    this.body.scale.set(1 + 0.025 * br, 1 + 0.04 * Math.sin(t * 1.4 + 0.5), 1 + 0.03 * br);
+    this.root.rotation.x = 0.06 * Math.sin(t * 0.7) + (this.pitch || 0);
+    this.root.rotation.z = 0.05 * Math.sin(t * 0.53 + 1.0);
+    this.root.updateMatrixWorld(true);
+    // the jaw, eased (snaps shut fast)
+    this.jaw += (this.jawTarget - this.jaw) * (1 - Math.exp(-this.jawRate * dt));
+    this.uniforms.uJaw.value = this.jaw;
+    this.uniforms.uMouthGlow.value = this.mouthGlow;
+    // what its tentacles keep out of, in its own space
+    this._avoidLocal = this.avoid.map((c) => ({
+      c: this.toLocal(c.centre, new THREE.Vector3()), r: c.radius / this.scale,
+      top: (c.top - this.root.position.y) / this.scale
+    }));
     for (const tent of this.tents) this._pose(tent, dt);
     for (const g of [this.arms, this.whips]) {
       for (const a of [...g.cps, g.side, g.shape]) a.needsUpdate = true;
     }
-    if (this._mouthU) this._mouthU.value = this.mouthGlow;
-    const eye = 0.45 + this.eyeGlow * 0.9;
-    for (const s of this.eyeSprites) s.scale.setScalar(eye * (0.92 + 0.08 * Math.sin(this.time * 5.3)));
-    this.eyeMat.opacity = Math.min(1, 0.4 + this.eyeGlow * 0.6);
   }
 
-  // A tentacle's five points this frame: its chain at rest (waves, a curl), pulled toward what it
-  // reaches for, kept off the floor; then written to its instance's data
+  // A tentacle's nine points this frame: its chain at rest (waves running out along it, its tip
+  // curling), pulled toward what it reaches for, kept off the floor and out of the avoided places;
+  // then written to its instance's data
   _pose(tent, dt) {
     const t = this.time, P = tent.pts, seg = tent.len / LINKS;
-    const dir = this._v.copy(tent.out);
-    const side = new THREE.Vector3().crossVectors(dir, UP).normalize();
-    if (side.lengthSq() < 0.01) side.set(1, 0, 0);
-    const curlAxis = side;                          // curls down (toward its suckers)
-    const swayAxis = new THREE.Vector3().crossVectors(side, dir).normalize();
     const rest = tent.rest;
     rest[0].copy(tent.root);
-    const d = dir.clone();
+    const d = this._d.copy(tent.out);
+    const speed = WAVE.speed[tent.kind];
     for (let j = 1; j <= LINKS; j++) {
-      const w = t * (tent.kind === 'whip' ? 1.3 : 0.9) + tent.phase;
-      const curl = tent.curl * (0.6 + j * 0.35) + Math.sin(w + j * 0.9) * 0.22;
-      const sway = Math.sin(w * 0.7 + j * 1.4 + tent.phase) * 0.28;
-      d.applyAxisAngle(curlAxis, curl * 0.5).applyAxisAngle(swayAxis, sway * 0.5).normalize();
+      const s = j / LINKS;
+      const w = t * speed + tent.phase;
+      // (bending down/up about the axis across it, and side to side about the one over it)
+      const across = this._a.crossVectors(d, UP);
+      if (across.lengthSq() < 1e-4) across.set(1, 0, 0);
+      across.normalize();
+      const over = this._b.crossVectors(across, d).normalize();
+      const tipCurl = s > 0.6 ? tent.tip * ((s - 0.6) / 0.4) ** 2 * (0.75 + 0.25 * Math.sin(w * 0.6)) : 0;
+      const grow = 0.35 + 0.65 * s;      // (stiffer by the body, freer toward the tip)
+      const curl = -tent.curl * 0.25 + tent.wave * WAVE.curl * grow * Math.sin(w - s * WAVE.length) - tipCurl;
+      const sway = tent.wave * WAVE.sway * grow * Math.sin(w * 0.83 - s * WAVE.length * 0.85 + tent.phase * 1.7);
+      d.applyAxisAngle(across, curl).applyAxisAngle(over, sway).normalize();
       rest[j].copy(rest[j - 1]).addScaledVector(d, seg);
     }
-    // what it reaches for (FABRIK, from the rest pose)
+    let rate = 4;
+    // what it reaches for (FABRIK, from the rest pose), still rippling along the way
     if (tent.target && tent.reach > 0.001) {
       const R = REACH_PTS;
       for (let j = 0; j <= LINKS; j++) R[j].copy(rest[j]);
@@ -319,25 +346,41 @@ export class Kraken {
         R[0].copy(tent.root);
         for (let j = 1; j <= LINKS; j++) R[j].sub(R[j - 1]).setLength(seg).add(R[j - 1]);
       }
-      // (eased toward it, so a strike sweeps through the water rather than jumping)
-      const k = 1 - Math.exp(-14 * dt);
-      for (let j = 0; j <= LINKS; j++) {
-        const want = this._w.copy(rest[j]).lerp(R[j], tent.reach);
-        P[j].lerp(want, dt > 0 ? k : 1);
+      const chord = this._a.subVectors(R[LINKS], R[0]).normalize();
+      const sideA = this._b.crossVectors(chord, UP);
+      if (sideA.lengthSq() < 1e-4) sideA.set(1, 0, 0);
+      sideA.normalize();
+      const sideB = this._v.crossVectors(sideA, chord).normalize();
+      const wobble = 0.55 * tent.wave * (1 - 0.7 * tent.glow);
+      for (let j = 1; j < LINKS; j++) {
+        const s = j / LINKS, env = Math.sin(Math.PI * s);
+        const w = t * WAVE.speed[tent.kind] * 1.3 + tent.phase;
+        R[j].addScaledVector(sideA, Math.sin(w - s * 7.0) * wobble * env).addScaledVector(sideB, Math.sin(w * 0.8 - s * 6.0 + 1.3) * wobble * env * 0.8);
       }
-    } else {
-      const k = 1 - Math.exp(-4 * dt);
-      for (let j = 0; j <= LINKS; j++) P[j].lerp(rest[j], dt > 0 ? k : 1);
+      for (let j = 0; j <= LINKS; j++) rest[j].lerp(R[j], tent.reach);
+      rate = 10;
     }
+    const k = dt > 0 ? 1 - Math.exp(-rate * dt) : 1;
+    for (let j = 0; j <= LINKS; j++) P[j].lerp(rest[j], k);
     P[0].copy(tent.root);
     if (tent.floor !== null) for (let j = 1; j <= LINKS; j++) P[j].y = Math.max(P[j].y, tent.floor);
+    for (const c of this._avoidLocal || []) {
+      for (let j = 1; j <= LINKS; j++) {
+        const p = P[j];
+        if (p.y > c.top) continue;
+        const dx = p.x - c.c.x, dz = p.z - c.c.z, dist = Math.hypot(dx, dz);
+        if (dist < c.r && dist > 1e-4) {
+          p.x = c.c.x + dx / dist * c.r;
+          p.z = c.c.z + dz / dist * c.r;
+        }
+      }
+    }
     // into the instance data
     const g = tent.group, i = tent.slot;
     for (let j = 0; j <= LINKS; j++) g.cps[j].setXYZ(i, P[j].x, P[j].y, P[j].z);
     // (the suckers face down and in, toward the body's middle line)
     g.side.setXYZ(i, -tent.out.x * 0.3, -1, -tent.out.z * 0.3);
-    g.shape.setXYZ(i, tent.thick, 0.4, tent.glow);
-    g.shape.setW(i, tent.phase);
+    g.shape.setXYZW(i, tent.thick, 0.4, tent.glow, tent.phase);
   }
 }
 

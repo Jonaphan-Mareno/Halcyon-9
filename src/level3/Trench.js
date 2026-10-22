@@ -275,9 +275,9 @@ export class Trench {
     if (PUZZLES.run) await PUZZLES.run(this);
     if (this.s.disposed) return;
     this.stage = 'trunk';
-    this._screenText = ['TRUNK LINE: NO SIGNAL', 'BREAK: OUTSIDE, REAR'];
+    this._screenText = ['TRUNK LINE: SEVERED', 'NO PATH TO THE SURFACE'];
     this._drawSign();
-    this.game.ui.showToast('TRUNK LINE: NO SIGNAL. The line to the surface leaves through the back hatch.', 6000);
+    this.game.ui.showToast("The relay can't reach the surface: its trunk line, the cable up to the surface, has been torn out. Without it the uplink goes nowhere. The line leaves through the back hatch.", 9000);
     this.s.say('trunk');
   }
 
@@ -302,7 +302,7 @@ export class Trench {
   _connectLine() {
     if (this.stage !== 'carry') return;
     this.stage = 'uplink';
-    this._screenText = ['TRUNK LINE: SIGNAL', 'UPLINK READY'];
+    this._screenText = ['TRUNK LINE: CONNECTED', 'SURFACE: SIGNAL. UPLINK READY'];
     this._drawSign();
     this.game.ui.showToast('Trunk line connected. Signal.', 4000);
     this.s.say('signal');
@@ -352,7 +352,7 @@ export class Trench {
     g.strokeRect(8, 8, 496, 240);
     g.textAlign = 'center';
     g.font = 'bold 32px Courier New, monospace';
-    const bad = this._screenText[0].includes('NO SIGNAL');
+    const bad = this._screenText[0].includes('SEVERED');
     g.fillStyle = bad ? '#ff5a4a' : '#7fe8ff';
     g.fillText(this._screenText[0], 256, 110);
     g.font = 'bold 26px Courier New, monospace';
@@ -372,6 +372,13 @@ export class Trench {
   }
 
   onWindup() {}
+
+  // the first time it lunges into his face, say what to do
+  onLunge() {
+    if (this._lungeTold) return;
+    this._lungeTold = true;
+    this.game.ui.showToast('Its mouth is right in front of you: harpoon it now, or dash away before it bites!', 4000);
+  }
 
   onOpen(on) {
     this._mouthOpen = on;
@@ -463,6 +470,7 @@ export class Trench {
           this.fight.retreat();
           this.s.harpoon?.draw(true);
           this.checkpoint = P.respawn.clone();
+          this.game.ui.showToast('Something has the end of the trunk line, and it is dragging it into the cave. No line, no uplink: follow it.', 8000);
           this.s.say('tentacles');
         }
         break;
@@ -526,13 +534,13 @@ export class Trench {
       case 'enter': return { text: 'Go inside the relay station', target: P.inside, label: 'IN' };
       case 'inside': return { text: 'Plug the uplink cable into the port', target: P.port, label: 'PORT' };
       case 'puzzles': return { text: 'The relay is checking the line...', target: null };
-      case 'trunk': return { text: 'The trunk line is cut. Open the back hatch', target: P.hatch, label: 'HATCH' };
-      case 'out': return { text: 'Go out the back and find the trunk line', target: this.ropeEnd.position, label: 'LINE' };
-      case 'follow': return { text: 'Follow the trunk line into the cave', target: this.ropeEnd.position, label: 'LINE' };
+      case 'trunk': return { text: 'The trunk line to the surface is torn out: without it, no uplink. Open the back hatch', target: P.hatch, label: 'HATCH' };
+      case 'out': return { text: 'Find the torn end of the trunk line', target: this.ropeEnd.position, label: 'LINE' };
+      case 'follow': return { text: 'It is dragging the trunk line into the cave. Follow it: you need that line back', target: this.ropeEnd.position, label: 'LINE' };
       case 'fight':
         if (this._mouthOpen) return { text: 'NOW: harpoon its glowing mouth (left click)', target: this.fight.kraken.mouthWorld(this._v), label: 'MOUTH' };
         return { text: 'Survive: dodge the glowing tentacles (Shift). Harpoon its mouth when it glows', target: null };
-      case 'line': return { text: 'Take the trunk line', target: this.ropeEnd.position, label: 'LINE' };
+      case 'line': return { text: 'Take back the trunk line', target: this.ropeEnd.position, label: 'LINE' };
       case 'carry': return { text: "Bring the trunk line back to the relay's socket", target: P.socket, label: 'SOCKET' };
       case 'uplink': return { text: 'Finish the uplink at the console inside the relay', target: P.screen, label: 'CONSOLE' };
       default: return { text: 'Uplink established', target: null };

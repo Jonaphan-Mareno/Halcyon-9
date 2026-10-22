@@ -37,11 +37,12 @@ export const LINES = {
   'l3-relay-1': aria('guarded', 'Pipes. Old pipes. Go inside, Voss.'),
   // the cable plugged into the port; the trunk line to the surface does not answer
   'v-plug': voss("Cable's in."),
-  'l3-relay-2': aria('hesitant', "The port's live, but the trunk line isn't answering. It runs out the back. It's been... pulled loose."),
+  'l3-relay-2': aria('hesitant', "The port's live, but the trunk line isn't answering. That's the cable up to the surface, Voss. Without it, the uplink goes nowhere. It runs out the back. It's been... pulled loose."),
   'v-trunk': voss('Pulled. By what?'),
   'v-port-first': voss('The port first.'),
   // out through the back hatch: the tentacles draw back into the cave, dragging the line
   'v-tentacles': voss("Those aren't pipes."),
+  'v-line-taken': voss("It's got the line. No line, no uplink. No way off this station."),
   'l3-cave-1': aria('guarded', 'You need that line, Voss. Follow it.'),
   // the kraken rises in its lair
   'v-kraken': voss('ARIA! Do something!'),
@@ -73,7 +74,7 @@ export const TALKS = {
   plug: ['v-plug'],
   trunk: ['l3-relay-2', 'v-trunk'],
   portFirst: ['v-port-first'],
-  tentacles: ['v-tentacles', 'l3-cave-1'],
+  tentacles: ['v-tentacles', 'v-line-taken', 'l3-cave-1'],
   kraken: ['v-kraken', 'l3-kraken-1', 'v-harpoon-fight'],
   hit1: ['v-hit-1'],
   hit2: ['v-hit-2'],

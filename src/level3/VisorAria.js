@@ -9,6 +9,7 @@ import * as THREE from 'three';
 const SIZE = 0.15;          // the box's width, as a share of the screen's width
 const MIN_PX = 130, MAX_PX = 230;
 const TOP_PX = 62, RIGHT_PX = 24;
+const PLANE_W = 2.3;        // her picture's width, in widths of the box
 
 export class VisorAria {
   constructor(session) {
@@ -66,7 +67,9 @@ export class VisorAria {
     const r = this._rect();
     this.frame.style.cssText = `left:${r.x - 6}px;top:${r.y - 6}px;width:${r.w + 12}px;height:${r.h + 12}px`;
     const glY = window.innerHeight - r.y - r.h;
-    this.plane.scale.set(1.7, 1.7, 1);          // (closer in on her face)
+    // (her face is drawn 16:9 and her shader flips it for model UVs, so the plane is 16:9 and
+    // flipped; wider than the box, closer in on her face)
+    this.plane.scale.set(PLANE_W, -PLANE_W * 9 / 16, 1);
     this.camera.left = -0.5; this.camera.right = 0.5;
     const aspect = r.w / r.h;
     this.camera.top = 0.5 / aspect; this.camera.bottom = -0.5 / aspect;

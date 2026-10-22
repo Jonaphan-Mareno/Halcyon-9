@@ -752,6 +752,7 @@ kit.VIS.objects.link(relay)
 rel = A('L3_Relay')
 cyl(rel, 'l3_dark', (RX, CY, RF - 0.2), RR, 0.4, seg=48)                    # its floor
 cyl(rel, 'l3_grate', (RX, CY, RF + 0.02), RR - 0.35, 0.04, seg=48)
+cyl(rel, 'l3_hull', (RX, CY, RF + RH + 1.58), 0.5, 0.36, seg=16)                 # (closing the dome's top)
 for k in range(6):                                                         # its legs, down into the silt
     a = k * math.pi / 3 + 0.5
     lx, ly = RX + 4.2 * math.cos(a), CY + 4.2 * math.sin(a)

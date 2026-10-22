@@ -23,6 +23,7 @@ import { DrownedCrew } from './DrownedCrew.js';
 import { PrepRoom } from './PrepRoom.js';
 import { SeaScene } from './SeaScene.js';
 import { Swim } from './Swim.js';
+import { VisorAria } from './VisorAria.js';
 import '../ui/level3.css';
 import { LINES, TALKS } from './Level3Lines.js';
 import { disposeScene } from '../core/disposeScene.js';
@@ -131,7 +132,11 @@ export class DeckSession {
     this.fxaa = new ShaderPass(FXAAShader);
     this.composer.addPass(this.fxaa);
     this._fitFxaa();
-    g.renderer.render = () => this.composer.render();
+    // (after the frame, ARIA in the visor's corner once he is suited: VisorAria)
+    g.renderer.render = () => {
+      this.composer.render();
+      this.visorAria?.render(webgl);
+    };
     this._onResize = () => {
       if (this.disposed) return;
       this.composer.setSize(window.innerWidth, window.innerHeight);
@@ -220,6 +225,7 @@ export class DeckSession {
     this.prep = new PrepRoom(this, deck, at);
     // out in the water: the thruster pack, the cable, the bubbles (Swim.js)
     this.swim = new Swim(this);
+    this.visorAria = new VisorAria(this);
   }
 
   // the window's glass: a faint green tint with a brighter rim, so the room behind reads as water
@@ -391,6 +397,7 @@ export class DeckSession {
     this._driftSilt(dt);
     this.prep?.update(dt, p, playing);
     this.swim?.update(dt, playing);
+    this.visorAria?.update(dt, playing && !!this.prep?.suited);
     // (the plankton stirs round him as he swims)
     const outside = this.prep?.zone === 'sea';
     const stir = this.controls.swimming ? Math.min(1, this.controls.velocity.length() / 4.6) : 0;
@@ -545,6 +552,7 @@ export class DeckSession {
     window.removeEventListener('keyup', this._onKeyUp);
     window.removeEventListener('resize', this._onResize);
     this.swim?.dispose();
+    this.visorAria?.dispose();
     this.prep?.dispose();
     this.sea?.dispose();
     this.holdEl?.remove();

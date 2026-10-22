@@ -112,3 +112,29 @@
 }
 #l3-hold.on { opacity: 1; }
 #l3-hold div { height: 100%; width: 0; background: var(--primary-color, #00e5ff); box-shadow: 0 0 8px rgba(0, 229, 255, 0.6); }
+
+/* ARIA in the visor's top right corner (VisorAria.js): a thin frame round her hologram */
+#l3-aria-frame {
+  position: absolute;
+  z-index: 7;
+  display: none;
+  border: 1px solid rgba(80, 160, 255, 0.45);
+  border-radius: 10px;
+  box-shadow: 0 0 18px rgba(47, 124, 255, 0.25), inset 0 0 14px rgba(47, 124, 255, 0.15);
+  pointer-events: none;
+  transition: border-color 0.4s ease, box-shadow 0.4s ease;
+}
+#l3-aria-frame.on { display: block; }
+#l3-aria-frame.angry { border-color: rgba(255, 60, 50, 0.8); box-shadow: 0 0 22px rgba(255, 40, 30, 0.45), inset 0 0 16px rgba(255, 40, 30, 0.25); }
+.af-label { position: absolute; left: 8px; bottom: 5px; font-size: 0.6rem; letter-spacing: 0.3rem; color: #9fc6ff; opacity: 0.8; }
+#l3-aria-frame.angry .af-label { color: #ff8a80; }
+
+/* when ARIA turns hostile, the visor's edges flush red; the middle of the view stays clear */
+#l3-anger {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 72% 78% at 50% 50%, transparent 58%, rgba(255, 30, 20, 0.35) 78%, rgba(200, 0, 0, 0.75) 100%);
+}

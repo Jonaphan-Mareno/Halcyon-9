@@ -7,6 +7,13 @@ Background music for Halcyon-9. Put mp3 files here with these exact names:
   level3.mp3          Level 3, the drowned deck
   level3-tense.mp3    Level 3's tense moments (optional: level3.mp3 plays if it is missing)
 
+The kraken fight in Level 3 has its own music, played by src/level3/Level3Audio.js (ogg, so the
+loops are seamless). Replace either file with your own track of the same name:
+
+  level3-kraken.ogg          the fight's sinister base (muffled as he follows the line into the
+                             cave, opening up when it attacks)
+  level3-kraken-intense.ogg  the drums layered on top, rising as the fight gets worse
+
 They loop, cross-fade when the game changes, dip while ARIA speaks, and M mutes them.
 Any file that is missing is just silent. The player is src/audio/Soundtrack.js.
 Credit every track in CREDITS.md.

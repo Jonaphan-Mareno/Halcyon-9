@@ -81,6 +81,26 @@ instead of four) and bends them (`src/level3/Kraken.js`).
 Required credit line (CC BY 4.0):
 - *This work is based on "Kraken" (https://sketchfab.com/3d-models/kraken-4c547a84faa5477a9900272f862b6664) by toro ardido modelos 3d (https://sketchfab.com/toro_ardido_modelos_3d) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/). Modified (taken apart, tentacles repeated and animated, textures packed, scaled up).*
 
+## Level 3 sound (CC0)
+
+Level 3's sound effects and the kraken fight's music (`src/level3/Level3Audio.js`). The clips were
+cut, levelled and converted to ogg into `public/assets/audio/sfx/l3/` and `public/assets/audio/music/`.
+CC0 needs no credit, but the authors are named here (some ask for it).
+
+| Pack | Author | Used for | Link |
+|---|---|---|---|
+| RPG Audio | Kenney (kenney.nl) | creaks, doors, cloth (the suit), latches, clicks | https://kenney.nl/assets/rpg-audio |
+| Sci-fi Sounds | Kenney | hatches, the prep room's machine hum, the thrusters, the suit's seal, the slam, console beeps | https://kenney.nl/assets/sci-fi-sounds |
+| Impact Sounds | Kenney | pipe knocks, hits, the spear striking flesh and rock | https://kenney.nl/assets/impact-sounds |
+| Interface Sounds | Kenney | the pickup chime, confirm/error beeps, the low-air tick | https://kenney.nl/assets/interface-sounds |
+| Tinysized SFX | Vehicle (Jan Schupke, vehiclemusic.eu) | floor creak, metal groans, water drops, the lock filling, air hiss, the harpoon, whooshes | https://opengameart.org/content/fantasy-sound-effects-tinysized-sfx |
+| Loopable Dungeon Ambience | JaggedStone | the deck's rumble and drips (and, slowed, the deep sea's) | https://opengameart.org/content/loopable-dungeon-ambience |
+| Bubble sound effects | Brian MacIntosh (BMacZero) | bubbles: his breath, the lock, the sea | https://opengameart.org/content/bubble-sound-effects |
+| CC0 Deep Monster Roar | trazzz123 | the kraken's roar | https://opengameart.org/content/cc0-deep-monster-roar |
+| 80 CC0 creature SFX | rubberduck | the kraken's screams, growls, hiss and snapping jaws (pitched down) | https://opengameart.org/content/80-cc0-creature-sfx |
+| Sinister Boss Appears (music) | cynicmusic (cynicmusic.com, pixelsphere.org) | the kraken fight's base track (`level3-kraken.ogg`) | https://opengameart.org/content/sinister-boss-appears |
+| Dramatic Boss Encounter (music) | cynicmusic | the fight's rising drum layer (`level3-kraken-intense.ogg`) | https://opengameart.org/content/dramatic-boss-encounter |
+
 ## Generated video
 
 | Asset | Source | Used for |

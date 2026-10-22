@@ -26,6 +26,7 @@ import { Swim } from './Swim.js';
 import { VisorAria } from './VisorAria.js';
 import { Harpoon } from './Harpoon.js';
 import { Trench } from './Trench.js';
+import { Level3Audio } from './Level3Audio.js';
 import '../ui/level3.css';
 import { LINES, TALKS } from './Level3Lines.js';
 import { disposeScene } from '../core/disposeScene.js';
@@ -223,6 +224,8 @@ export class DeckSession {
     // outside the station: the platform, the canyon, the vents (hidden until the outer hatch opens)
     this.sea = new SeaScene(this);
     await this.sea.ready;
+    // the level's sound: creaks, drips, the sea, the kraken, the fight's music (Level3Audio.js)
+    this.sfx = new Level3Audio(this);
     // the harpoon gun (taken from its rack in the prep room; slung on his back, drawn for the kraken)
     this.harpoon = new Harpoon(this);
     // through the gate: the stairs, the EVA prep room, the suit, the cable and the water lock
@@ -406,6 +409,7 @@ export class DeckSession {
     this.swim?.update(dt, playing);
     this.harpoon?.update(dt);
     this.trench?.update(dt, playing);
+    this.sfx?.update(dt);
     this.visorAria?.update(dt, playing && !!this.prep?.suited);
     // (the plankton stirs round him as he swims)
     const outside = this.prep?.zone === 'sea';
@@ -512,11 +516,18 @@ export class DeckSession {
   }
 
   // the pause menu and the inventory hold ARIA's line
+  // (while the kraken's music plays, the soundtrack keeps quiet)
+  get musicMood() {
+    return this.sfx?.musicBusy ? 'silence' : null;
+  }
+
   onPause() {
+    this.sfx?.setPaused(true);
     this.aria?.pause();
   }
 
   onResume() {
+    this.sfx?.setPaused(false);
     this.aria?.resume();
   }
 
@@ -563,6 +574,7 @@ export class DeckSession {
     this.swim?.dispose();
     this.trench?.dispose();
     this.harpoon?.dispose();
+    this.sfx?.dispose();
     this.visorAria?.dispose();
     this.prep?.dispose();
     this.sea?.dispose();

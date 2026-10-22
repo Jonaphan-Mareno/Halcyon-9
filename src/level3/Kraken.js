@@ -6,14 +6,16 @@ import { createGLTFLoader } from '../core/loaders.js';
 // The source holds four tentacles out straight; this one has ten, and they move: the arm repeated
 // eight times round the underside of the body and the long tentacle twice, from its sides.
 //
-// Each tentacle is a curve through nine points (Catmull-Rom), worked out here every frame, and the
-// vertex shader lays the straight model along it (its length along the curve, its cross-section
-// turned to follow), so one draw call draws all eight arms and one both long tentacles. The points
-// come from a chain of eight links, each turned a little from the last: waves run out along it
+// Each tentacle is a curve through seventeen points (Catmull-Rom), worked out here every frame and
+// handed to the shader in a small float texture (a row a tentacle); the vertex shader lays the
+// straight model along it (its length along the curve, its cross-section turned to follow), so one
+// draw call draws all eight arms and one both long tentacles. The points come from a chain of
+// sixteen links, each turned a little from the last: waves run out along it
 // from the body to the tip, up and down and side to side at different speeds, as an octopus's arms
 // ripple, and the tip curls. When a tentacle reaches for something its chain is pulled toward it
-// (FABRIK, so it keeps its length) and still ripples along the way. The shader adds a fine ripple
-// of its own running down each one.
+// (FABRIK, so it keeps its length) and still ripples along the way. Or it can be laid along a path
+// (wrapped round something: the relay station), stretching to fit, its grip squeezing. The shader
+// adds a fine ripple of its own running down each one.
 //
 // The body breathes and rolls a little as it hangs in the water, and its lower jaw hinges (in the
 // vertex shader: the face's lower half turns about a line behind the mouth), so it opens and
@@ -28,7 +30,7 @@ import { createGLTFLoader } from '../core/loaders.js';
 
 const MODEL = './assets/models/l3-kraken.glb';
 const ARMS = 8, WHIPS = 2;
-const LINKS = 8;                       // links in each tentacle's chain (nine points)
+const LINKS = 16;                      // links in each tentacle's chain (seventeen points)
 // the body, in the model's own units (it faces +z, its belly at y ~ -0.5)
 const ARM_RING = { y: 0.25, z: 0.55, rx: 1.55, rz: 1.25 };   // where the arms leave the body
 const WHIP_ROOT = { x: 2.45, y: 0.45, z: 1.5 };                // and the long tentacles, at its sides
@@ -105,22 +107,24 @@ export class Kraken {
       tip: 0.5,                         // and how far its tip curls in
       wave: 1,                          // how strongly the waves run along it
       thick: kind === 'arm' ? 1.25 : 1.0,
-      floor: null                       // a height (model units) the points keep above, or null
+      floor: null,                      // a height (model units) the points keep above, or null
+      path: null,                       // world points it lies along (from its root), or null
+      grip: 0                           // 0..1: how far it is laid along its path
     };
   }
 
   // ------------------------------------------------------------------ the shader
   // tentacle: null for the body; for the tentacles, their straight length (model units)
-  _material(map, tentacle) {
+  _material(map, tentacle, ctrl = null) {
     const mat = new THREE.MeshStandardMaterial({ map, roughness: 0.55, metalness: 0.0, side: THREE.DoubleSide, alphaTest: 0.5 });
     const u = this.uniforms;
-    const pts = Array.from({ length: LINKS + 1 }, (_, j) => j);
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = u.uTime;
       shader.uniforms.uJaw = u.uJaw;
       shader.uniforms.uMouthGlow = u.uMouthGlow;
       shader.uniforms.uLen = { value: tentacle || 1 };
       shader.uniforms.uMouth = { value: MOUTH };
+      if (ctrl) shader.uniforms.uCtrl = { value: ctrl };
       let vs = shader.vertexShader.replace('#include <common>', `#include <common>
         uniform float uTime;
         uniform float uLen;
@@ -129,7 +133,7 @@ export class Kraken {
         varying float vKGlow;
         varying vec3 vKLocal;
         #ifdef TENTACLE
-          ${pts.map((j) => `attribute vec3 aC${j};`).join('\n')}
+          uniform sampler2D uCtrl;  // its curve's points: a row a tentacle (this one's: gl_InstanceID)
           attribute vec3 aSide;     // which way its suckers face (near enough)
           attribute vec4 aShape;    // x: thickness, y: twist over its length, z: tip glow, w: its phase
           vec3 kCR(vec3 a, vec3 b, vec3 c, vec3 d, float f) {
@@ -137,6 +141,12 @@ export class Kraken {
           }
           vec3 kCRd(vec3 a, vec3 b, vec3 c, vec3 d, float f) {
             return 0.5 * ((c - a) + 2.0 * (2.0 * a - 5.0 * b + 4.0 * c - d) * f + 3.0 * (3.0 * b - a - 3.0 * c + d) * f * f);
+          }
+          vec3 kPt(int i) {
+            // (one past either end: carried on straight)
+            if (i < 0) return 2.0 * texelFetch(uCtrl, ivec2(0, gl_InstanceID), 0).xyz - texelFetch(uCtrl, ivec2(1, gl_InstanceID), 0).xyz;
+            if (i > ${LINKS}) return 2.0 * texelFetch(uCtrl, ivec2(${LINKS}, gl_InstanceID), 0).xyz - texelFetch(uCtrl, ivec2(${LINKS - 1}, gl_InstanceID), 0).xyz;
+            return texelFetch(uCtrl, ivec2(i, gl_InstanceID), 0).xyz;
           }
         #endif`);
       vs = vs.replace('#include <uv_vertex>', `#include <uv_vertex>
@@ -147,15 +157,12 @@ export class Kraken {
       if (tentacle) {
         vs = vs.replace('#include <beginnormal_vertex>', `
           float kt = clamp(position.y / uLen, 0.0, 1.0);
-          vec3 kP[${LINKS + 3}];
-          kP[0] = 2.0 * aC0 - aC1;
-          ${pts.map((j) => `kP[${j + 1}] = aC${j};`).join(' ')}
-          kP[${LINKS + 2}] = 2.0 * aC${LINKS} - aC${LINKS - 1};
           float ks = kt * ${LINKS}.0;
           int ki = int(min(floor(ks), ${LINKS - 1}.0));
           float kf = ks - float(ki);
-          vec3 kCentre = kCR(kP[ki], kP[ki + 1], kP[ki + 2], kP[ki + 3], kf);
-          vec3 kT = normalize(kCRd(kP[ki], kP[ki + 1], kP[ki + 2], kP[ki + 3], kf) + vec3(0.0, 1e-5, 0.0));
+          vec3 kA = kPt(ki - 1), kB = kPt(ki), kC = kPt(ki + 1), kD = kPt(ki + 2);
+          vec3 kCentre = kCR(kA, kB, kC, kD, kf);
+          vec3 kT = normalize(kCRd(kA, kB, kC, kD, kf) + vec3(0.0, 1e-5, 0.0));
           vec3 kRef = abs(dot(normalize(aSide), kT)) > 0.97 ? vec3(1.0, 0.0, 0.0) : aSide;
           vec3 kS = normalize(kRef - dot(kRef, kT) * kT);
           float ka = aShape.y * kt + sin(uTime * 1.3 + kt * 6.0 + aShape.w) * 0.15;
@@ -232,15 +239,18 @@ export class Kraken {
       geo.setAttribute(name, a);
       return a;
     };
-    const cps = Array.from({ length: LINKS + 1 }, (_, j) => attr('aC' + j, 3));
+    // its curves' points, a row a tentacle (the shader reads them by instance)
+    const ctrl = new THREE.DataTexture(new Float32Array((LINKS + 1) * n * 4), LINKS + 1, n, THREE.RGBAFormat, THREE.FloatType);
+    ctrl.minFilter = ctrl.magFilter = THREE.NearestFilter;
+    ctrl.needsUpdate = true;
     const side = attr('aSide', 3), shape = attr('aShape', 4);
     src.computeBoundingBox();
     const len = src.boundingBox.max.y;
     // (culled as a whole: a sphere round everything its tentacles can reach)
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), len * 1.35);
-    const mesh = new THREE.Mesh(geo, this._material(map, len));
+    const mesh = new THREE.Mesh(geo, this._material(map, len, ctrl));
     this.root.add(mesh);
-    return { mesh, cps, side, shape, len };
+    return { mesh, ctrl, side, shape, len };
   }
 
   // ------------------------------------------------------------------ moving
@@ -305,9 +315,15 @@ export class Kraken {
       c: this.toLocal(c.centre, new THREE.Vector3()), r: c.radius / this.scale,
       top: (c.top - this.root.position.y) / this.scale
     }));
-    for (const tent of this.tents) this._pose(tent, dt);
+    for (const tent of this.tents) {
+      // (a path is laid in its own space each frame: the body moves)
+      tent.grip += ((tent.path ? 1 : 0) - tent.grip) * (dt > 0 ? 1 - Math.exp(-(tent.path ? 3 : 1.2) * dt) : 1);
+      if (tent.path) tent.pathLocal = tent.path.map((w, i) => this.toLocal(w, tent.pathLocal?.[i] || new THREE.Vector3()));
+      this._pose(tent, dt);
+    }
     for (const g of [this.arms, this.whips]) {
-      for (const a of [...g.cps, g.side, g.shape]) a.needsUpdate = true;
+      g.ctrl.needsUpdate = true;
+      g.side.needsUpdate = g.shape.needsUpdate = true;
     }
   }
 
@@ -360,10 +376,29 @@ export class Kraken {
       for (let j = 0; j <= LINKS; j++) rest[j].lerp(R[j], tent.reach);
       rate = 10;
     }
+    // laid along its path (wrapped round something): the path resampled into its links, from its
+    // root; the free stretch before the wrap stirs, the grip squeezes
+    if (tent.grip > 0.001 && tent.pathLocal) {
+      const R = REACH_PTS;
+      resample([tent.root, ...tent.pathLocal], R);
+      const wrapAt = tent.wrapFrom ?? 0.5;
+      for (let j = 1; j < LINKS; j++) {
+        const s = j / LINKS;
+        if (s < wrapAt) {
+          const env = Math.sin(Math.PI * s / wrapAt);
+          R[j].x += Math.sin(t * 0.9 + tent.phase + s * 9) * 0.22 * env;
+          R[j].z += Math.cos(t * 0.7 + tent.phase + s * 7) * 0.22 * env;
+        } else {
+          R[j].y += Math.sin(t * 1.6 + tent.phase + s * 12) * 0.05;
+        }
+      }
+      for (let j = 0; j <= LINKS; j++) rest[j].lerp(R[j], tent.grip);
+      rate = 6;
+    }
     const k = dt > 0 ? 1 - Math.exp(-rate * dt) : 1;
     for (let j = 0; j <= LINKS; j++) P[j].lerp(rest[j], k);
     P[0].copy(tent.root);
-    if (tent.floor !== null) for (let j = 1; j <= LINKS; j++) P[j].y = Math.max(P[j].y, tent.floor);
+    if (tent.floor !== null && tent.grip < 0.01) for (let j = 1; j <= LINKS; j++) P[j].y = Math.max(P[j].y, tent.floor);
     for (const c of this._avoidLocal || []) {
       for (let j = 1; j <= LINKS; j++) {
         const p = P[j];
@@ -375,9 +410,12 @@ export class Kraken {
         }
       }
     }
-    // into the instance data
-    const g = tent.group, i = tent.slot;
-    for (let j = 0; j <= LINKS; j++) g.cps[j].setXYZ(i, P[j].x, P[j].y, P[j].z);
+    // into its row of the points texture, and its instance data
+    const g = tent.group, i = tent.slot, px = g.ctrl.image.data;
+    for (let j = 0; j <= LINKS; j++) {
+      const o = (i * (LINKS + 1) + j) * 4;
+      px[o] = P[j].x; px[o + 1] = P[j].y; px[o + 2] = P[j].z;
+    }
     // (the suckers face down and in, toward the body's middle line)
     g.side.setXYZ(i, -tent.out.x * 0.3, -1, -tent.out.z * 0.3);
     g.shape.setXYZW(i, tent.thick, 0.4, tent.glow, tent.phase);
@@ -386,3 +424,17 @@ export class Kraken {
 
 const UP = new THREE.Vector3(0, 1, 0);
 const REACH_PTS = Array.from({ length: LINKS + 1 }, () => new THREE.Vector3());
+
+// points along a polyline at even steps (out.length of them, end to end)
+function resample(line, out) {
+  const lens = [0];
+  for (let i = 1; i < line.length; i++) lens.push(lens[i - 1] + line[i].distanceTo(line[i - 1]));
+  const total = lens[lens.length - 1] || 1;
+  let seg = 1;
+  for (let j = 0; j < out.length; j++) {
+    const want = total * j / (out.length - 1);
+    while (seg < line.length - 1 && lens[seg] < want) seg++;
+    const a = lens[seg - 1], b = lens[seg];
+    out[j].lerpVectors(line[seg - 1], line[seg], b > a ? (want - a) / (b - a) : 0);
+  }
+}

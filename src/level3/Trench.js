@@ -6,28 +6,28 @@ import { SEA } from './SeaScene.js';
 // Built in Blender/scripts/build_l3_outside.py (its points: PT_Relay*, PT_Cave*, PT_Kraken*...).
 //
 //   1. down from the platform to the relay station at the foot of the cliff (the cable reaches)
-//   2. in through its door; plug the uplink cable into the port (and the team's puzzles: see
-//      PUZZLES below). The relay tries the trunk line to the surface: no signal, it is torn
-//   3. out through the back hatch: the line's torn end lies out toward the cliff, in the grip of a
-//      tentacle. The tentacles draw back into the cave, dragging it: he follows them in
-//   4. in its lair the kraken comes at him (KrakenFight.js). Its tentacles glow before they strike
-//      (Shift to dash clear); after each blow its mouth glows: harpoon it (left click). Three hits
-//   5. it lets go of the line and sinks away: he takes the line back to the socket on the relay,
-//      then finishes the uplink at the console inside
+//   2. the kraken's tentacles are wrapped round the whole lower half of the relay, its door too:
+//      it will not open. They run back along the floor to a cave in the cliff
+//   3. he follows them into the cave, and in its lair the kraken comes at him (KrakenFight.js),
+//      still holding on to the station. Its tentacles glow before they strike (Shift to dash
+//      clear); after each blow its mouth glows: harpoon it (left click). Three hits
+//   4. it lets go of the station and sinks away; the relay's door opens; inside he plugs the uplink
+//      cable into the port. Then the team's puzzles (PUZZLES below), then he sends the uplink from
+//      the console, and the level ends (for now)
 //
 // The relay has an air refill (the suit's four minutes run out otherwise). If his health or his air
-// runs out, ARIA restores him from backup at the last safe place.
+// runs out, ARIA restores him from backup at the last safe place. Every step has its sound
+// (Level3Audio.js, as session.sfx).
 
-const ROPE_N = 40;                  // points along the trunk line
-const ROPE_LEN = 52;                // metres of it
 const TRENCH_TOP = -24;             // deeper than this (and east of the leg), the trench's lights take over
 const TRENCH_LIGHTS = [             // colour, candela, range: in the relay, over its door, in the lair, at the cave's mouth
   [0xcfe8ff, 7, 9], [0xffb070, 6, 13], [0x3fffd0, 18, 30], [0x2fbfa0, 7, 16]
 ];
+const WRAP_R = 6.0;                 // how far out round the relay its tentacles lie (its wall is at 5)
 const OXYGEN_FULL = 240;            // (PrepRoom's OXYGEN)
 
 // The team's puzzles in the relay go here: called once the uplink cable is plugged in, before the
-// relay tries the trunk line. An async function given the Trench; resolve when they are solved.
+// uplink can be sent. An async function given the Trench; resolve when they are solved.
 export const PUZZLES = { run: null };
 
 export class Trench {
@@ -41,10 +41,11 @@ export class Trench {
     this.pts = {
       front: at('PT_RelayFront'), door: at('PT_RelayDoor'), inside: at('PT_RelayInside'), port: at('PT_RelayPort'),
       screen: at('PT_RelayScreen'), air: at('PT_AirRefill'), bay: at('PT_PuzzleBay'), hatch: at('PT_RelayHatch'),
-      socket: at('PT_TrunkSocket'), mouth: at('PT_CaveMouth'), caveIn: at('PT_CaveInside'),
+      mouth: at('PT_CaveMouth'), caveIn: at('PT_CaveInside'),
       lurk: at('PT_KrakenLurk'), lair: at('PT_KrakenLair'), respawn: at('PT_Respawn')
     };
     this.lightAt = [0, 1, 2, 3].map((i) => at('TRENCH_LIGHT_' + i));
+    this.caveFloor = this.pts.lurk.y - 0.6;
     this.stage = 'descend';
     this.time = 0;
     this.shake = 0;
@@ -52,14 +53,9 @@ export class Trench {
     this._v = new THREE.Vector3();
     this._w = new THREE.Vector3();
     this._chest = new THREE.Vector3();
-    this._head = new THREE.Vector3();
-    this._lineEnd = new THREE.Vector3();
     this._doors(model);
     this._heights();
-    // where the torn line's end lies at first: out from the back of the relay toward the cave
-    this.pts.lineStart = this.pts.socket.clone().add(new THREE.Vector3(7.5, 0, -1.2));
-    this.pts.lineStart.y = this._groundAt(this.pts.lineStart.x, this.pts.lineStart.z) + 0.3;
-    this._rope();
+    this.wrapPaths = this._wraps();
     this._spots();
     this._sign();
     this.fight = new KrakenFight(this);
@@ -67,16 +63,24 @@ export class Trench {
     if (session.harpoon) session.harpoon.hitTest = (p0, p1) => this._spear(p0, p1);
   }
 
+  get sfx() { return this.s.sfx; }
+
   // what a harpoon spear meets between p0 and p1: the kraken, or rock
   _spear(p0, p1) {
     const hit = this.fight.spearTest(p0, p1);
-    if (hit) return hit;
+    if (hit) {
+      this.sfx?.cue(hit.stick ? 'spearFlesh' : 'spearRock', hit.point);
+      return hit;
+    }
     const d = this._v.subVectors(p1, p0);
     const L = d.length();
     if (L < 1e-4) return null;
     d.divideScalar(L);
     const t = this.s.physics.castRay(p0, d, L);
-    return t === null ? null : { point: p0.clone().addScaledVector(d, t), stick: null };
+    if (t === null) return null;
+    const point = p0.clone().addScaledVector(d, t);
+    this.sfx?.cue('spearRock', point);
+    return { point, stick: null };
   }
 
   // ------------------------------------------------------------------ the doors
@@ -86,7 +90,7 @@ export class Trench {
       if (!obj) return null;
       return { obj, base: obj.position.clone(), slide, open: 0, target: 0, collider: null };
     };
-    // (both slide sideways along the wall: three's z is the Blender's -y)
+    // (both slide sideways along the wall: three's z is the Blender's -y; the back hatch stays shut)
     this.doors = { front: make('GATE_RelayDoor', new THREE.Vector3(0, 0, -1.45)), hatch: make('GATE_RelayHatch', new THREE.Vector3(0, 0, 1.45)) };
     for (const d of Object.values(this.doors)) if (d) this._block(d, true);
   }
@@ -110,6 +114,7 @@ export class Trench {
     if (!d || d.target === 1) return;
     d.target = 1;
     this._block(d, false);
+    this.sfx?.cue('relayDoor', d.obj.getWorldPosition(new THREE.Vector3()));
   }
 
   _moveDoors(dt) {
@@ -121,124 +126,79 @@ export class Trench {
     }
   }
 
-  // ------------------------------------------------------------------ the ground (for the line)
-  // the floor's height over the area the trunk line can lie in, felt once with rays
+  // ------------------------------------------------------------------ the ground
+  // the floor's height between the relay and the lair, felt once with rays (every half metre)
   _heights() {
-    const p = this.pts, x0 = p.socket.x - 6, x1 = p.lair.x + 10, z0 = p.inside.z - 18, z1 = p.inside.z + 18;
-    const n = { x: Math.ceil(x1 - x0) + 1, z: Math.ceil(z1 - z0) + 1 };
+    const p = this.pts, x0 = p.inside.x - 10, x1 = p.lair.x + 10, z0 = p.inside.z - 18, z1 = p.inside.z + 18;
+    const S = 0.5;
+    const n = { x: Math.ceil((x1 - x0) / S) + 1, z: Math.ceil((z1 - z0) / S) + 1 };
     const h = new Float32Array(n.x * n.z);
     const down = new THREE.Vector3(0, -1, 0), from = new THREE.Vector3();
-    const caveFloor = p.lurk.y - 0.6;
     for (let j = 0; j < n.z; j++) {
       for (let i = 0; i < n.x; i++) {
-        const x = x0 + i, z = z0 + j;
+        const x = x0 + i * S, z = z0 + j * S;
         // (in the cave, felt from under its roof; outside, from well above the floor)
-        const top = x > p.mouth.x - 2 ? caveFloor + 3.5 : caveFloor + 12;
+        const inCave = x > p.mouth.x - 2;
+        const top = inCave ? this.caveFloor + 3.5 : this.caveFloor + 12;
         from.set(x, top, z);
         const d = this.s.physics.castRay(from, down, 30);
-        h[j * n.x + i] = d === null ? caveFloor - 3 : top - d;
+        let y = d === null ? this.caveFloor : top - d;
+        if (inCave) y = Math.max(y, this.caveFloor - 0.1);
+        h[j * n.x + i] = y;
       }
     }
-    this._grid = { x0, z0, n, h };
+    this._grid = { x0, z0, n, h, S };
   }
 
   _groundAt(x, z) {
     const g = this._grid;
-    const fx = THREE.MathUtils.clamp(x - g.x0, 0, g.n.x - 1.001), fz = THREE.MathUtils.clamp(z - g.z0, 0, g.n.z - 1.001);
+    const fx = THREE.MathUtils.clamp((x - g.x0) / g.S, 0, g.n.x - 1.001), fz = THREE.MathUtils.clamp((z - g.z0) / g.S, 0, g.n.z - 1.001);
     const i = Math.floor(fx), j = Math.floor(fz), a = fx - i, b = fz - j;
     const H = (ii, jj) => g.h[jj * g.n.x + ii];
     return (H(i, j) * (1 - a) + H(i + 1, j) * a) * (1 - b) + (H(i, j + 1) * (1 - a) + H(i + 1, j + 1) * a) * b;
   }
 
-  // ------------------------------------------------------------------ the trunk line
-  // A rope like the cable (Verlet: points joined by sticks), lying on the floor: one end in the
-  // relay's socket (or in his hands, at the end), the other wherever its torn end is
-  _rope() {
-    this.ropeP = new Float32Array(ROPE_N * 3);
-    this.ropeQ = new Float32Array(ROPE_N * 3);
-    const a = this.pts.socket, b = this.pts.lineStart;
-    for (let i = 0; i < ROPE_N; i++) {
-      const t = i / (ROPE_N - 1);
-      // (laid out in a loose S from the socket to its end, the slack lying in the bends)
-      const x = a.x + (b.x - a.x) * t + Math.sin(t * Math.PI * 3) * 1.2;
-      const z = a.z + (b.z - a.z) * t + Math.sin(t * Math.PI * 2) * 2.2;
-      const y = i === 0 ? a.y : this._groundAt(x, z) + 0.08;
-      this.ropeP.set([x, y, z], i * 3);
-      this.ropeQ.set([x, y, z], i * 3);
-    }
-    const geo = new THREE.CylinderGeometry(0.07, 0.07, 1, 6, 1, true);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x2b2f35, roughness: 0.6, metalness: 0.2, emissive: 0x0a1418 });
-    this.rope = new THREE.InstancedMesh(geo, mat, ROPE_N - 1);
-    this.rope.frustumCulled = false;
-    this.sea.group.add(this.rope);
-    // its torn end: frayed copper, glinting
-    this.ropeEnd = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), new THREE.MeshStandardMaterial({ color: 0xc87533, emissive: 0x6a2e08, roughness: 0.4, metalness: 0.8 }));
-    this.sea.group.add(this.ropeEnd);
-    this._m = new THREE.Matrix4();
-    this._q = new THREE.Quaternion();
-    this._up = new THREE.Vector3(0, 1, 0);
-    this._dir = new THREE.Vector3();
-    this._mid = new THREE.Vector3();
-    this._scl = new THREE.Vector3();
-  }
-
-  // where the line's far end is pinned this frame (null: it lies free)
-  _ropeEndPin(out) {
-    if (this.stage === 'carry' || this.stage === 'done' || this.stage === 'uplink') {
-      if (this.stage !== 'carry') return out.copy(this.pts.socket).add(this._w.set(0, 0, 0.3));
-      return this.s.swim._backpack(out);
-    }
-    return this.fight?.lineEnd(out) || null;
-  }
-
-  _ropeStep(dt) {
-    const P = this.ropeP, Q = this.ropeQ, A = this.pts.socket;
-    const pinned = this._ropeEndPin(this._lineEnd);
-    const rest = ROPE_LEN / (ROPE_N - 1);
-    const dt2 = dt * dt;
-    for (let i = 1; i < ROPE_N; i++) {
-      const j = i * 3;
-      for (let k = 0; k < 3; k++) {
-        const v = (P[j + k] - Q[j + k]) * 0.9;
-        Q[j + k] = P[j + k];
-        P[j + k] += v;
+  // ------------------------------------------------------------------ its grip on the relay
+  // Where the five tentacles holding the station lie (for KrakenFight.WRAPPERS, in order): out of
+  // the lair along the cave's floor, out of its mouth, across to the relay's back, then round its
+  // lower half at different heights and ways round, two of them across the door. Each: { points
+  // (world), wrapFrom (the share of its length before it starts to wrap) }
+  _wraps() {
+    const c = this.pts.inside, F = this.caveFloor, mouth = this.pts.mouth.x;
+    const RF = c.y - 0.1;
+    const floor = (x, z, up) => new THREE.Vector3(x, Math.max(this._groundAt(x, z), x > mouth - 2 ? F : -999) + up, z);
+    // way round (from, to: angles about the relay, 0 its back toward the cave, pi its door; north
+    // is -z), heights over its floor at the start and end, and which side of the cave it keeps to
+    const ways = [
+      { from: 0.25, to: Math.PI + 0.55, h0: 0.4, h1: 1.3, side: 1.6 },          // south about, across the door low
+      { from: -0.25, to: -Math.PI - 0.55, h0: 0.9, h1: 2.2, side: -1.6 },       // north about, across the door high
+      { from: 0.5, to: 2.6, h0: 2.5, h1: 3.1, side: 3.2 },                      // high round the south wall
+      { from: -0.5, to: -2.75, h0: -0.3, h1: 0.3, side: -3.2 },                 // low round the north, over its legs
+      { from: -0.9, to: Math.PI - 0.1, h0: 3.0, h1: 0.7, side: -0.4 }           // the long one: over the north and down across the door
+    ];
+    return ways.map((w) => {
+      const pts = [
+        floor(mouth + 9, c.z + w.side * 0.6, 0.9),
+        floor(mouth + 3, c.z + w.side * 0.8, 0.8),
+        floor(mouth - 3, c.z + w.side, 0.8),
+        floor(c.x + WRAP_R + 2.8, c.z + w.side * 1.2, 0.7)
+      ];
+      const before = pts.length;
+      for (let k = 0; k <= 10; k++) {
+        const f = k / 10, a = w.from + (w.to - w.from) * f;
+        pts.push(new THREE.Vector3(c.x + Math.cos(a) * WRAP_R, RF + w.h0 + (w.h1 - w.h0) * f, c.z + Math.sin(a) * WRAP_R));
       }
-      P[j + 1] -= 3.0 * dt2;
-    }
-    for (let it = 0; it < 10; it++) {
-      P[0] = A.x; P[1] = A.y; P[2] = A.z;
-      const e = (ROPE_N - 1) * 3;
-      if (pinned) { P[e] = pinned.x; P[e + 1] = pinned.y; P[e + 2] = pinned.z; }
-      for (let i = 0; i < ROPE_N - 1; i++) {
-        const a = i * 3, b = a + 3;
-        const dx = P[b] - P[a], dy = P[b + 1] - P[a + 1], dz = P[b + 2] - P[a + 2];
-        const d = Math.hypot(dx, dy, dz) || 1e-6;
-        if (d <= rest) continue;                   // (a rope: it goes slack, it does not push)
-        const free = { a: i !== 0, b: !(i + 1 === ROPE_N - 1 && pinned) };
-        const corr = (d - rest) / d * (free.a && free.b ? 0.5 : 1);
-        if (free.a) { P[a] += dx * corr; P[a + 1] += dy * corr; P[a + 2] += dz * corr; }
-        if (free.b) { P[b] -= dx * corr; P[b + 1] -= dy * corr; P[b + 2] -= dz * corr; }
-      }
-      // it lies on the floor, not in it
-      for (let i = 1; i < ROPE_N; i++) {
-        const j = i * 3;
-        const g = this._groundAt(P[j], P[j + 2]) + 0.07;
-        if (P[j + 1] < g) { P[j + 1] = g; Q[j + 1] = g; }
-      }
-    }
-    // drawn as short tubes, point to point
-    for (let i = 0; i < ROPE_N - 1; i++) {
-      const a = this._v.fromArray(P, i * 3), b = this._w.fromArray(P, i * 3 + 3);
-      this._dir.subVectors(b, a);
-      const len = this._dir.length() || 1e-4;
-      this._mid.addVectors(a, b).multiplyScalar(0.5);
-      this._q.setFromUnitVectors(this._up, this._dir.divideScalar(len));
-      this._scl.set(1, len + 0.02, 1);
-      this._m.compose(this._mid, this._q, this._scl);
-      this.rope.setMatrixAt(i, this._m);
-    }
-    this.rope.instanceMatrix.needsUpdate = true;
-    this.ropeEnd.position.fromArray(P, (ROPE_N - 1) * 3);
+      // (the share of its length before the wrap: measured from the lair's front)
+      let lenBefore = 0, len = 0;
+      const start = this.pts.lurk.clone().lerp(this.pts.lair, 0.45);
+      let prev = start;
+      pts.forEach((p, i) => {
+        len += p.distanceTo(prev);
+        if (i === before) lenBefore = len;
+        prev = p;
+      });
+      return { points: pts, wrapFrom: lenBefore / len };
+    });
   }
 
   // ------------------------------------------------------------------ E: the things he uses
@@ -250,19 +210,28 @@ export class Trench {
       id: 'relayAir', position: p.air, radius: 0.5, reach: 2.4, label: 'Refill your air',
       when: () => this.s.prep?.suited && this.s.prep.oxygen < OXYGEN_FULL - 2, use: () => this._refill()
     });
-    it.add({
-      id: 'relayHatch', position: p.hatch, radius: 0.9, label: () => (this.stage === 'trunk' ? 'Open the back hatch' : 'Back hatch'),
-      when: () => this.doors.hatch?.target === 0, use: () => this._useHatch()
-    });
-    this._lineSpot = it.add({ id: 'trunkEnd', position: new THREE.Vector3(), radius: 0.8, reach: 2.8, label: 'Take the trunk line', when: () => this.stage === 'line', use: () => this._takeLine() });
-    it.add({ id: 'trunkSocket', position: p.socket, radius: 0.5, reach: 2.6, label: 'Plug in the trunk line', when: () => this.stage === 'carry', use: () => this._connectLine() });
-    it.add({ id: 'relayConsole', position: p.screen, radius: 0.7, reach: 3.0, label: 'Finish the uplink', when: () => this.stage === 'uplink', use: () => this._finish() });
+    it.add({ id: 'relayConsole', position: p.screen, radius: 0.7, reach: 3.0, label: 'Send the uplink', when: () => this.stage === 'uplink', use: () => this._finish() });
   }
 
+  // the door: held shut by its tentacles until it is beaten
   _useDoor() {
+    if (this.fight.holding) {
+      this.sfx?.cue('doorStuck', this.pts.door);
+      this.shake = Math.max(this.shake, 0.3);
+      if (this.stage === 'descend' || this.stage === 'front') {
+        this.stage = 'follow';
+        this.checkpoint = this.pts.respawn.clone();
+        this.s.harpoon?.draw(true);
+        this.game.ui.showToast("It won't open. Those are tentacles, wrapped round the whole station, and they run back along the floor into a cave. Follow them.", 8000);
+        this.s.say('doorHeld');
+      } else {
+        this.game.ui.showToast('The tentacles hold the door shut.', 2500);
+      }
+      return;
+    }
     this._open('front');
     this.checkpoint = this.pts.inside.clone().add(new THREE.Vector3(0, 0.3, 0));
-    if (this.stage === 'descend' || this.stage === 'front') this.stage = 'enter';
+    if (this.stage === 'free') this.stage = 'enter';
   }
 
   async _plug() {
@@ -270,47 +239,41 @@ export class Trench {
     this.stage = 'puzzles';
     this.s.swim.plugged = this.pts.port.clone();
     this.s.prep._carry?.classList.remove('on');
-    this.game.ui.showToast('Uplink cable plugged in. The relay is checking the line to the surface...', 4500);
+    this.sfx?.cue('plug', this.pts.port);
+    this._screenText = ['UPLINK CABLE: CONNECTED', 'CHECKING THE LINE TO THE SURFACE'];
+    this._drawSign();
+    this.game.ui.showToast('Uplink cable plugged in.', 3500);
     await this.s.say('plug');
     if (PUZZLES.run) await PUZZLES.run(this);
     if (this.s.disposed) return;
-    this.stage = 'trunk';
-    this._screenText = ['TRUNK LINE: SEVERED', 'NO PATH TO THE SURFACE'];
-    this._drawSign();
-    this.game.ui.showToast("The relay can't reach the surface: its trunk line, the cable up to the surface, has been torn out. Without it the uplink goes nowhere. The line leaves through the back hatch.", 9000);
-    this.s.say('trunk');
-  }
-
-  _refill() {
-    const prep = this.s.prep;
-    prep.oxygen = OXYGEN_FULL;
-    this.game.ui.showToast('Air refilled: four minutes.', 3000);
-  }
-
-  _useHatch() {
-    if (this.stage !== 'trunk') return this.s.say('portFirst');
-    this._open('hatch');
-    this.stage = 'out';
-  }
-
-  _takeLine() {
-    if (this.stage !== 'line') return;
-    this.stage = 'carry';
-    this.game.ui.showToast('Trunk line taken. Bring it back to the socket on the relay.', 5000);
-  }
-
-  _connectLine() {
-    if (this.stage !== 'carry') return;
     this.stage = 'uplink';
-    this._screenText = ['TRUNK LINE: CONNECTED', 'SURFACE: SIGNAL. UPLINK READY'];
+    this._screenText = ['SURFACE: SIGNAL', 'UPLINK READY: SEND FROM THIS CONSOLE'];
     this._drawSign();
-    this.game.ui.showToast('Trunk line connected. Signal.', 4000);
+    this.sfx?.cue('signalGood');
     this.s.say('signal');
   }
 
+  _refill() {
+    this.s.prep.oxygen = OXYGEN_FULL;
+    this.sfx?.cue('refill');
+    this.game.ui.showToast('Air refilled: four minutes.', 3000);
+  }
+
+  // At the console: the relay sends the uplink (its screen counts it up), then the end
   async _finish() {
     if (this.stage !== 'uplink') return;
     this.stage = 'done';
+    this.sfx?.cue('uplink');
+    for (let pct = 0; pct <= 100; pct += 4) {
+      this._screenText = ['UPLINK: TRANSMITTING', `${pct}%  ${'|'.repeat(Math.round(pct / 5))}`];
+      this._drawSign();
+      if (pct % 20 === 0) this.sfx?.play('select', { ui: true, vol: 0.35, rate: 1 + pct / 200 });
+      await new Promise((r) => setTimeout(r, 140));
+      if (this.s.disposed) return;
+    }
+    this._screenText = ['UPLINK ESTABLISHED', 'HALCYON-9 TO SURFACE: LINKED'];
+    this._drawSign();
+    this.sfx?.cue('signalGood');
     this.game.ui.showToast('UPLINK ESTABLISHED', 5000);
     // (the endings come next: see the script, "Endings")
     await this.s.say('uplinkDone');
@@ -336,8 +299,7 @@ export class Trench {
     this._signTex = new THREE.CanvasTexture(c);
     this._signTex.colorSpace = THREE.SRGBColorSpace;
     const m = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.85), new THREE.MeshBasicMaterial({ map: this._signTex, toneMapped: false }));
-    m.position.copy(this.pts.screen).add(new THREE.Vector3(0, 0, 0.03));
-    m.rotation.y = 0;                     // (the screen faces south, into the room: three's +z)
+    m.position.copy(this.pts.screen).add(new THREE.Vector3(0, 0, 0.03));   // (it faces south, into the room: three's +z)
     this.sea.group.add(m);
     this._screenText = ['UPLINK RELAY 3', 'PORT: WAITING FOR CABLE'];
     this._drawSign();
@@ -352,10 +314,9 @@ export class Trench {
     g.strokeRect(8, 8, 496, 240);
     g.textAlign = 'center';
     g.font = 'bold 32px Courier New, monospace';
-    const bad = this._screenText[0].includes('SEVERED');
-    g.fillStyle = bad ? '#ff5a4a' : '#7fe8ff';
+    g.fillStyle = '#7fe8ff';
     g.fillText(this._screenText[0], 256, 110);
-    g.font = 'bold 26px Courier New, monospace';
+    g.font = 'bold 22px Courier New, monospace';
     g.fillStyle = '#cfefff';
     g.fillText(this._screenText[1], 256, 170);
     this._signTex.needsUpdate = true;
@@ -367,11 +328,30 @@ export class Trench {
     this.shake = 1.4;
     this.game.mood?.flicker?.(0.6);
     this.s.harpoon?.draw(true);
+    this.sfx?.cue('krakenRoar', this.fight.kraken.mouthWorld());
     this.s.say('kraken').then(() => this.game.ariaAnger?.(8));
     this.game.ui.showToast('Its tentacles glow before they strike: Shift to dash clear. When its mouth glows, harpoon it (left click).', 8000);
   }
 
-  onWindup() {}
+  onWindup(kind) {
+    this.sfx?.cue(kind === 'lunge' ? 'krakenGrowl' : 'windup', this.fight.kraken.mouthWorld());
+  }
+
+  onStrike(kind, at) {
+    this.sfx?.cue('whoosh', at);
+  }
+
+  onSlam(at) {
+    this.sfx?.cue('slam', at);
+  }
+
+  onLungeRush() {
+    this.sfx?.cue('lungeRoar', this.fight.kraken.mouthWorld());
+  }
+
+  onChomp() {
+    this.sfx?.cue('chomp', this.fight.kraken.mouthWorld());
+  }
 
   // the first time it lunges into his face, say what to do
   onLunge() {
@@ -381,6 +361,7 @@ export class Trench {
   }
 
   onOpen(on) {
+    if (on && !this._mouthOpen && this.fight.attack?.kind !== 'lunge') this.sfx?.cue('scream', this.fight.kraken.mouthWorld());
     this._mouthOpen = on;
   }
 
@@ -388,6 +369,7 @@ export class Trench {
     if (this._restoring) return;
     const c = this.s.controls;
     this.s.hud.flash();
+    this.sfx?.cue('hurt');
     this.shake = Math.max(this.shake, 1.0);
     // knocked away through the water
     const away = this._v.set(c.position.x - from.x, 0.4, c.position.z - from.z).normalize();
@@ -404,15 +386,19 @@ export class Trench {
 
   onWounded(n, of) {
     this.shake = 1.2;
+    this.sfx?.cue('wounded', this.fight.kraken.mouthWorld());
     this.game.ui.showToast(`A hit! (${n} of ${of})`, 2500);
     this.s.say(n === 1 ? 'hit1' : 'hit2');
   }
 
   onBeaten() {
     this.shake = 2;
-    this.stage = 'line';
+    this.stage = 'free';
     this.s.harpoon?.draw(false);
-    this.game.ui.showToast('It lets go of the line and sinks back into the dark.', 5000);
+    this.sfx?.cue('beaten', this.fight.kraken.mouthWorld());
+    this.sfx?.setFight('over');
+    this.checkpoint = this.pts.respawn.clone();
+    this.game.ui.showToast('It lets go of the station and sinks back into the dark. The relay\'s door is free: get inside.', 6500);
     this.s.say('krakenGone');
   }
 
@@ -429,22 +415,49 @@ export class Trench {
     const chest = this._chest.set(p.x, p.y + 1.1, p.z);
     this._moveDoors(dt);
     this._stages(p);
-    // (the kraken is not drawn from far off: the fog hides it there anyway)
+    // (the kraken's body is not drawn from far off: the fog hides it there anyway. Its tentacles
+    // reach the relay, so it stays on while he is anywhere near)
     const k = this.fight.kraken;
-    if (this.fight.state !== 'gone') k.root.visible = p.distanceTo(k.root.position) < 80;
+    if (this.fight.state !== 'gone') k.root.visible = p.distanceTo(this.pts.inside) < 90;
     this.fight.update(dt, playing ? chest : null, playing && !this._restoring);
     this.shake = Math.max(this.shake, this.fight.shake);
-    this._ropeStep(Math.min(dt, 1 / 30));
-    if (this.stage === 'line') this._lineSpot.position.copy(this.ropeEnd.position);
     this._lights(p);
     this._air(playing);
+    this._sounds(dt, p);
     // the camera shakes with its blows (after the controls have placed it)
     this.shake = Math.max(0, this.shake - dt * 1.6);
     if (this.shake > 0 && playing) {
-      const cam = this.game.camera.instance, k = Math.min(1, this.shake) * 0.09;
-      cam.position.x += (Math.random() - 0.5) * k;
-      cam.position.y += (Math.random() - 0.5) * k;
-      cam.position.z += (Math.random() - 0.5) * k;
+      const cam = this.game.camera.instance, s = Math.min(1, this.shake) * 0.09;
+      cam.position.x += (Math.random() - 0.5) * s;
+      cam.position.y += (Math.random() - 0.5) * s;
+      cam.position.z += (Math.random() - 0.5) * s;
+    }
+  }
+
+  // the kraken's presence and the fight's music
+  _sounds(dt, p) {
+    const sfx = this.sfx;
+    if (!sfx) return;
+    const F = this.fight;
+    // while it lurks, now and then a growl or a hiss from the dark, if he is near; its grip on the
+    // station creaks the hull
+    if (F.state === 'lurk' || F.state === 'wait') {
+      this._lurkT = (this._lurkT ?? 6) - dt;
+      if (this._lurkT <= 0) {
+        this._lurkT = 6 + Math.random() * 7;
+        if (p.distanceTo(F.kraken.root.position) < 34) sfx.cue(Math.random() < 0.5 ? 'krakenHiss' : 'krakenGrowl', F.kraken.mouthWorld());
+        else if (p.distanceTo(this.pts.inside) < 22) sfx.cue('hullStrain', this.pts.inside);
+      }
+    }
+    // the music: creeping in as he follows the tentacles toward the lair, the fight's full weight,
+    // the drums rising with its wounds, his injuries and its lunges
+    if (this.stage === 'follow' || (this.stage === 'fight' && F.state === 'wait')) {
+      sfx.setFight('dread');
+      sfx.setIntensity(1 - Math.min(1, Math.max(0, (p.distanceTo(F.homeAt) - 12) / 30)));
+    } else if (this.stage === 'fight') {
+      sfx.setFight('fight');
+      const lunging = F.attack?.kind === 'lunge' ? 0.25 : 0;
+      sfx.setIntensity(F.wounds / 3 * 0.55 + (1 - this.s.player.integrity / 100) * 0.4 + lunging);
     }
   }
 
@@ -463,16 +476,6 @@ export class Trench {
         break;
       case 'enter':
         if (Math.hypot(p.x - P.inside.x, p.z - P.inside.z) < 3.8) this.stage = 'inside';
-        break;
-      case 'out':
-        if (p.x > P.hatch.x + 0.6) {
-          this.stage = 'follow';
-          this.fight.retreat();
-          this.s.harpoon?.draw(true);
-          this.checkpoint = P.respawn.clone();
-          this.game.ui.showToast('Something has the end of the trunk line, and it is dragging it into the cave. No line, no uplink: follow it.', 8000);
-          this.s.say('tentacles');
-        }
         break;
     }
   }
@@ -525,24 +528,26 @@ export class Trench {
     this.fight?.pushOut(pos, vel);
   }
 
+  // where the marker points while he follows the tentacles: the cave's mouth, then its lair
+  _followTarget(p) {
+    return this.inCave(p) ? this.fight.kraken.root.position.clone().add(this._w.set(0, 3, 0)) : this.pts.mouth;
+  }
+
   // the objective and the marker for this step
   guide() {
-    const P = this.pts;
+    const P = this.pts, p = this.s.controls.position;
     switch (this.stage) {
       case 'descend': return { text: 'Swim down to the relay station at the bottom of the trench', target: P.front, label: 'RELAY' };
       case 'front': return { text: 'Open the relay station door', target: P.door, label: 'DOOR' };
-      case 'enter': return { text: 'Go inside the relay station', target: P.inside, label: 'IN' };
-      case 'inside': return { text: 'Plug the uplink cable into the port', target: P.port, label: 'PORT' };
-      case 'puzzles': return { text: 'The relay is checking the line...', target: null };
-      case 'trunk': return { text: 'The trunk line to the surface is torn out: without it, no uplink. Open the back hatch', target: P.hatch, label: 'HATCH' };
-      case 'out': return { text: 'Find the torn end of the trunk line', target: this.ropeEnd.position, label: 'LINE' };
-      case 'follow': return { text: 'It is dragging the trunk line into the cave. Follow it: you need that line back', target: this.ropeEnd.position, label: 'LINE' };
+      case 'follow': return { text: 'Tentacles hold the station shut. Follow them back to what they belong to', target: this._followTarget(p), label: this.inCave(p) ? '???' : 'CAVE' };
       case 'fight':
         if (this._mouthOpen) return { text: 'NOW: harpoon its glowing mouth (left click)', target: this.fight.kraken.mouthWorld(this._v), label: 'MOUTH' };
-        return { text: 'Survive: dodge the glowing tentacles (Shift). Harpoon its mouth when it glows', target: null };
-      case 'line': return { text: 'Take back the trunk line', target: this.ropeEnd.position, label: 'LINE' };
-      case 'carry': return { text: "Bring the trunk line back to the relay's socket", target: P.socket, label: 'SOCKET' };
-      case 'uplink': return { text: 'Finish the uplink at the console inside the relay', target: P.screen, label: 'CONSOLE' };
+        return { text: 'Make it let go of the station: dodge the glowing tentacles (Shift), harpoon its mouth when it glows', target: null };
+      case 'free': return { text: 'It let go. Get into the relay station', target: P.door, label: 'DOOR' };
+      case 'enter': return { text: 'Go inside the relay station', target: P.inside, label: 'IN' };
+      case 'inside': return { text: 'Plug the uplink cable into the port', target: P.port, label: 'PORT' };
+      case 'puzzles': return { text: 'The relay is checking the line to the surface...', target: null };
+      case 'uplink': return { text: 'Send the uplink from the console', target: P.screen, label: 'CONSOLE' };
       default: return { text: 'Uplink established', target: null };
     }
   }
@@ -550,8 +555,6 @@ export class Trench {
   dispose() {
     this.fight?.dispose();
     for (const d of Object.values(this.doors)) if (d) this._block(d, false);
-    this.rope?.removeFromParent();
-    this.rope?.geometry.dispose();
     this._end?.remove();
   }
 }

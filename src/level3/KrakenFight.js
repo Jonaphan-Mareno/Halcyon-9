@@ -1,20 +1,20 @@
 import * as THREE from 'three';
 import { Kraken, MOUTH } from './Kraken.js';
 
-// The kraken's part in Level 3 (the creature itself is Kraken.js): where it waits, how it leads
-// Voss into its cave, and the fight.
-//   lurk     in its cave's throat, three arms out along the floor to the relay station, round its
-//            back (never through it); one long tentacle holds the end of the torn trunk line
-//   retreat  (Voss comes out of the relay's back hatch) it draws them in and slides back into its
-//            chamber, dragging the line after it: he follows the line and the tentacles in
-//   wait     low at the back of its chamber, watching, its mouth working
-//   fight    (he comes in) it comes at him, drifting nearer between blows. A tentacle winds up, its
-//            tip glowing hot, and sweeps through where he is, or rises over him and slams down;
-//            after each blow it screams, its mouth lit from inside: the weak spot, open to the
-//            harpoon for a few seconds. Now and then it lunges: the whole body surges at him and
-//            stops with its face right in front of his, jaws snapping, mouth lit; it bites if he
-//            stays, and it is wide open to a spear. Three spears in the mouth and it is beaten
-//   beaten   it shrieks, lets go of the line and sinks away into the crack at the back of its lair
+// The kraken's part in Level 3 (the creature itself is Kraken.js).
+//   lurk     in the front of its lair, five tentacles stretched out of the cave and along the floor
+//            to the relay station and wrapped round its lower half, the door with it: nobody gets
+//            in. Following those tentacles back is how Voss finds it
+//   fight    (he comes into its lair) still holding the station, it comes at him with the rest:
+//            a free arm winds up, its tip glowing hot, and sweeps through where he is, or the long
+//            tentacle rises over him and slams down; after each blow it screams, its mouth lit from
+//            inside: the weak spot, open to the harpoon for a few seconds. Now and then it lunges:
+//            the whole body surges at him and stops with its face right in front of his, jaws
+//            snapping and mouth lit; it bites if he stays, and it is wide open to a spear. Three
+//            spears in the mouth and it is beaten
+//   beaten   it shrieks, lets go of the station (its tentacles slither back through the cave) and
+//            sinks away into the crack at the back of its lair: the relay's door is free
+//   wait     (he was restored from backup) back where it lurks, still holding on
 // Positions are world metres; the kraken's own space is its model's units (Kraken.toLocal).
 
 const SCALE = 1.6;                    // the model's units to metres: the body ~8 m across, each tentacle ~19 m
@@ -28,72 +28,62 @@ const BITE_RADIUS = 3.6;              // metres from its mouth that the bite cat
 const MOUTH_RADIUS = 1.4;             // the weak spot, for the harpoon (metres)
 const BODY_RADIUS = 3.6;              // he cannot swim into its body
 const ENGAGE = 24;                    // metres from its body that it comes for him
-const REACHERS = [0, 7, 1];           // the arms that lie out to the relay (forward-ish on its ring)
-const LINE_WHIP = 0;                  // the long tentacle that holds the trunk line
-const SLAM_WHIP = 1;
+export const WRAPPERS = [0, 7, 1, 6, 8];   // the tentacles wrapped round the relay (four arms and a long one)
+const SWEEPERS = { right: [2, 3], left: [5, 4] };   // the free arms, by side
+const SLAM_WHIP = 9;
 const FACE_Z = 2.8;                   // the front of its face (model units)
 
 export class KrakenFight {
-  // trench: the Trench (its points, its callbacks)
+  // trench: the Trench (its points, its callbacks, and wrapPaths: where its tentacles lie round the relay)
   constructor(trench) {
     this.t = trench;
     const pts = trench.pts;
-    this.lurkAt = pts.lurk.clone().lerp(pts.lair, 0.1);     // (a little back in its throat: a shape in the dark)
-    this.lairAt = pts.lair.clone();
+    // (it lurks, and fights, in the front of its lair; beaten, it sinks away at the back)
+    this.homeAt = pts.lurk.clone().lerp(pts.lair, 0.45);
+    this.backAt = pts.lair.clone();
     this.floorY = pts.lurk.y - 0.6;
-    this.kraken = new Kraken(trench.sea.group, { position: this.lurkAt, yaw: -Math.PI / 2, scale: SCALE });
+    this.kraken = new Kraken(trench.sea.group, { position: this.homeAt, yaw: -Math.PI / 2, scale: SCALE });
     // its tentacles never go through the relay station's walls
-    this.kraken.avoid.push({ centre: pts.inside, radius: 6.6, top: pts.inside.y + 6.5 });
+    this.kraken.avoid.push({ centre: pts.inside, radius: 5.9, top: pts.inside.y + 6.5 });
     this.state = 'lurk';
     this.time = 0;
     this.stateT = 0;
     this.wounds = 0;
     this.attacks = 0;
-    this.holding = true;              // the trunk line's end in its long tentacle
     this.open = 0;                    // its mouth's glow (eased)
     this.attack = null;
     this.next = 2.5;
     this.yaw = -Math.PI / 2;
-    this.pos = this.lurkAt.clone();
+    this.pos = this.homeAt.clone();
     this.shake = 0;
     this._v = new THREE.Vector3();
     this._w = new THREE.Vector3();
     this._p = new THREE.Vector3();
-    this.ready = this.kraken.ready.then(() => this._lurkPose());
+    this.ready = this.kraken.ready.then(() => this._hold());
   }
 
-  // where its arms lie: out along the floor behind the relay station and round its north side
-  _lurkPose() {
-    const k = this.kraken, relay = this.t.pts.inside, y = this.floorY;
-    this._lurkTargets = [
-      new THREE.Vector3(relay.x + 7.0, y + 0.4, relay.z - 4.2),
-      new THREE.Vector3(relay.x + 7.4, y + 0.4, relay.z + 3.8),
-      new THREE.Vector3(relay.x + 2.5, y + 0.4, relay.z - 7.2)
-    ];
+  // its tentacles round the relay (the paths are the Trench's: they follow the floor)
+  _hold() {
+    const k = this.kraken;
     for (const tent of k.tents) tent.floor = this._localFloor();
-    REACHERS.forEach((i, n) => {
+    WRAPPERS.forEach((i, n) => {
+      const wrap = this.t.wrapPaths?.[n];
+      if (!wrap) return;
       const tent = k.tents[i];
-      tent.target = k.toLocal(this._lurkTargets[n]);
-      tent.reach = 1;
-      tent.curl = 0.12;
-      tent.wave = 0.6;
+      tent.path = wrap.points;
+      tent.wrapFrom = wrap.wrapFrom;
+      tent.grip = 1;
+      tent.thick = tent.kind === 'arm' ? 1.15 : 1.0;
     });
-    const whip = this._whip(LINE_WHIP);
-    whip.target = k.toLocal(this.t.pts.lineStart);
-    whip.reach = 1;
     k.update(0);
   }
 
-  _whip(i) { return this.kraken.tents[8 + i]; }
+  get holding() {
+    return this.state !== 'beaten' && this.state !== 'gone';
+  }
 
   _localFloor() {
     return (this.floorY - this.kraken.root.position.y) / SCALE + 0.35;
-  }
-
-  // ------------------------------------------------------------------ what Trench asks
-  retreat() {
-    if (this.state !== 'lurk') return;
-    this._set('retreat');
   }
 
   // a spear between p0 and p1 this step: what it meets
@@ -117,12 +107,6 @@ export class KrakenFight {
     return null;
   }
 
-  // where its tentacle holds the line (world), or null once it has let go
-  lineEnd(out) {
-    if (!this.holding || !this.kraken.body) return null;
-    return this.kraken.pointOn(this._whip(LINE_WHIP), 0.97, out);
-  }
-
   _bodyCentre(out) {
     return this.kraken.toWorld(this._w.set(0, 1.6, 0.6), out);
   }
@@ -140,9 +124,7 @@ export class KrakenFight {
     k.jawRate = 6;
     k.pitch = 0;
     switch (this.state) {
-      case 'lurk': this._lurk(dt); break;
-      case 'retreat': this._retreat(dt); break;
-      case 'wait': this._wait(dt, player); break;
+      case 'lurk': case 'wait': this._lurk(dt, player); break;
       case 'fight': this._fight(dt, player, alive); break;
       case 'flinch': this._flinch(dt, player); break;
       case 'beaten': this._beaten(dt); break;
@@ -162,43 +144,11 @@ export class KrakenFight {
     this.stateT = 0;
   }
 
-  _lurk(dt) {
-    // (its arms lie out along the floor, stirring; their ends drift)
-    const k = this.kraken;
-    REACHERS.forEach((i, n) => {
-      const tent = k.tents[i];
-      const s = this._lurkTargets[n];
-      tent.target.copy(k.toLocal(this._v.copy(s).add(this._w.set(Math.sin(this.time * 0.7 + n) * 0.9, 0, Math.cos(this.time * 0.5 + n * 2) * 0.9))));
-    });
-    this.pos.y = this.lurkAt.y + Math.sin(this.time * 0.6) * 0.15;
-  }
-
-  // drawing its tentacles in and sliding back into the chamber, the line dragged after it
-  _retreat(dt) {
-    const T = 9;
-    const f = Math.min(1, this.stateT / T);
-    const e = f * f * (3 - 2 * f);
-    this.pos.lerpVectors(this.lurkAt, this.lairAt, e);
-    const k = this.kraken;
-    REACHERS.forEach((i, n) => {
-      const tent = k.tents[i];
-      tent.reach = Math.max(0, 1 - this.stateT / 4);
-      tent.curl = 0.12 + 0.4 * f;
-      tent.wave = 0.6 + 0.6 * f;
-      tent.target.copy(k.toLocal(this._lurkTargets[n]));
-    });
-    // the line's end: dragged along the floor from where it lay toward the lair
-    const whip = this._whip(LINE_WHIP);
-    const from = this.t.pts.lineStart, to = this._v.copy(this.lairAt).add(this._w.set(-9, 0, 2.5));
-    to.y = this.floorY + 0.4;
-    whip.target = k.toLocal(this._p.copy(from).lerp(to, Math.min(1, this.stateT / (T * 0.9))));
-    whip.reach = 1;
-    if (f >= 1) this._set('wait');
-  }
-
-  _wait(dt, player) {
-    this.pos.y = this.lairAt.y + Math.sin(this.time * 0.8) * 0.2;
-    this._face(dt, player, 0.6);
+  // holding the station, the rest of it stirring; it comes for him once he is in its lair
+  _lurk(dt, player) {
+    this.pos.lerp(this._w.copy(this.homeAt).add(this._p.set(0, Math.sin(this.time * 0.6) * 0.2, 0)), 1 - Math.exp(-2 * dt));
+    this._face(dt, player && this.t.inCave(player) ? player : null, 0.6);
+    this._menace(null, -1);
     if (player && this._bodyCentre(this._v).distanceTo(player) < ENGAGE && this.t.inCave(player)) {
       this._set('fight');
       this.attack = null;
@@ -217,12 +167,12 @@ export class KrakenFight {
     this.yaw += d * (1 - Math.exp(-rate * dt));
   }
 
-  // its tentacles not striking ripple toward him, curling
+  // its free tentacles (not holding the station, not striking) ripple toward him, curling
   _menace(player, except) {
     const k = this.kraken;
     const local = player ? k.toLocal(player) : null;
     k.tents.forEach((tent, i) => {
-      if (i === except || (i === 8 + LINE_WHIP && this.holding)) return;
+      if (i === except || tent.path) return;
       tent.target = local ? (tent.target || new THREE.Vector3()).copy(local) : null;
       tent.reach += ((local ? 0.22 : 0) - tent.reach) * 0.05;
       tent.curl = 0.35 + 0.25 * Math.sin(this.time * 0.9 + i * 1.3);
@@ -230,13 +180,6 @@ export class KrakenFight {
       tent.wave = 1.25;
       tent.glow = Math.max(0, tent.glow - 0.05);
     });
-    // the line's tentacle keeps it curled close by its side
-    if (this.holding) {
-      const whip = this._whip(LINE_WHIP);
-      whip.target = k.toLocal(this._p.copy(this.pos).add(this._w.set(Math.sin(this.yaw + 1.2) * 7, 0, Math.cos(this.yaw + 1.2) * 7)).setY(this.floorY + 0.5));
-      whip.reach = 1;
-      whip.wave = 0.8;
-    }
   }
 
   _fight(dt, player, alive) {
@@ -254,10 +197,10 @@ export class KrakenFight {
     // rearing as it screams
     const toward = this._v.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
     const across = this._p.set(toward.z, 0, -toward.x);
-    const near = player ? Math.min(6, Math.max(0, this.lairAt.distanceTo(player) - 12)) * (0.5 + 0.5 * Math.sin(this.time * 0.35)) : 0;
+    const near = player ? Math.min(5, Math.max(0, this.homeAt.distanceTo(player) - 12)) * (0.5 + 0.5 * Math.sin(this.time * 0.35)) : 0;
     const lunge = a?.phase === 'windup' ? Math.min(1, a.t / WINDUP) * 3.2 : a?.phase === 'strike' ? 3.2 : a?.phase === 'open' ? 1.5 : 0;
     const rear = a?.phase === 'open' ? 1.6 : 0;
-    const want = this._w.copy(this.lairAt).addScaledVector(toward, lunge + near).addScaledVector(across, Math.sin(this.time * 0.45) * 2.2);
+    const want = this._w.copy(this.homeAt).addScaledVector(toward, lunge + near).addScaledVector(across, Math.sin(this.time * 0.45) * 2.2);
     want.y += rear + Math.sin(this.time * 1.1) * 0.35;
     this.pos.lerp(want, 1 - Math.exp(-2.5 * dt));
     this._menace(player, a ? a.tent : -1);
@@ -279,6 +222,7 @@ export class KrakenFight {
         a.phase = 'strike';
         a.t = 0;
         a.aim = player ? player.clone() : a.aim;
+        this.t.onStrike?.(a.kind, k.pointOn(tent, 0.9, new THREE.Vector3()));
       }
     } else if (a.phase === 'strike') {
       const f = Math.min(1, a.t / STRIKE);
@@ -292,6 +236,7 @@ export class KrakenFight {
       if (a.kind === 'slam' && f >= 1 && !a.thud) {
         a.thud = true;
         this.shake = Math.max(this.shake, 0.8);
+        this.t.onSlam?.(a.aim.clone());
       }
       if (a.t >= STRIKE) {
         a.phase = 'recover';
@@ -318,8 +263,8 @@ export class KrakenFight {
     }
   }
 
-  // a blow: a sweep with an arm on his side, a slam from above with the long tentacle, or (now and
-  // then, more once it is hurt) a lunge with its whole body
+  // a blow: a sweep with a free arm on his side, a slam from above with the long tentacle, or (now
+  // and then, more once it is hurt) a lunge with its whole body
   _begin(player) {
     const k = this.kraken;
     this.attacks++;
@@ -334,16 +279,16 @@ export class KrakenFight {
     const slam = this.wounds > 0 ? Math.random() < 0.5 : (this._lastKind === 'sweep');
     let a;
     if (slam) {
-      a = { kind: 'slam', tent: 8 + SLAM_WHIP, up: player.clone().add(new THREE.Vector3(0, 8.5, 0)).addScaledVector(toward, -2) };
+      a = { kind: 'slam', tent: SLAM_WHIP, up: player.clone().add(new THREE.Vector3(0, 8.5, 0)).addScaledVector(toward, -2) };
     } else {
-      // the arm on whichever side of it he is
+      // a free arm on whichever side of it he is
       const local = k.toLocal(player);
       const right = local.x > 0;
-      const candidates = right ? [0, 1, 2] : [7, 6, 5];
+      const candidates = right ? SWEEPERS.right : SWEEPERS.left;
       const sgn = right ? 1 : -1;
       const s = side.clone().multiplyScalar(sgn * (Math.random() < 0.5 ? 1 : -1));
       a = {
-        kind: 'sweep', tent: candidates[Math.floor(Math.random() * 3)],
+        kind: 'sweep', tent: candidates[Math.floor(Math.random() * candidates.length)],
         up: player.clone().addScaledVector(s, 7).add(new THREE.Vector3(0, 3.5, 0)),
         through: player.clone().addScaledVector(s, -8).add(new THREE.Vector3(0, -0.3, 0))
       };
@@ -356,17 +301,17 @@ export class KrakenFight {
     this.t.onWindup(a.kind);
   }
 
-  // The lunge: it draws back, arms rising and spreading, mouth opening; then the whole body surges
-  // at him and stops with its face right in front of his, jaws snapping and its mouth lit (open to
-  // the harpoon); if he is still there when it bites, it catches him; then it falls back
+  // The lunge: it draws back, its free arms rising and spreading, mouth opening; then the whole
+  // body surges at him and stops with its face right in front of his, jaws snapping and its mouth
+  // lit (open to the harpoon); if he is still there when it bites, it catches him; then it falls back
   _lunge(dt, player, alive) {
     const k = this.kraken, a = this.attack;
     a.t += dt;
     const eye = player ? this._p.copy(player).add(this._w.set(0, 0.5, 0)) : null;
     if (a.phase !== 'rush' && a.phase !== 'hold') this._face(dt, player, 2.5);
     const toward = this._v.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
-    k.tents.forEach((tent, i) => {
-      if (i === 8 + LINE_WHIP && this.holding) return;
+    k.tents.forEach((tent) => {
+      if (tent.path) return;
       tent.glow = Math.max(0, tent.glow - 0.05);
       tent.wave = 1.7;
       if (a.phase === 'windup') {
@@ -383,7 +328,7 @@ export class KrakenFight {
       }
     });
     if (a.phase === 'windup') {
-      const want = this._w.copy(this.lairAt).addScaledVector(toward, -2.5);
+      const want = this._w.copy(this.homeAt).addScaledVector(toward, -2.5);
       want.y += 1.0;
       this.pos.lerp(want, 1 - Math.exp(-3 * dt));
       k.pitch = -0.18 * Math.min(1, a.t / LUNGE.windup);
@@ -397,6 +342,7 @@ export class KrakenFight {
         a.from = this.pos.clone();
         a.phase = 'rush';
         a.t = 0;
+        this.t.onLungeRush?.();
       }
     } else if (a.phase === 'rush') {
       const f = Math.min(1, a.t / LUNGE.rush);
@@ -415,8 +361,11 @@ export class KrakenFight {
       // in his face: trembling, jaws snapping
       this.pos.copy(a.to).add(this._w.set(Math.sin(this.time * 23) * 0.06, Math.sin(this.time * 19) * 0.05, 0));
       k.pitch = 0.1;
-      k.jawTarget = Math.sin(this.time * 18) > 0 ? 0.32 : -0.45;
+      const open = Math.sin(this.time * 18) > 0;
+      k.jawTarget = open ? 0.32 : -0.45;
       k.jawRate = 22;
+      if (!open && a.wasOpen) this.t.onChomp?.();
+      a.wasOpen = open;
       if (!a.bit && a.t >= LUNGE.bite) {
         a.bit = true;
         const mouth = k.mouthWorld(this._w);
@@ -429,7 +378,7 @@ export class KrakenFight {
         a.t = 0;
       }
     } else if (a.phase === 'back') {
-      this.pos.lerp(this.lairAt, 1 - Math.exp(-2.5 * dt));
+      this.pos.lerp(this.homeAt, 1 - Math.exp(-2.5 * dt));
       if (a.t >= LUNGE.back) {
         this.attack = null;
         this.next = GAP[0] + Math.random() * (GAP[1] - GAP[0]);
@@ -445,13 +394,19 @@ export class KrakenFight {
     this.t.onOpen(false);
     const k = this.kraken;
     for (const tent of k.tents) {
+      if (tent.path) continue;
       tent.curl = 1.1;
       tent.wave = 2;
       tent.glow = 0;
     }
     if (this.wounds >= WOUNDS) {
       this._set('beaten');
-      this.holding = false;
+      // it lets go of the station: its tentacles slither back through the cave
+      for (const tent of k.tents) {
+        tent.path = null;
+        tent.target = null;
+        tent.reach = 0;
+      }
       this.t.onBeaten();
     } else {
       this._set('flinch');
@@ -462,13 +417,14 @@ export class KrakenFight {
   _flinch(dt, player) {
     const k = this.kraken;
     const back = this._v.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-    const want = this._w.copy(this.lairAt).addScaledVector(back, 2.5);
+    const want = this._w.copy(this.homeAt).addScaledVector(back, 2.5);
     this.pos.lerp(want, 1 - Math.exp(-4 * dt));
     this._menace(null, -1);
     k.jawTarget = 0.4 + 0.08 * Math.sin(this.time * 35);       // (it shrieks)
     k.jawRate = 14;
     k.pitch = -0.15;
     for (const tent of k.tents) {
+      if (tent.path) continue;
       tent.curl = 0.4 + 0.7 * Math.sin(this.time * 9 + tent.slot);
       tent.wave = 2;
     }
@@ -482,17 +438,14 @@ export class KrakenFight {
   // beaten: it shrieks and sinks away into the crack at the back of its lair, tentacles last
   _beaten(dt) {
     const k = this.kraken;
-    const f = Math.min(1, this.stateT / 5);
-    const back = this._v.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-    const want = this._w.copy(this.lairAt).addScaledVector(back, 7).add(this._p.set(0, -6, 0));
-    this.pos.lerp(want, 1 - Math.exp(-0.9 * dt));
+    const f = Math.min(1, this.stateT / 6);
+    const want = this._w.copy(this.backAt).add(this._p.set(4, -6, 0));
+    this.pos.lerp(want, 1 - Math.exp(-0.8 * dt));
     k.jawTarget = f < 0.5 ? 0.4 + 0.08 * Math.sin(this.time * 35) : -0.3;
     k.jawRate = 10;
     for (const tent of k.tents) {
-      tent.reach = Math.max(0, tent.reach - dt * 0.5);
       tent.curl = 0.9 + 0.3 * Math.sin(this.time * 6 + tent.slot) * (1 - f);
       tent.wave = 1.5 * (1 - f) + 0.3;
-      tent.floor = null;
     }
     if (f >= 1) {
       this.state = 'gone';
@@ -500,14 +453,14 @@ export class KrakenFight {
     }
   }
 
-  // he was restored from backup: it settles back at the back of its lair (its wounds stay)
+  // he was restored from backup: it settles back where it lurks, still holding on (its wounds stay)
   reset() {
     if (this.state === 'gone' || this.state === 'beaten') return;
     this.attack = null;
     this.t.onOpen(false);
     for (const tent of this.kraken.tents) tent.glow = 0;
-    this.pos.copy(this.lairAt);
-    if (this.state !== 'lurk' && this.state !== 'retreat') this._set('wait');
+    this.pos.copy(this.homeAt);
+    this._set('wait');
   }
 
   // he cannot swim into it

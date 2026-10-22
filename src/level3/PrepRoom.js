@@ -165,6 +165,7 @@ export class PrepRoom {
     this.s.say('gateOpen').then(() => {
       if (this.s.disposed) return;
       this._gateT = 0;                     // the wheel turns, then the door lifts (update)
+      this.s.sfx?.cue('gateOpen', this.pos.gate);
     });
   }
 
@@ -172,6 +173,7 @@ export class PrepRoom {
     if (this.suited) return;
     this.suited = true;
     this._blink.classList.add('on');
+    this.s.sfx?.cue('suitUp');
     await new Promise((r) => setTimeout(r, 650));
     if (this.s.disposed) return;
     if (this.rackSuit) this.rackSuit.visible = false;
@@ -216,6 +218,7 @@ export class PrepRoom {
   _takeHarpoon() {
     if (this.harpoon) return;
     this.harpoon = true;
+    this.s.sfx?.cue('grab');
     if (this.rackGun) this.rackGun.visible = false;
     this.s.harpoon.taken = true;
     if (this.suited) this.s.harpoon.sling(this.s.controls.character?.bodyRoot, attachAtBind);
@@ -227,6 +230,7 @@ export class PrepRoom {
   _takeCable() {
     if (this.cable) return;
     this.cable = true;
+    this.s.sfx?.cue('grab');
     if (this.cableEnd) this.cableEnd.visible = false;
     this._carry.classList.add('on');
     this._drawScreen();
@@ -241,6 +245,7 @@ export class PrepRoom {
     if (!this.harpoon) return this.s.say('needHarpoon');
     this.lock = 'inner';
     this._move('inner', 1);
+    this.s.sfx?.cue('hatchOpen', this.pos.innerHatch);
     this._drawScreen();
   }
 
@@ -252,9 +257,13 @@ export class PrepRoom {
       return;
     }
     this.lock = 'sealing';
+    this.s.sfx?.cue('hatchShut', this.pos.innerHatch);
     this._move('inner', 0, () => {
       this._block(this.doors.inner, true);
       this.lock = 'flooding';
+      // water pouring up through the floor vents, bubbling
+      this.s.sfx?.startLoop('flood', 'water-pour', { vol: 0.9, rate: 0.6, at: this.pos.mid });
+      this.s.sfx?.startLoop('floodBubbles', 'bubbles-loop', { vol: 0.6, rate: 0.8, at: this.pos.mid });
       this.breathing = true;
       this._floodT = 0;
       this._drawScreen();
@@ -308,6 +317,8 @@ export class PrepRoom {
       if (f >= 1) {
         this.lock = 'full';
         this._fullT = 0;
+        this.s.sfx?.stopLoop('flood', 2);
+        this.s.sfx?.stopLoop('floodBubbles', 3);
         this._drawScreen();
       }
     } else if (this.lock === 'full') {
@@ -317,6 +328,7 @@ export class PrepRoom {
         this.s.sea?.setShown(true);
         this._block(this.doors.outer, false);
         this.game.ui.showToast('Pressure equal. Outer hatch opening.', 4000);
+        this.s.sfx?.cue('hatchOpen', this.doors.outer ? this._centre(this.doors.outer.obj) : null);
         this._move('outer', 1, () => {
           this.lock = 'open';
           this._drawScreen();

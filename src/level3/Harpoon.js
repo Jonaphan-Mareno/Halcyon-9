@@ -126,6 +126,7 @@ export class Harpoon {
     this.spears.push({ mesh: spear, line, from: from.clone(), dir, travelled: 0, stuck: null, life: 0 });
     this.reload = RELOAD;
     this._kick = 1;
+    this.s.sfx?.cue('harpoon');
     if (this.fp.userData.spear) this.fp.userData.spear.visible = false;
   }
 
@@ -138,7 +139,10 @@ export class Harpoon {
     }
     if (this.reload > 0) {
       this.reload = Math.max(0, this.reload - dt);
-      if (this.reload === 0 && this.fp.userData.spear) this.fp.userData.spear.visible = true;
+      if (this.reload === 0 && this.fp.userData.spear) {
+        this.fp.userData.spear.visible = true;
+        if (this.drawn) this.s.sfx?.cue('reload');
+      }
     }
     // the kick back as it fires, easing out
     this._kick = Math.max(0, this._kick - dt * 5);

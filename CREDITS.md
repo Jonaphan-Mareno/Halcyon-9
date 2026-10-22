@@ -69,6 +69,18 @@ Required credit lines (CC BY 4.0, http://creativecommons.org/licenses/by/4.0/):
 - *"Cabbage" by Meerschaum Digital (https://sketchfab.com/meerschaumdigital), licensed under CC-BY-4.0. Modified (decimated, merged).*
 - *"Carrot Collection" by Adam.White (https://sketchfab.com/Adam.White), licensed under CC-BY-4.0. Modified (one carrot kept, cut, decimated, merged).*
 
+The kraken (Level 3). Downloaded by hand (glTF) into `Blender/assets/kraken/` (not in git: download it
+from the link to rebuild) and taken apart by `Blender/scripts/build_l3_kraken.py` into its body, one
+arm and one long tentacle, its textures packed into one atlas; the game repeats the tentacles (ten
+instead of four) and bends them (`src/level3/Kraken.js`).
+
+| Model | Author | Used for | Link |
+|---|---|---|---|
+| Kraken | toro ardido modelos 3d | the kraken in its cave at the bottom of the trench (Level 3's final fight) | https://sketchfab.com/3d-models/kraken-4c547a84faa5477a9900272f862b6664 |
+
+Required credit line (CC BY 4.0):
+- *This work is based on "Kraken" (https://sketchfab.com/3d-models/kraken-4c547a84faa5477a9900272f862b6664) by toro ardido modelos 3d (https://sketchfab.com/toro_ardido_modelos_3d) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/). Modified (taken apart, tentacles repeated and animated, textures packed, scaled up).*
+
 ## Generated video
 
 | Asset | Source | Used for |

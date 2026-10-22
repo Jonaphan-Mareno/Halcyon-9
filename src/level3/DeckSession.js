@@ -24,6 +24,8 @@ import { PrepRoom } from './PrepRoom.js';
 import { SeaScene } from './SeaScene.js';
 import { Swim } from './Swim.js';
 import { VisorAria } from './VisorAria.js';
+import { Harpoon } from './Harpoon.js';
+import { Trench } from './Trench.js';
 import '../ui/level3.css';
 import { LINES, TALKS } from './Level3Lines.js';
 import { disposeScene } from '../core/disposeScene.js';
@@ -221,10 +223,15 @@ export class DeckSession {
     // outside the station: the platform, the canyon, the vents (hidden until the outer hatch opens)
     this.sea = new SeaScene(this);
     await this.sea.ready;
+    // the harpoon gun (taken from its rack in the prep room; slung on his back, drawn for the kraken)
+    this.harpoon = new Harpoon(this);
     // through the gate: the stairs, the EVA prep room, the suit, the cable and the water lock
     this.prep = new PrepRoom(this, deck, at);
     // out in the water: the thruster pack, the cable, the bubbles (Swim.js)
     this.swim = new Swim(this);
+    // at the bottom of the trench: the relay station, the kraken's cave and the fight (Trench.js)
+    this.trench = new Trench(this);
+    await this.trench.ready;
     this.visorAria = new VisorAria(this);
   }
 
@@ -397,6 +404,8 @@ export class DeckSession {
     this._driftSilt(dt);
     this.prep?.update(dt, p, playing);
     this.swim?.update(dt, playing);
+    this.harpoon?.update(dt);
+    this.trench?.update(dt, playing);
     this.visorAria?.update(dt, playing && !!this.prep?.suited);
     // (the plankton stirs round him as he swims)
     const outside = this.prep?.zone === 'sea';
@@ -552,6 +561,8 @@ export class DeckSession {
     window.removeEventListener('keyup', this._onKeyUp);
     window.removeEventListener('resize', this._onResize);
     this.swim?.dispose();
+    this.trench?.dispose();
+    this.harpoon?.dispose();
     this.visorAria?.dispose();
     this.prep?.dispose();
     this.sea?.dispose();

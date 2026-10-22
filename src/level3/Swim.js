@@ -17,7 +17,7 @@ import { dotTexture } from './SeaScene.js';
 
 const DECK = { minX: -36.4, maxX: -28.6, minZ: -25.5, maxZ: -19.5, y: 1.5 };   // the platform (world metres)
 const HULL_X = -28.6;
-const CABLE_MAX = 60;               // metres of cable on the reel
+const CABLE_MAX = 68;               // metres of cable on the reel (down to the relay at the trench's foot)
 const ROPE_N = 44;                  // points along the rope
 const BUBBLES = 260;
 
@@ -28,6 +28,7 @@ export class Swim {
     this.scene = session.game.scene;
     this.anchor = session.sea?.points.cableAnchor || new THREE.Vector3(-28.9, 1.55, -23.65);
     this.cableOut = 0;
+    this.plugged = null;               // where its end is plugged in (the relay's port), once it is
     this.time = 0;
     this._d = new THREE.Vector3();
     this._b = new THREE.Vector3();
@@ -44,7 +45,9 @@ export class Swim {
   update(dt, playing) {
     this.time += dt;
     const c = this.c, p = c.position, prep = this.s.prep;
-    const out = prep.zone === 'sea' && p.x < HULL_X - 0.1;
+    // (outside is anywhere out in the sea but the collar, from the hull back in to the lock)
+    const inCollar = p.x > HULL_X - 0.1 && p.y > 0.8 && p.z > DECK.minZ && p.z < DECK.maxZ;
+    const out = prep.zone === 'sea' && !inCollar;
     const overDeck = p.x > DECK.minX && p.x < DECK.maxX && p.z > DECK.minZ && p.z < DECK.maxZ;
     if (!c.swimming) {
       // off the platform through the gate, or pushing off from it (Space)
@@ -69,6 +72,8 @@ export class Swim {
 
   // The cable holds him: past its length he cannot pull further out
   _limit(pos, vel) {
+    this.s.trench?.limit(pos, vel);
+    if (this.plugged) return;
     this._d.set(pos.x, pos.y + 1.2, pos.z).sub(this.anchor);
     const L = this._d.length();
     if (L < CABLE_MAX - 0.6) return;
@@ -109,7 +114,7 @@ export class Swim {
   }
 
   _ropeStep(dt) {
-    const P = this.pts, Q = this.prev, A = this.anchor, B = this._backpack(this._b);
+    const P = this.pts, Q = this.prev, A = this.anchor, B = this.plugged ? this._b.copy(this.plugged) : this._backpack(this._b);
     if (!this._ropeStarted) {
       this._ropeStarted = true;
       for (let i = 0; i < ROPE_N; i++) {
@@ -238,7 +243,7 @@ export class Swim {
   _hud(out) {
     const note = this.s.prep?._carry?.querySelector('.cc-note');
     if (!note) return;
-    const text = out ? `Cable out: ${Math.round(this.cableOut)} of ${CABLE_MAX} m` : 'Plug the end into the dish on the pylon';
+    const text = out ? `Cable out: ${Math.round(this.cableOut)} of ${CABLE_MAX} m` : 'Plug the end in at the relay station';
     if (note.textContent !== text) note.textContent = text;
   }
 

@@ -75,6 +75,10 @@ M('l3_ceiling_light', (1.0, 0.92, 0.75), 0.4, 0.0, (1.0, 0.88, 0.65), 3.0)
 M('l3_sill_light', (1.0, 0.6, 0.3), 0.4, 0.0, (1.0, 0.55, 0.25), 2.0)
 M('l3_bridge_window', (0.8, 0.85, 0.8), 0.2, 0.0, (0.85, 0.9, 0.8), 1.4)
 M('l3_dome', (0.72, 0.74, 0.76), 0.35, 0.3)
+M('l3_glowmoss', (0.1, 0.5, 0.42), 0.6, 0.0, (0.15, 0.9, 0.7), 1.6)   # something growing on the cave's walls
+M('l3_bone', (0.62, 0.58, 0.5), 0.7, 0.0)
+M('l3_screen', (0.05, 0.2, 0.25), 0.3, 0.0, (0.25, 0.85, 1.0), 1.4)   # the relay's screens
+M('l3_port', (0.9, 0.6, 0.2), 0.4, 0.3, (1.0, 0.6, 0.15), 2.0)        # the glowing rings round its sockets
 
 FZ = 1.5                     # the lock's floor, and the platform's
 CX, CY = -2.0, 22.5          # the station's axis
@@ -576,6 +580,271 @@ for n, (vx, vy, h, r) in enumerate(VENTS):
     empty(f'PT_VentBase_{n}', (vx, vy, base + 1.5))
     if n < 3:
         empty(f'SEA_LIGHT_{n + 1}', (vx + r * 2.0, vy, base + 4.0))
+
+
+# ---------------------------------------------------------------- the trench floor: the relay and the cave
+# Down in the trench east of the leg, at the foot of the cliff: the uplink relay station, a squat
+# flooded pod (inside: the uplink port where Voss plugs in the cable, an air refill, and a bay kept
+# empty for the team's puzzles), with a door on the west, toward the station, and a hatch at the
+# back. Its trunk line runs out of a socket on the back wall toward the cliff, where a cave opens:
+# the kraken's lair. The game (Trench.js, Kraken.js) puts the kraken in it, its tentacles reaching
+# out along the floor to the relay, and the torn trunk line in its grip.
+#
+# The cliff's surface is wherever its noise put it, so the cave is measured from the finished cliff:
+# a hole is cut round the mouth, and the cave is one lofted rock surface through it: a lip, a
+# narrow throat, a wide chamber, closing at the back.
+dg = bpy.context.evaluated_depsgraph_get()
+
+def evaluated_points(ob):
+    """The object's vertices with its modifiers applied (same order as its own)."""
+    me = ob.evaluated_get(dg).to_mesh()
+    pts = [ob.matrix_world @ v.co for v in me.vertices]
+    ob.evaluated_get(dg).to_mesh_clear()
+    return pts
+
+FLOOR_PTS = evaluated_points(floor)
+FNU, FNV = 82, 52
+
+def floor_h(x, y):
+    """The seabed's height as it was built (its noise included): bilinear over the floor's grid."""
+    fi = min(max((x + 180.0) / 205.0 * FNU, 0.0), FNU - 1e-3)
+    fj = min(max((y + 42.0) / 130.0 * FNV, 0.0), FNV - 1e-3)
+    i, j = int(fi), int(fj)
+    a, b = fi - i, fj - j
+    h = lambda ii, jj: FLOOR_PTS[jj * (FNU + 1) + ii].z
+    return (h(i, j) * (1 - a) + h(i + 1, j) * a) * (1 - b) + (h(i, j + 1) * (1 - a) + h(i + 1, j + 1) * a) * b
+
+# where the cliff stands at the mouth: the mean of its surface round there
+cliff_base = [v.co.copy() for v in back.data.vertices]
+cliff_pts = evaluated_points(back)
+MX = 21.7
+for _ in range(2):
+    F = floor_h(MX - 4.0, CY) + 0.2
+    near = [p.x for (b0, p) in zip(cliff_base, cliff_pts) if abs(b0.y - CY) < 7 and abs(b0.z - (F + 4)) < 6]
+    MX = sum(near) / len(near)
+F = floor_h(MX - 4.0, CY) + 0.2
+print('cave mouth at x %.2f, floor %.2f' % (MX, F))
+
+# the hole in the cliff (its noise is applied afterwards, on what is left)
+bm = bmesh.new()
+bm.from_mesh(back.data)
+gone = [f for f in bm.faces if abs(f.calc_center_median().y - CY) < 6.0 and F - 1.0 < f.calc_center_median().z < F + 9.5]
+bmesh.ops.delete(bm, geom=gone, context='FACES')
+bm.to_mesh(back.data)
+bm.free()
+
+# (and the canyon floor's sheet stops at the cave's lip: inside, the cave's own floor)
+bm = bmesh.new()
+bm.from_mesh(floor.data)
+gone = [f for f in bm.faces if f.calc_center_median().x > MX - 3.0 and abs(f.calc_center_median().y - CY) < 6.0]
+bmesh.ops.delete(bm, geom=gone, context='FACES')
+bm.to_mesh(floor.data)
+bm.free()
+
+# The cave: rings across x (half width, half height), floor flat at F, rock noise on the walls
+CAVE = [(-4, 10.5, 9.5), (-2, 8.5, 8.0), (0, 7.4, 7.0), (2, 7.0, 6.6), (4, 7.2, 6.6), (7, 9.5, 7.5), (11, 13.0, 9.0),
+        (16, 15.0, 10.0), (22, 15.5, 10.0), (28, 14.0, 9.5), (33, 10.0, 8.0), (36, 6.0, 5.5), (38, 2.5, 2.5), (39, 0.3, 0.3)]
+
+def cave_wh(dx):
+    for (d0, w0, h0), (d1, w1, h1) in zip(CAVE, CAVE[1:]):
+        if dx <= d1:
+            t = max(0.0, (dx - d0) / (d1 - d0))
+            return w0 + (w1 - w0) * t, h0 + (h1 - h0) * t
+    return CAVE[-1][1], CAVE[-1][2]
+
+def rock_noise(p, s=0.16):
+    from mathutils import noise
+    q = Vector((p.x * s, p.y * s, p.z * s))
+    return noise.noise(q) + 0.5 * noise.noise(q * 2.3 + Vector((5, 1, 3))) + 0.25 * noise.noise(q * 5.1 + Vector((2, 7, 1)))
+
+bm = bmesh.new()
+SEG = 32
+rings = []
+dxs = [CAVE[0][0] + k * 1.25 for k in range(int((CAVE[-1][0] - CAVE[0][0]) / 1.25) + 1)]
+for dx in dxs:
+    W, H = cave_wh(dx)
+    zc = F + 0.55 * H
+    ring = []
+    for k in range(SEG):
+        a = 2 * math.pi * k / SEG
+        y = CY + W * math.cos(a)
+        z = zc + H * math.sin(a)
+        p = Vector((MX + dx, y, max(z, F)))
+        if z <= F:
+            p.z = F + 0.35 * rock_noise(p, 0.3)
+        else:
+            out = Vector((0, y - CY, z - zc)).normalized()
+            p += out * (1.3 * min(1.0, min(W, H) / 7.0) * rock_noise(p))
+        ring.append(bm.verts.new(p))
+    rings.append(ring)
+cave_faces = []
+for i in range(len(rings) - 1):
+    for k in range(SEG):
+        cave_faces.append(bm.faces.new((rings[i][k], rings[i][(k + 1) % SEG], rings[i + 1][(k + 1) % SEG], rings[i + 1][k])))
+cave_faces.append(bm.faces.new(rings[-1][::-1]))
+bm.normal_update()
+face_toward(bm, cave_faces, lambda c: Vector((0, CY - c.y, F + 0.55 * cave_wh(c.x - MX)[1] - c.z)))
+cave_me = bpy.data.meshes.new('cave_tmp')
+bm.to_mesh(cave_me)
+# (a few glowing patches of something growing on its walls, picked from its faces)
+moss_at = []
+random.seed(31)
+for f in random.sample(list(bm.faces), 60):
+    c = f.calc_center_median()
+    if c.x - MX > 6 and c.z > F + 1.5:
+        moss_at.append((c, f.normal.copy()))
+bm.free()
+cave = bpy.data.objects.new('TERRAIN_Cave', cave_me)
+cave_me.materials.append(kit.MATS['l3_rock'])
+kit.VIS.objects.link(cave)
+smooth_shade(cave)
+glowc = A('L3_CaveGlow')
+for (c, n) in moss_at[:22]:
+    ball(glowc, 'l3_glowmoss', tuple(c + n * 0.15), random.uniform(0.25, 0.6), sub=1, scale=(1.0, 1.0, 0.45))
+# bones on the lair's floor: a great ribcage, half sunk, and scattered pieces
+bones = A('L3_Bones')
+for r in range(7):
+    x = MX + 17 + r * 1.6
+    span = 4.2 - abs(r - 3) * 0.45
+    prev = None
+    for k in range(9):
+        a = math.pi * k / 8
+        p = Vector((x + 0.3 * math.sin(a * 2), CY - 3 + span * math.cos(a), F - 0.4 + span * 0.8 * math.sin(a)))
+        if prev is not None:
+            tube(bones, 'l3_bone', tuple(prev), tuple(p), 0.16 - 0.04 * abs(math.cos(a)), 6)
+        prev = p
+tube(bones, 'l3_bone', (MX + 16, CY - 3, F - 0.1), (MX + 28, CY - 3, F + 0.1), 0.28, 8)     # its spine
+for k in range(14):
+    x, y = MX + random.uniform(9, 32), CY + random.uniform(-9, 9)
+    a = random.uniform(0, math.pi)
+    L = random.uniform(0.6, 1.8)
+    tube(bones, 'l3_bone', (x, y, F + 0.05), (x + L * math.cos(a), y + L * math.sin(a), F + 0.15), random.uniform(0.05, 0.12), 6)
+
+# The relay station: a squat domed pod on legs, a little up off the bumpy floor
+RX = MX - 14.0
+FR = floor_h(RX, CY)
+RF = FR + 1.4                       # its floor
+RR, RH = 5.0, 3.8                   # radius, height of its walls inside
+DOOR_A = 0.14                       # the door and the hatch: two of its 48 faces wide (1.3 m), 2.5 m tall
+
+def relay_hole(c):
+    a = math.atan2(c.y - CY, c.x - RX)
+    side = min(abs(a), abs(abs(a) - math.pi))
+    return side < DOOR_A and RF < c.z < RF + 2.5
+
+def relay_shell():
+    bm = bmesh.new()
+    outer = [(RR, RF - 0.6), (RR, RF), (RR, RF + 2.5), (RR, RF + RH), (RR - 0.6, RF + RH + 0.9), (RR - 2.2, RF + RH + 1.5), (0.3, RF + RH + 1.7)]
+    inner = [(RR - 0.3, RF), (RR - 0.3, RF + 2.5), (RR - 0.3, RF + RH - 0.1), (RR - 0.9, RF + RH + 0.7), (RR - 2.4, RF + RH + 1.25), (0.3, RF + RH + 1.45)]
+    fin = revolve(bm, outer, RX, CY, 48, skip=relay_hole)
+    face_toward(bm, fin, lambda c: Vector((c.x - RX, c.y - CY, 0.3 * (c.z - RF - RH))))
+    more = revolve(bm, inner, RX, CY, 48, skip=relay_hole)
+    face_toward(bm, more, lambda c: Vector((RX - c.x, CY - c.y, RF + 1.0 - c.z)))
+    return bm
+
+bm = relay_shell()
+relay_me = bpy.data.meshes.new('relay_tmp')
+bm.to_mesh(relay_me)
+bm.free()
+relay = bpy.data.objects.new('L3_RelayShell', relay_me)
+relay_me.materials.append(kit.MATS['l3_hull'])
+kit.VIS.objects.link(relay)
+rel = A('L3_Relay')
+cyl(rel, 'l3_dark', (RX, CY, RF - 0.2), RR, 0.4, seg=48)                    # its floor
+cyl(rel, 'l3_grate', (RX, CY, RF + 0.02), RR - 0.35, 0.04, seg=48)
+for k in range(6):                                                         # its legs, down into the silt
+    a = k * math.pi / 3 + 0.5
+    lx, ly = RX + 4.2 * math.cos(a), CY + 4.2 * math.sin(a)
+    beam(rel, 'l3_rust', (lx, ly, RF - 0.3), (lx + 0.6 * math.cos(a), ly + 0.6 * math.sin(a), FR - 3.0), 0.35, 0.35)
+# frames round the door and the hatch (they cover the wall's cut edges), and lamps over them
+for sx in (-1, 1):
+    x0 = RX + sx * (RR - 0.45)
+    x1 = RX + sx * (RR + 0.2)
+    lo, hi = min(x0, x1), max(x0, x1)
+    for y in (CY - 0.78, CY + 0.66):
+        box(rel, 'l3_hazard', (lo, y, RF), (hi, y + 0.12, RF + 2.62))
+    box(rel, 'l3_hazard', (lo, CY - 0.78, RF + 2.5), (hi, CY + 0.78, RF + 2.72))
+    box(rel, 'l3_hazard', (lo, CY - 0.78, RF - 0.05), (hi, CY + 0.78, RF + 0.05))
+    box(rel, 'l3_lamp', (lo, CY - 0.22, RF + 2.78), (hi, CY + 0.22, RF + 2.88))
+# portholes, dark, round the wall
+for a in (0.8, 2.35, 3.95, 5.5):
+    c = (RX + (RR + 0.02) * math.cos(a), CY + (RR + 0.02) * math.sin(a), RF + 2.0)
+    verts = bmesh.ops.create_cone(rel.bm, cap_ends=True, segments=16, radius1=0.42, radius2=0.42, depth=0.12)['verts']
+    bmesh.ops.transform(rel.bm, matrix=Matrix.Translation(Vector(c)) @ Matrix.Rotation(a, 4, 'Z') @ Matrix.Rotation(math.pi / 2, 4, 'Y'), verts=verts)
+    rel.tag('l3_porthole', kit._faces(verts))
+# a mast on the roof with a red light, and the conduit from the station's leg along the floor
+beam(rel, 'l3_rust', (RX + 1.0, CY - 1.0, RF + RH + 1.3), (RX + 1.0, CY - 1.0, RF + RH + 5.0), 0.12, 0.12)
+cyl(glow, 'l3_alarm', (RX + 1.0, CY - 1.0, RF + RH + 5.1), 0.1, 0.18, seg=10)
+path = []
+for k in range(13):
+    t = k / 12
+    x = (CX + 6.6) + (RX - RR - 0.2 - (CX + 6.6)) * t
+    y = CY + 2.4
+    path.append(Vector((x, y, floor_h(x, y) + 0.45)))
+path[0].z = max(path[0].z, FOOT + 1.4)
+path[-1].z = RF - 0.2
+for p0, p1 in zip(path, path[1:]):
+    tube(rel, 'l3_rust', tuple(p0), tuple(p1), 0.32, 10)
+for p in path[1:-1:2]:
+    box(rel, 'l3_dark', (p.x - 0.15, p.y - 0.5, floor_h(p.x, p.y) - 0.5), (p.x + 0.15, p.y + 0.5, p.z - 0.2))
+# inside: the console with the uplink port (north), the air refill (south-west), the empty bay for
+# the team's puzzles (south-east), lamps along the ceiling
+box(rel, 'l3_dark', (RX - 1.2, CY + 3.3, RF), (RX + 1.2, CY + 4.2, RF + 1.0))
+box(rel, 'l3_screen', (RX - 1.0, CY + 3.45, RF + 1.0), (RX + 1.0, CY + 4.05, RF + 1.04))
+cyl(rel, 'l3_dark', (RX, CY + 3.27, RF + 0.62), 0.2, 0.08, seg=16, axis='Y')
+cyl(rel, 'l3_port', (RX, CY + 3.22, RF + 0.62), 0.12, 0.05, seg=16, axis='Y')
+box(rel, 'l3_screen', (RX - 0.9, CY + 4.38, RF + 1.5), (RX + 0.9, CY + 4.44, RF + 2.5))
+cyl(rel, 'l3_hull', (RX - 2.6, CY - 3.5, RF + 0.8), 0.32, 1.6, seg=14)
+cyl(rel, 'l3_hull', (RX - 1.9, CY - 3.9, RF + 0.8), 0.32, 1.6, seg=14)
+box(rel, 'l3_screen', (RX - 2.5, CY - 3.25, RF + 1.0), (RX - 1.9, CY - 3.2, RF + 1.4))
+box(rel, 'l3_rust', (RX + 0.4, CY - 4.25, RF), (RX + 2.6, CY - 3.45, RF + 0.9))
+for y in (CY - 1.6, CY + 1.6):
+    box(rel, 'l3_lamp', (RX - 1.6, y - 0.08, RF + RH - 0.12), (RX + 1.6, y + 0.08, RF + RH - 0.06))
+# the trunk socket outside the hatch, where the line to the surface leaves the relay
+box(rel, 'l3_dark', (RX + RR - 0.05, CY + 1.25, RF + 0.3), (RX + RR + 0.25, CY + 1.95, RF + 0.95))
+cyl(rel, 'l3_port', (RX + RR + 0.27, CY + 1.6, RF + 0.62), 0.12, 0.05, seg=16, axis='X')
+# the doors the game moves
+door = A('GATE_RelayDoor')
+box(door, 'l3_rust', (RX - RR - 0.12, CY - 0.66, RF), (RX - RR + 0.02, CY + 0.66, RF + 2.5))
+box(door, 'l3_hazard', (RX - RR - 0.14, CY - 0.5, RF + 1.1), (RX - RR - 0.11, CY + 0.5, RF + 1.3))
+hatch = A('GATE_RelayHatch')
+box(hatch, 'l3_rust', (RX + RR - 0.02, CY - 0.66, RF), (RX + RR + 0.12, CY + 0.66, RF + 2.5))
+box(hatch, 'l3_hazard', (RX + RR + 0.11, CY - 0.5, RF + 1.1), (RX + RR + 0.14, CY + 0.5, RF + 1.3))
+
+# collision: the floor and the cliff as built, the cave, the relay's walls, the leg
+def collider_copy(name, ob):
+    me = bpy.data.meshes.new_from_object(ob.evaluated_get(bpy.context.evaluated_depsgraph_get()))
+    me.transform(ob.matrix_world)
+    c = bpy.data.objects.new(name, me)
+    kit.VIS.objects.link(c)
+    return c
+
+collider_copy('COL_Floor', floor)
+collider_copy('COL_Cliff', back)
+collider_copy('COL_Cave', cave)
+collider_copy('COL_Relay', relay)
+col_box((RX - RR, CY - RR, RF - 0.6), (RX + RR, CY + RR, RF))                 # the relay's floor
+col_box((CX - 3.6, CY - 3.6, FOOT), (CX + 3.6, CY + 3.6, LEG_Z))              # the leg
+col_box((CX - 6.5, CY - 6.5, FOOT - 4.0), (CX + 6.5, CY + 6.5, FOOT + 1.2))
+
+empty('PT_RelayFront', (RX - RR - 3.0, CY, RF + 1.4))
+empty('PT_RelayDoor', (RX - RR - 0.15, CY, RF + 1.25))
+empty('PT_RelayInside', (RX, CY, RF + 0.1))
+empty('PT_RelayPort', (RX, CY + 3.18, RF + 0.62))
+empty('PT_RelayScreen', (RX, CY + 4.36, RF + 2.0))
+empty('PT_AirRefill', (RX - 2.2, CY - 3.2, RF + 1.2))
+empty('PT_PuzzleBay', (RX + 1.5, CY - 3.0, RF + 1.3))
+empty('PT_RelayHatch', (RX + RR + 0.15, CY, RF + 1.25))
+empty('PT_TrunkSocket', (RX + RR + 0.3, CY + 1.6, RF + 0.62))
+empty('PT_CaveMouth', (MX - 3.0, CY, F + 3.0))
+empty('PT_CaveInside', (MX + 9.0, CY, F + 3.0))
+empty('PT_KrakenLurk', (MX + 6.5, CY, F + 0.6))
+empty('PT_KrakenLair', (MX + 26.0, CY, F + 0.8))
+empty('PT_Respawn', (MX - 5.0, CY + 4.0, F + 2.0))
+empty('TRENCH_LIGHT_0', (RX, CY, RF + 3.2))            # in the relay
+empty('TRENCH_LIGHT_1', (RX - RR - 2.0, CY, RF + 3.6)) # over its door, outside
+empty('TRENCH_LIGHT_2', (MX + 19.0, CY, F + 8.0))      # in the lair
+empty('TRENCH_LIGHT_3', (MX - 1.0, CY, F + 6.0))       # at the cave's mouth
 
 
 # Many small pieces are fewer, bigger meshes for the game (fewer draw calls): the ribs, the rocks

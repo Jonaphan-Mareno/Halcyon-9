@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Water } from './Water.js';
-import { dressInSuit, rackSuit } from './DiveSuit.js';
+import { dressInSuit, rackSuit, attachAtBind } from './DiveSuit.js';
+import { harpoonModel } from './Harpoon.js';
 import { SEA, dotTexture } from './SeaScene.js';
 
 // Through the first gate (scene 3.3, the airlock and the suit): the bulkhead at the end of the way
@@ -75,10 +76,13 @@ export class PrepRoom {
       screen: at('PT_Screen'), panel: at('PT_LockPanel'), beacon: at('PT_LockBeacon'), mid: at('PT_LockMid')
     };
     this.pos.suitTop = this.pos.suit?.clone().add(new THREE.Vector3(0, 1.35, 0));
+    // the harpoon gun's rack, on the same wall as the suits, east of them
+    this.pos.harpoon = this.pos.suit ? new THREE.Vector3(this.pos.suit.x + 1.75, FLOOR + 1.45, this.pos.suit.z - 0.33) : null;
     this.pos.innerHatch = this.doors.inner ? this._centre(this.doors.inner.obj) : null;
     this.cableEnd = deck.getObjectByName('PROP_CableEnd');
 
     this._signs();
+    this._harpoonRack();
     this._screen();
     this._effects();
     this._borrowLights();
@@ -128,6 +132,12 @@ export class PrepRoom {
         when: () => !this.suited, use: () => this._suitUp()
       });
     }
+    if (this.pos.harpoon) {
+      it.add({
+        id: 'harpoon', position: this.pos.harpoon, radius: 0.45, label: 'Take the harpoon gun',
+        when: () => !this.harpoon, use: () => this._takeHarpoon()
+      });
+    }
     if (this.pos.cable) {
       it.add({
         id: 'cable', position: this.pos.cable, radius: 0.5, label: 'Take the uplink cable',
@@ -168,6 +178,7 @@ export class PrepRoom {
     const player = this.s.controls.character;
     if (player?.bodyRoot) dressInSuit(player.bodyRoot, { mutate: true });
     if (player?.viewModel) dressInSuit(player.viewModel, { mutate: true, parts: false });   // (his first-person arms: gloves, orange sleeves)
+    if (this.harpoon) this.s.harpoon.sling(player?.bodyRoot, attachAtBind);
     const lamp = this.game.camera.flashlight;
     lamp.intensity = 14;
     lamp.angle = Math.PI / 7;
@@ -180,13 +191,46 @@ export class PrepRoom {
     this.game.ui.showToast('Suit sealed. Helmet lamp on. Your air starts when the lock floods: four minutes.', 6000);
   }
 
+  // a gun rack on the wall: two brackets, the gun lying across them
+  _harpoonRack() {
+    if (!this.pos.harpoon) return;
+    const rack = new THREE.Group();
+    const dark = new THREE.MeshStandardMaterial({ color: 0x2a2e33, roughness: 0.55, metalness: 0.4 });
+    for (const dx of [-0.35, 0.35]) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.16), dark);
+      b.position.set(dx, -0.07, -0.02);
+      rack.add(b);
+    }
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.32, 0.03), dark);
+    plate.position.set(0, -0.02, -0.11);
+    rack.add(plate);
+    this.rackGun = harpoonModel();
+    this.rackGun.rotation.y = -Math.PI / 2;          // (lying along the wall, muzzle east)
+    this.rackGun.position.set(-0.5, 0, 0);
+    rack.add(this.rackGun);
+    rack.position.copy(this.pos.harpoon);
+    this.scene.add(rack);
+    this.harpoonRack = rack;
+  }
+
+  _takeHarpoon() {
+    if (this.harpoon) return;
+    this.harpoon = true;
+    if (this.rackGun) this.rackGun.visible = false;
+    this.s.harpoon.taken = true;
+    if (this.suited) this.s.harpoon.sling(this.s.controls.character?.bodyRoot, attachAtBind);
+    this._drawScreen();
+    this.game.ui.showToast('Harpoon gun taken. It rides slung across your backpack until you need it.', 6000);
+    this.s.say('harpoon');
+  }
+
   _takeCable() {
     if (this.cable) return;
     this.cable = true;
     if (this.cableEnd) this.cableEnd.visible = false;
     this._carry.classList.add('on');
     this._drawScreen();
-    this.game.ui.showToast('Uplink cable taken. It pays out from the reel behind you: plug the end into the dish on the pylon.', 6500);
+    this.game.ui.showToast('Uplink cable taken. It pays out from the reel behind you: plug the end in at the relay station at the bottom of the trench.', 7000);
     this.s.say('cable');
   }
 
@@ -194,6 +238,7 @@ export class PrepRoom {
     if (this.lock !== 'shut') return;
     if (!this.suited) return this.s.say('needSuit');
     if (!this.cable) return this.s.say('needCable');
+    if (!this.harpoon) return this.s.say('needHarpoon');
     this.lock = 'inner';
     this._move('inner', 1);
     this._drawScreen();
@@ -290,7 +335,7 @@ export class PrepRoom {
     if (this.suited) this._drawOxygen();
     this._visor.style.display = playing ? '' : 'none';
     // (out in the sea, more than a few metres from the hatch, the inside cannot be seen at all)
-    if (this.s.deck) this.s.deck.visible = !(this.zone === 'sea' && p.x < -38);
+    if (this.s.deck) this.s.deck.visible = !(this.zone === 'sea' && (p.x < -38 || p.y < -6));
     // out on the platform for the first time
     if (!this._outside && p.x < PLATFORM_X) {
       this._outside = true;
@@ -315,7 +360,7 @@ export class PrepRoom {
     if (z === 'deck' && p.x < UP_HERE) z = 'prep';
     else if (z === 'prep' && p.x > DOWN_THERE) z = 'deck';
     else if (z === 'prep' && p.x < OUT_HERE && this.s.sea) z = 'sea';
-    else if (z === 'sea' && p.x > IN_THERE) z = 'prep';
+    else if (z === 'sea' && p.x > IN_THERE && p.y > 0.5 && p.z > LOCK.minZ - 0.6 && p.z < LOCK.maxZ + 0.6) z = 'prep';
     if (z === this.zone) return;
     this.zone = z;
     const sea = this.s.sea;
@@ -511,14 +556,14 @@ export class PrepRoom {
       ['SUIT 2', this.suited ? 'IN USE, SEALED' : 'ON RACK', this.suited],
       ['UPLINK CABLE', this.cable ? 'PAYING OUT' : 'ON REEL', this.cable],
       ['WATER LOCK', lock, this.lock === 'open'],
-      ['DISH 2 (PYLON)', 'NO LINK', false]
+      ['RELAY 3 (TRENCH)', 'NO LINK', false]
     ];
     g.font = 'bold 24px Courier New, monospace';
     rows.forEach(([k, v, ok], i) => {
       const y = 100 + i * 46;
       g.fillStyle = '#8fb6c8';
       g.fillText(k, 22, y);
-      g.fillStyle = ok ? '#3dff9a' : (k.startsWith('DISH') ? '#ff6a5a' : '#ffd23f');
+      g.fillStyle = ok ? '#3dff9a' : (k.startsWith('RELAY') ? '#ff6a5a' : '#ffd23f');
       g.fillText(v, 252, y);
     });
     g.fillStyle = '#3d6a80';
@@ -541,7 +586,7 @@ export class PrepRoom {
     this._tint = el('l3-under');
     this._blink = el('l3-blink');
     this._oxy = el('l3-oxygen', '<div class="ox-label">OXYGEN</div><div class="ox-bar"><div></div></div><div class="ox-time">4:00</div>');
-    this._carry = el('l3-carry', '<div class="cc-label">CARRYING</div><div class="cc-item">UPLINK CABLE</div><div class="cc-note">Plug the end into the dish on the pylon</div>');
+    this._carry = el('l3-carry', '<div class="cc-label">CARRYING</div><div class="cc-item">UPLINK CABLE</div><div class="cc-note">Plug the end in at the relay station</div>');
     this._oxyBar = this._oxy.querySelector('.ox-bar div');
     this._oxyTime = this._oxy.querySelector('.ox-time');
   }
@@ -565,6 +610,7 @@ export class PrepRoom {
     }
     if (!this.suited && p.x > (this.pos.prepDoor?.x ?? -13) + 0.4) return { text: 'Reach the airlock', target: this.pos.prepDoor, label: 'UP' };
     if (!this.suited) return { text: 'Put on the dive suit', target: this.pos.suitTop, label: 'SUIT' };
+    if (!this.harpoon) return { text: 'Take the harpoon gun from its rack', target: this.pos.harpoon, label: 'HARPOON' };
     if (!this.cable) return { text: 'Take the uplink cable', target: this.pos.cable, label: 'CABLE' };
     switch (this.lock) {
       case 'shut': return { text: 'Enter the water lock', target: this.pos.innerHatch, label: 'LOCK' };
@@ -574,7 +620,7 @@ export class PrepRoom {
       default:
         if (!this._outside) return { text: 'Go outside', target: this.s.sea?.points.outside || null, label: 'OUT' };
         if (!this.s.swim?._told) return { text: 'Swim out through the dive gate', target: this.s.sea?.points.gate || null, label: 'GATE' };
-        return { text: 'Explore outside (the dish comes next)', target: null };
+        return this.s.trench ? this.s.trench.guide() : { text: 'Swim down into the trench', target: null };
     }
   }
 

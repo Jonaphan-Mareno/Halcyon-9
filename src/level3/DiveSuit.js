@@ -140,7 +140,7 @@ function belt(m) {
 }
 
 // Fix an object built in the model's own space to a bone, by the bind pose (works in any pose)
-function attachAtBind(model, boneRe, object) {
+export function attachAtBind(model, boneRe, object) {
   let skinned = null;
   model.traverse((o) => { if (!skinned && o.isSkinnedMesh) skinned = o; });
   if (!skinned) return false;

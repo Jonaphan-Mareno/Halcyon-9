@@ -107,6 +107,12 @@ export class SeaScene {
       o.material = Array.isArray(o.material) ? o.material.map(swap) : swap(o.material);
       if (o.name.startsWith('L3_AtriumGlass')) o.renderOrder = 3;
     });
+    // (the kraken's cave is seen from both sides: its rock lip stands out from the cliff)
+    const cave = model.getObjectByName('TERRAIN_Cave');
+    if (cave) {
+      cave.material = deckMaterial('l3_rock', { sea: true });
+      cave.material.side = THREE.DoubleSide;
+    }
     this.group.add(model);
     this.model = model;
 

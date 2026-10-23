@@ -1,5 +1,6 @@
 import { settings } from '../core/Settings.js';
 import { sleep } from '../core/PauseClock.js';
+import { audioSrc } from './AudioCache.js';
 
 // Voss's recorded lines (public/assets/audio/voss/<clip>.mp3), for Levels 1 and 2. A line with no
 // recording yet is shown as text only, as before. The text on screen is always shown too (as a
@@ -19,7 +20,7 @@ class VossVoice {
     this.stop();
     if (!clip) return Promise.resolve(false);
     return new Promise((resolve) => {
-      const audio = new Audio(PATH + clip + '.mp3');
+      const audio = new Audio(audioSrc(PATH + clip + '.mp3'));   // (fetched ahead: AudioCache)
       audio.volume = settings.get('voice');
       const cur = this._cur = { audio, resolve, settled: false };
       const settle = (played) => {

@@ -1,4 +1,5 @@
 import { LOGS } from './Level2Lines.js';
+import { audioSrc } from '../audio/AudioCache.js';
 
 // Level 2's readables (scenes 2.6 to 2.8): one panel over the game for everything Voss reads,
 // hears or watches. The entries and their words are LOGS in Level2Lines.js; each has a kind:
@@ -189,7 +190,7 @@ export class Readables {
     if (log.kind === 'audio') {
       this.subEl.textContent = 'AUDIO LOG';
       this.meterEl.style.display = '';
-      this._tryMedia(new Audio(LOG_AUDIO + id + '.mp3'));
+      this._tryMedia(new Audio(audioSrc(LOG_AUDIO + id + '.mp3')));
     } else if (log.kind === 'video') {
       this.subEl.textContent = 'J. VOSS: PERSONAL LOG';
       this.screenEl.style.display = '';
@@ -198,7 +199,7 @@ export class Readables {
       this.videoEl.src = LOG_VIDEO + id + '.mp4';
       // no recording: a live head may still have its voice recorded
       this._tryMedia(this.videoEl, true, () => {
-        if (this.entry.live) this._tryMedia(new Audio(LOG_AUDIO + id + '.mp3'));
+        if (this.entry.live) this._tryMedia(new Audio(audioSrc(LOG_AUDIO + id + '.mp3')));
       });
     } else if (log.kind === 'file') {
       this.subEl.textContent = 'RESTRICTED DIRECTORY' + (log.author ? '   |   WRITTEN BY ' + log.author : '');

@@ -81,7 +81,7 @@ export class DeckSession {
 
     const root = document.getElementById('ui-layer');
     this.player = new PlayerStats();
-    this.hud = new HUD(root, { onRestart: () => {} });
+    this.hud = new HUD(root, { onRestart: () => { } });
     this.loadingEl = document.createElement('div');
     this.loadingEl.id = 'level-loading';
     this.loadingEl.className = 'visible';
@@ -466,17 +466,19 @@ export class DeckSession {
     if (this.deck) this.deck.visible = false;
     prep.zone = 'prep';
     prep._zone(front);
-    // land him right outside the relay's door (a couple of metres back toward the open water, so
-    // he is not inside the station's collision), swimming
-    const door = trench.pts.door;
-    const spawn = door ? door.clone().lerp(front, 0.3).setY(door.y + 0.4) : front.clone();
+    // hand the game state over before teleporting so that _swim()'s first frame gets canMove=true
+    // (?relay is instant: the wake-up blink may not have run yet)
+    if (this.game.state === 'WAKING' || this.game.state === 'INIT') this.game.state = 'PLAYING';
+    // spawn at the post-kraken respawn point (PT_Respawn) — this is already used as the checkpoint
+    // once the kraken is beaten, so it is guaranteed to be clear of the relay's collision mesh.
+    // The old lerp(front, 0.3) put Voss only 30% of the way from the door toward PT_RelayFront,
+    // which dropped him right into the relay station's collider and left him unable to move.
+    const spawn = trench.pts.respawn ? trench.pts.respawn.clone().add(new THREE.Vector3(0, 0.2, 0)) : front.clone();
     // the uplink cable is already run in and plugged at the relay's port, so its tether no longer
     // holds him back (Swim._limit returns early once the end is plugged)
     if (this.swim) this.swim.plugged = (trench.pts.port || spawn).clone();
     this.controls.teleport(spawn);
     this.controls.setSwimming(true);
-    // the wake-up blink may still be running (?relay is instant); hand him over now
-    if (this.game.state === 'WAKING' || this.game.state === 'INIT') this.game.state = 'PLAYING';
     this.game.ui.showToast('Skipped to the relay station. The kraken is beaten; its door is free.', 6000);
   }
 

@@ -187,3 +187,23 @@
   pointer-events: none;
   background: radial-gradient(ellipse 60% 55% at 50% 50%, rgba(2, 4, 6, 0.35) 30%, rgba(1, 2, 3, 0.95) 85%);
 }
+
+/* the spear rifle's ammo, bottom right (Harpoon.js) */
+#l3-ammo {
+  position: absolute;
+  right: 28px;
+  bottom: 58px;
+  z-index: 11;
+  display: none;
+  text-align: right;
+  font-family: "Courier New", monospace;
+  pointer-events: none;
+}
+#l3-ammo.on { display: block; }
+#l3-ammo .am-count { color: #ffb03a; text-shadow: 0 0 8px rgba(255, 140, 30, 0.5); }
+#l3-ammo .am-n { font-size: 2rem; font-weight: bold; }
+#l3-ammo .am-of { font-size: 1rem; margin-left: 0.4rem; opacity: 0.8; }
+#l3-ammo .am-label { font-size: 0.6rem; letter-spacing: 0.3rem; color: #ffd28a; opacity: 0.75; }
+#l3-ammo .am-reload { display: none; margin-top: 0.2rem; font-size: 0.75rem; letter-spacing: 0.2rem; color: #ff5a4a; animation: ox-warn 0.6s steps(2) infinite; }
+#l3-ammo.reloading .am-reload { display: block; }
+#l3-ammo.low .am-count { color: #ff5a4a; }

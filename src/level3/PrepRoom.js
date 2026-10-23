@@ -76,7 +76,7 @@ export class PrepRoom {
       screen: at('PT_Screen'), panel: at('PT_LockPanel'), beacon: at('PT_LockBeacon'), mid: at('PT_LockMid')
     };
     this.pos.suitTop = this.pos.suit?.clone().add(new THREE.Vector3(0, 1.35, 0));
-    // the harpoon gun's rack, on the same wall as the suits, east of them
+    // the spear rifle's rack, on the same wall as the suits, east of them
     this.pos.harpoon = this.pos.suit ? new THREE.Vector3(this.pos.suit.x + 1.75, FLOOR + 1.45, this.pos.suit.z - 0.33) : null;
     this.pos.innerHatch = this.doors.inner ? this._centre(this.doors.inner.obj) : null;
     this.cableEnd = deck.getObjectByName('PROP_CableEnd');
@@ -134,7 +134,7 @@ export class PrepRoom {
     }
     if (this.pos.harpoon) {
       it.add({
-        id: 'harpoon', position: this.pos.harpoon, radius: 0.45, label: 'Take the harpoon gun',
+        id: 'harpoon', position: this.pos.harpoon, radius: 0.45, label: 'Take the spear rifle',
         when: () => !this.harpoon, use: () => this._takeHarpoon()
       });
     }
@@ -220,7 +220,7 @@ export class PrepRoom {
     this.s.harpoon.taken = true;
     if (this.suited) this.s.harpoon.sling(this.s.controls.character?.bodyRoot, attachAtBind);
     this._drawScreen();
-    this.game.ui.showToast('Harpoon gun taken. It rides slung across your backpack until you need it.', 6000);
+    this.game.ui.showToast('Spear rifle taken. It rides slung across your backpack until you need it.', 6000);
     this.s.say('harpoon');
   }
 
@@ -621,7 +621,7 @@ export class PrepRoom {
     }
     if (!this.suited && p.x > (this.pos.prepDoor?.x ?? -13) + 0.4) return { text: 'Reach the airlock', target: this.pos.prepDoor, label: 'UP' };
     if (!this.suited) return { text: 'Put on the dive suit', target: this.pos.suitTop, label: 'SUIT' };
-    if (!this.harpoon) return { text: 'Take the harpoon gun from its rack', target: this.pos.harpoon, label: 'HARPOON' };
+    if (!this.harpoon) return { text: 'Take the spear rifle from its rack', target: this.pos.harpoon, label: 'RIFLE' };
     if (!this.cable) return { text: 'Take the uplink cable', target: this.pos.cable, label: 'CABLE' };
     switch (this.lock) {
       case 'shut': return { text: 'Enter the water lock', target: this.pos.innerHatch, label: 'LOCK' };

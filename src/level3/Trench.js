@@ -12,7 +12,7 @@ import { SEA } from './SeaScene.js';
 //      station and comes for him: the final fight (KrakenFight.js), with a boss bar. A tap of Shift
 //      dashes him out of the way (a blow that lands during a dash misses). Its blows glow before
 //      they land; a punch he dodges sticks in the rock (shoot it: the kraken is stunned); its ink
-//      blinds him for a moment. Its mouth glows when it is open to the harpoon. Four hits
+//      blinds him for a moment. Its mouth glows when it is open to the spear rifle. Four hits
 //   4. it sinks away beaten; the relay's door opens; inside he plugs the uplink
 //      cable into the port. Then the team's puzzles (PUZZLES below), then he sends the uplink from
 //      the console, and the level ends (for now)
@@ -77,7 +77,7 @@ export class Trench {
 
   get sfx() { return this.s.sfx; }
 
-  // what a harpoon spear meets between p0 and p1: the kraken, or rock
+  // what a spear rifle's bolt meets between p0 and p1: the kraken, or rock
   _spear(p0, p1) {
     const hit = this.fight.spearTest(p0, p1);
     if (hit) {
@@ -345,7 +345,7 @@ export class Trench {
     this.sfx?.cue('draw');
     this.s.say('kraken').then(() => this.game.ariaAnger?.(8));
     this._showBoss(true);
-    this.game.ui.showToast('It tore its tentacles off the station. TAP SHIFT to dash out of the way. Dodge its punch and shoot the arm while it is stuck; harpoon its mouth when it glows.', 9000);
+    this.game.ui.showToast('It tore its tentacles off the station. TAP SHIFT to dash out of the way. Dodge its punch and shoot the arm while it is stuck; shoot its mouth when it glows (hold left click; R reloads).', 9000);
   }
 
   // a punch he dodged, driven into the rock
@@ -359,7 +359,7 @@ export class Trench {
 
   onStunned() {
     this.sfx?.cue('stun', this.fight.kraken.mouthWorld());
-    this.game.ui.showToast('It is stunned, its mouth hanging open: harpoon it!', 3000);
+    this.game.ui.showToast('It is stunned, its mouth hanging open: shoot it!', 3000);
   }
 
   onRockGrab(at) {
@@ -434,7 +434,7 @@ export class Trench {
   onLunge() {
     if (this._lungeTold) return;
     this._lungeTold = true;
-    this.game.ui.showToast('Its mouth is right in front of you: harpoon it now, or dash away before it bites!', 4000);
+    this.game.ui.showToast('Its mouth is right in front of you: shoot it now, or dash away before it bites!', 4000);
   }
 
   onOpen(on) {
@@ -640,9 +640,9 @@ export class Trench {
       case 'fight': {
         const F = this.fight, tip = F.stuckTip(this._v);
         if (tip) return { text: 'Its arm is stuck in the rock: SHOOT IT (left click)', target: tip, label: 'ARM' };
-        if (F.state === 'stunned') return { text: "It's stunned: harpoon its mouth NOW", target: F.kraken.mouthWorld(this._v), label: 'MOUTH' };
-        if (this._mouthOpen) return { text: 'NOW: harpoon its glowing mouth (left click)', target: F.kraken.mouthWorld(this._v), label: 'MOUTH' };
-        return { text: 'Beat the kraken: TAP SHIFT to dash from its blows, shoot a stuck arm, harpoon its mouth when it glows', target: null };
+        if (F.state === 'stunned') return { text: "It's stunned: shoot its mouth NOW", target: F.kraken.mouthWorld(this._v), label: 'MOUTH' };
+        if (this._mouthOpen) return { text: 'NOW: shoot its glowing mouth (left click)', target: F.kraken.mouthWorld(this._v), label: 'MOUTH' };
+        return { text: 'Beat the kraken: TAP SHIFT to dash from its blows, shoot a stuck arm, shoot its mouth when it glows', target: null };
       }
       case 'free': return { text: 'It let go. Get into the relay station', target: P.door, label: 'DOOR' };
       case 'enter': return { text: 'Go inside the relay station', target: P.inside, label: 'IN' };

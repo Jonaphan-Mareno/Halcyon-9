@@ -27,9 +27,9 @@ export const LINES = {
   'v-need-suit': voss('Not without the suit.'),
   'v-need-cable': voss("The cable. That's the whole reason I'm going out there."),
   // DRAFT from here on (the trench, the relay and the kraken): not in the Word file or recorded yet
-  // the harpoon gun on its rack in the prep room
-  'v-harpoon': voss('A harpoon gun. Whoever stocked this room expected company.'),
-  'v-need-harpoon': voss("The harpoon. I'm not going out there with nothing."),
+  // the spear rifle on its rack in the prep room
+  'v-harpoon': voss('A spear rifle. Whoever stocked this room expected company.'),
+  'v-need-harpoon': voss("The rifle. I'm not going out there with nothing."),
   // swimming down into the trench
   'l3-trench-1': aria('bubbly', "See the lights at the bottom? That's the uplink relay. Plug the cable in there and we're done."),
   // at the relay station: something wrapped round the bottom of it

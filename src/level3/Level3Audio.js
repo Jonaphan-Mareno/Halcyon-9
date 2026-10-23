@@ -70,6 +70,13 @@ const CUES = {
   refill: [['air-hiss', { ui: true, vol: 0.7 }], ['confirm', { ui: true, vol: 0.5, delay: 1.0 }]],
   harpoon: [['harpoon', { vol: 1, rate: 0.85, ui: true, rand: 0.05 }], ['click', { ui: true, vol: 0.6 }]],
   reload: [['ratchet-2', { ui: true, vol: 0.5, rate: 1.1 }]],
+  // the spear rifle: a heavy gas-charged shot (a thump, the hiss, the action cycling), the
+  // magazine out, a fresh one in and the charging handle racked, and the click of an empty gun
+  rifleShot: [['harpoon', { ui: true, vol: 0.85, rate: 1.15, rand: 0.06, dur: 0.35 }], ['slam', { ui: true, vol: 0.5, rate: 2.0, rand: 0.05 }],
+    ['click', { ui: true, vol: 0.55, rate: 1.25, delay: 0.06 }], ['bubbles-loop', { ui: true, vol: 0.18, rate: 1.6, dur: 0.4 }]],
+  rifleOut: [['slide', { ui: true, vol: 0.8, rate: 0.85 }], ['click', { ui: true, vol: 0.6, delay: 0.15 }]],
+  rifleIn: [['latch', { ui: true, vol: 0.9 }], ['ratchet-1', { ui: true, vol: 0.9, delay: 0.35 }], ['shing-2', { ui: true, vol: 0.5, delay: 0.5, rate: 1.2 }]],
+  rifleEmpty: [['click', { ui: true, vol: 0.7, rate: 1.6 }]],
   dash: [['dash', { ui: true, vol: 0.9, rate: 0.8 }], ['bubbles-loop', { ui: true, vol: 0.35, rate: 1.3 }]],
   dodge: [['whoosh-2', { ui: true, vol: 0.6, rate: 0.7 }]],
   spearFlesh: [['hit-flesh', { vol: 1.2, rate: 0.8, rand: 0.1 }]],

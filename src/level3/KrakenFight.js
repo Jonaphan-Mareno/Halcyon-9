@@ -8,7 +8,9 @@ import { deckMaterial } from './DeckMaterials.js';
 //            to the relay station and wrapped round its lower half, the door with it. Following
 //            them back is how Voss finds it
 //   fight    (he comes into its lair) it roars, tears its tentacles off the station and comes for
-//            him, swimming after him round its hall. Four harpoon hits in the mouth beat it, and it
+//            him, swimming after him: round its hall, and out of the cave after him if he backs off
+//            or runs (through its throat, over the trench floor; not into the relay). Four hits in
+//            the mouth beat it, and it
 //            gets worse as it is hurt (three phases):
 //              phase 1  SWEEP   an arm winds up, its tip glowing hot, and sweeps through where he is
 //                       PUNCH   an arm coils back and jabs straight at him, fast. Dodged, it drives
@@ -41,6 +43,7 @@ const ENGAGE = 24;                    // metres from its body that it comes for 
 const KEEP = [9, 13];                 // how near it keeps to him while it swims after him (metres)
 const SWIM = { speed: 6.5, accel: 5.0, drag: 1.4 };   // its swimming: top speed (m/s), how fast it gets there, how it slows
 const STALK = { chance: [0.35, 0.45, 0.55], time: [3.5, 6.0], far: 21 };   // slipping off into the murk to ambush him
+const FLEE = 18;                      // metres: further off than this, he is running, and it comes faster
 const STUCK = 2.6, STUN = 3.4, FLINCH = 1.2;
 const ROCK_SPEED = 21;
 export const WRAPPERS = [0, 7, 1, 6, 8];   // the tentacles wrapped round the relay until the fight
@@ -123,7 +126,18 @@ export class KrakenFight {
   }
 
   _localFloor() {
-    return (this.floorY - this.kraken.root.position.y) / SCALE + 0.35;
+    const p = this.kraken.root.position;
+    return (this._floorAt(p.x, p.z) - p.y) / SCALE + 0.35;
+  }
+
+  // the floor under a point: its lair's, or (out of the cave) the trench's
+  _floorAt(x, z) {
+    return x > this.t.pts.mouth.x + 2 ? this.floorY : Math.min(this.floorY, this.t._groundAt(x, z));
+  }
+
+  // is it (or a point) out of its cave
+  _outside(p = this.pos) {
+    return p.x < this.t.pts.mouth.x + 6;
   }
 
   // ------------------------------------------------------------------ the harpoon
@@ -267,9 +281,14 @@ export class KrakenFight {
       want = this._w.copy(player).addScaledVector(away, keep - extra);
       want.addScaledVector(this._p.set(-away.z, 0, away.x), Math.sin(this.time * 0.4) * 3);
     }
-    this._inArena(want);
-    want.y = this.floorY + 1.4 + Math.sin(this.time * 0.9) * 0.6;
-    this._steer(dt, want, SWIM.speed * SPEED[this.phase] * (this.stalkT > 0 ? 0.8 : 1));
+    // (he is out of the cave and it is in, or the other way: it goes by the throat, not the rock)
+    const mouthX = this.t.pts.mouth.x, cz = this.t.pts.inside.z;
+    const kIn = this.pos.x > mouthX + 2, pIn = player.x > mouthX + 2;
+    if (kIn !== pIn) want = this._w.set(pIn ? mouthX + 9 : mouthX - 7, 0, cz);
+    this._inBounds(want);
+    want.y = this._floorAt(want.x, want.z) + 1.4 + Math.sin(this.time * 0.9) * 0.6;
+    const running = d > FLEE && this.stalkT <= 0 ? 1.55 : 1;
+    this._steer(dt, want, SWIM.speed * SPEED[this.phase] * (this.stalkT > 0 ? 0.8 : running));
   }
 
   // accelerate toward a point, gliding, with a pulse of its arms on each surge
@@ -298,12 +317,27 @@ export class KrakenFight {
     if (amount > 0.2) for (const tent of k.tents) if (!tent.target) tent.curl += 0.35 * Math.max(0, Math.sin(this.time * 3.6 + 1.2));
   }
 
-  _inArena(p) {
-    const A = this.arena;
-    const dx = (p.x - A.c.x) / A.rx, dz = (p.z - A.c.z) / A.rz, r = Math.hypot(dx, dz);
-    if (r > 0.85) {
-      p.x = A.c.x + dx / r * 0.85 * A.rx;
-      p.z = A.c.z + dz / r * 0.85 * A.rz;
+  // where it can go: its hall, the throat out of it (keeping to its middle), and the trench floor
+  // round the relay station and the cave's mouth (never into the relay)
+  _inBounds(p) {
+    const P = this.t.pts, mouthX = P.mouth.x, cz = P.inside.z;
+    if (p.x > mouthX + 6) {
+      const A = this.arena;
+      const dx = (p.x - A.c.x) / A.rx, dz = (p.z - A.c.z) / A.rz, r = Math.hypot(dx, dz);
+      if (r > 0.85) {
+        p.x = A.c.x + dx / r * 0.85 * A.rx;
+        p.z = A.c.z + dz / r * 0.85 * A.rz;
+      }
+    } else if (p.x > mouthX - 4) {
+      p.z = cz + THREE.MathUtils.clamp(p.z - cz, -3.5, 3.5);
+    } else {
+      p.x = THREE.MathUtils.clamp(p.x, P.inside.x - 24, mouthX - 4);
+      p.z = cz + THREE.MathUtils.clamp(p.z - cz, -22, 22);
+      const dx = p.x - P.inside.x, dz = p.z - P.inside.z, r = Math.hypot(dx, dz);
+      if (r < 9 && r > 1e-3) {
+        p.x = P.inside.x + dx / r * 9;
+        p.z = P.inside.z + dz / r * 9;
+      }
     }
     return p;
   }
@@ -354,7 +388,7 @@ export class KrakenFight {
 
   // which blow next: by its phase, not the same one twice running (force: a given one, for testing)
   _begin(player, force = null) {
-    const moves = MOVES[this.phase].filter(([m]) => m !== this._last || this.phase === 2);
+    const moves = MOVES[this.phase].filter(([m]) => (m !== this._last || this.phase === 2) && !(m === 'throw' && this._outside()));
     let r = Math.random() * moves.reduce((s, [, w]) => s + w, 0);
     let kind = moves[0][0];
     for (const [m, w] of moves) { if ((r -= w) <= 0) { kind = m; break; } }
@@ -468,7 +502,7 @@ export class KrakenFight {
     } else if (a.phase === 'strike') {
       const f = Math.min(1, a.t / S);
       if (a.kind === 'sweep') tent.target = k.toLocal(this._p.copy(a.up).lerp(a.through, f));
-      else tent.target = k.toLocal(this._p.copy(a.aim).setY(Math.max(this.floorY + 0.4, a.aim.y - 1.0)));
+      else tent.target = k.toLocal(this._p.copy(a.aim).setY(Math.max(this._floorAt(a.aim.x, a.aim.z) + 0.4, a.aim.y - 1.0)));
       tent.reach = 1;
       if (f > 0.35) this._hits(tent, player, alive, a, DAMAGE[a.kind]);
       if (a.kind === 'slam' && f >= 1 && !a.thud) {
@@ -567,7 +601,7 @@ export class KrakenFight {
     k.jawTarget = 0.42 + 0.05 * Math.sin(this.time * 30);
     k.jawRate = 12;
     k.pitch = 0.12;
-    this.pos.y += (this.floorY + 0.9 - this.pos.y) * (1 - Math.exp(-2 * dt));
+    this.pos.y += (this._floorAt(this.pos.x, this.pos.z) + 0.9 - this.pos.y) * (1 - Math.exp(-2 * dt));
     for (const tent of k.tents) {
       tent.target = null;
       tent.reach = Math.max(0, tent.reach - dt);
@@ -734,14 +768,14 @@ export class KrakenFight {
     if (a.phase === 'windup') {
       const want = this._w.copy(this.pos).addScaledVector(toward, -2.0 * dt);
       want.y += dt * 1.0;
-      this.pos.copy(this._inArena(want));
+      this.pos.copy(this._inBounds(want));
       k.pitch = -0.18 * Math.min(1, a.t / LUNGE.windup);
       k.jawTarget = 0.3;
       k.jawRate = 8;
       if (a.t >= LUNGE.windup && eye) {
         const f = this._w.set(eye.x - this.pos.x, 0, eye.z - this.pos.z).normalize();
         a.to = eye.clone().addScaledVector(f, -(FACE_Z * SCALE + LUNGE.reach)).add(new THREE.Vector3(0, -MOUTH.y * SCALE, 0));
-        a.to.y = Math.max(a.to.y, this.floorY + 0.4);
+        a.to.y = Math.max(a.to.y, this._floorAt(a.to.x, a.to.z) + 0.4);
         a.from = this.pos.clone();
         a.rushTime = THREE.MathUtils.clamp(a.from.distanceTo(a.to) / 24, LUNGE.rush, 1.1);
         a.phase = 'rush';
@@ -818,7 +852,7 @@ export class KrakenFight {
   _flinch(dt, player) {
     const k = this.kraken;
     const back = this._v.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-    this.pos.copy(this._inArena(this._w.copy(this.pos).addScaledVector(back, dt * 3)));
+    this.pos.copy(this._inBounds(this._w.copy(this.pos).addScaledVector(back, dt * 3)));
     this._menace(null, -1);
     k.jawTarget = 0.42 + 0.08 * Math.sin(this.time * 35);       // (it shrieks)
     k.jawRate = 14;

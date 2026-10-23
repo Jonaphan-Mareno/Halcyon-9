@@ -32,14 +32,20 @@ export const LINES = {
   'v-need-harpoon': voss("The rifle. I'm not going out there with nothing."),
   // swimming down into the trench
   'l3-trench-1': aria('bubbly', "See the lights at the bottom? That's the uplink relay. Plug the cable in there and we're done."),
-  // at the relay station: something wrapped round the bottom of it
-  'v-relay-1': voss("Something's wrapped round the bottom of it."),
-  'l3-relay-1': aria('guarded', 'Pipes. Old pipes. Go inside, Voss.'),
-  // the door will not open: the tentacles hold it, and run back into a cave
-  'v-door-held': voss("Those aren't pipes. It's holding the door shut... and it goes all the way back into the rock."),
-  'l3-door-held': aria('guarded', 'Then follow it, and make it let go. You need that relay, Voss.'),
+  // at the relay station: the door is there, but something huge is wrapped round it
+  'v-relay-1': voss("There's the relay. So where's the door?"),
+  'l3-relay-1': aria('hesitant', "It's right there, in front of you. But something's... covering it."),
+  'v-relay-2': voss('What are these? Pipes? They\'re huge.'),
+  'l3-relay-2': aria('guarded', 'They run off toward the cliff. Let\'s follow them and see what they are.'),
+  // the door, held shut (pressing E on it)
+  'v-door-held': voss("It won't budge. Whatever these are, they've got it wrapped tight."),
+  // at the cave's mouth: the "pipes" go into the rock
+  'v-cave': voss('They go right into the rock.'),
+  'l3-cave': aria('hesitant', "Careful, Voss. I'm reading something big in there. And it's... moving."),
   // the kraken rises in its lair
-  'v-kraken': voss('ARIA! Do something!'),
+  'v-kraken': voss("Those aren't pipes..."),
+  'l3-kraken-0': aria('hesitant', "Oh no. Voss... it's a kraken!"),
+  'v-kraken-2': voss('ARIA! Do something!'),
   'l3-kraken-1': aria('hostile', "I could. I stopped the drones, didn't I? But the last time I helped you down here, you broke my dish."),
   'v-harpoon-fight': voss("Then I'll do it myself."),
   'v-hit-1': voss('Got it!'),
@@ -65,9 +71,10 @@ export const TALKS = {
   harpoon: ['v-harpoon'],
   needHarpoon: ['v-need-harpoon'],
   descend: ['l3-trench-1'],
-  relay: ['v-relay-1', 'l3-relay-1'],
-  doorHeld: ['v-door-held', 'l3-door-held'],
-  kraken: ['v-kraken', 'l3-kraken-1', 'v-harpoon-fight'],
+  relay: ['v-relay-1', 'l3-relay-1', 'v-relay-2', 'l3-relay-2'],
+  doorHeld: ['v-door-held'],
+  caveMouth: ['v-cave', 'l3-cave'],
+  kraken: ['v-kraken', 'l3-kraken-0', 'v-kraken-2', 'l3-kraken-1', 'v-harpoon-fight'],
   hit1: ['v-hit-1'],
   hit2: ['v-hit-2'],
   krakenGone: ['l3-kraken-2'],

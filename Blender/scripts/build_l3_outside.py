@@ -405,7 +405,7 @@ corners = [(CX + sx * 3.4, CY + sy * 3.4) for (sx, sy) in ((-1, -1), (1, -1), (1
 for (x, y) in corners:
     beam(leg, 'l3_rust', (x, y, LEG_Z + 0.5), (x, y, FOOT - 1.0), 0.45, 0.45)
 z = LEG_Z
-while z - 4.5 > FOOT:
+while z - 4.5 > FOOT + 6.0:             # (the bracing stops short of the floor: the way to the relay is clear)
     for i in range(4):
         (x0, y0), (x1, y1) = corners[i], corners[(i + 1) % 4]
         beam(leg, 'l3_rust', (x0, y0, z), (x1, y1, z - 4.5), 0.16, 0.16)
@@ -417,18 +417,9 @@ for dy in (-0.5, 0.5):                 # a ladder up the shaft on the canyon sid
 for k in range(int((LEG_Z - FOOT) / 0.6)):
     zz = FOOT + 0.3 + k * 0.6
     beam(leg, 'l3_dark', (CX - 2.0, CY - 0.5, zz), (CX - 2.0, CY + 0.5, zz), 0.05, 0.05)
-box(leg, 'l3_dark', (CX - 6.5, CY - 6.5, FOOT - 4.0), (CX + 6.5, CY + 6.5, FOOT + 1.2))
-for h in range(3):                     # three pipes coiled round the foot, like tentacles
-    a0 = h * 2.1
-    rr = 5.0 + h * 0.9
-    prev = None
-    for k in range(46):
-        tt = k / 45
-        a = a0 + tt * 2.6 * 2 * math.pi
-        p = Vector((CX + rr * math.cos(a), CY + rr * math.sin(a), FOOT + 1.2 + tt * (7.0 + h * 2.5)))
-        if prev is not None:
-            tube(leg, 'l3_rust', tuple(prev), tuple(p), 0.5 - tt * 0.25, 8)
-        prev = p
+# (its footing is just the four posts and the shaft: no block or coiled pipes round it, which stood
+# in front of the relay station's door)
+cyl(leg, 'l3_rust', (CX, CY, FOOT + 0.3), 2.6, 1.2, seg=16)
 
 # ---------------------------------------------------------------- the collar and the platform
 # The collar: a short square tunnel from the lock's outer hatch out through the hull, with a big
@@ -722,7 +713,7 @@ for k in range(14):
     tube(bones, 'l3_bone', (x, y, F + 0.05), (x + L * math.cos(a), y + L * math.sin(a), F + 0.15), random.uniform(0.05, 0.12), 6)
 
 # The relay station: a squat domed pod on legs, a little up off the bumpy floor
-RX = MX - 14.0
+RX = MX - 11.0                      # (clear of the station's leg: its door faces it across open floor)
 FR = floor_h(RX, CY)
 RF = FR + 1.4                       # its floor
 RR, RH = 5.0, 3.8                   # radius, height of its walls inside
@@ -780,7 +771,7 @@ cyl(glow, 'l3_alarm', (RX + 1.0, CY - 1.0, RF + RH + 5.1), 0.1, 0.18, seg=10)
 path = []
 for k in range(13):
     t = k / 12
-    x = (CX + 6.6) + (RX - RR - 0.2 - (CX + 6.6)) * t
+    x = (CX + 2.8) + (RX - RR - 0.2 - (CX + 2.8)) * t
     y = CY + 2.4
     path.append(Vector((x, y, floor_h(x, y) + 0.45)))
 path[0].z = max(path[0].z, FOOT + 1.4)
@@ -827,7 +818,6 @@ collider_copy('COL_Cave', cave)
 collider_copy('COL_Relay', relay)
 col_box((RX - RR, CY - RR, RF - 0.6), (RX + RR, CY + RR, RF))                 # the relay's floor
 col_box((CX - 3.6, CY - 3.6, FOOT), (CX + 3.6, CY + 3.6, LEG_Z))              # the leg
-col_box((CX - 6.5, CY - 6.5, FOOT - 4.0), (CX + 6.5, CY + 6.5, FOOT + 1.2))
 
 empty('PT_RelayFront', (RX - RR - 3.0, CY, RF + 1.4))
 empty('PT_RelayDoor', (RX - RR - 0.15, CY, RF + 1.25))

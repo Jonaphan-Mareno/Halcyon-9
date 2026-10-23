@@ -146,6 +146,11 @@ export class Trench {
     const n = { x: Math.ceil((x1 - x0) / S) + 1, z: Math.ceil((z1 - z0) / S) + 1 };
     const h = new Float32Array(n.x * n.z);
     const down = new THREE.Vector3(0, -1, 0), from = new THREE.Vector3();
+    // (the physics only finds shapes added since its last step once its queries are brought up to
+    // date: the level's colliders were only just added)
+    const world = this.s.physics.world;
+    if (world.updateSceneQueries) world.updateSceneQueries();
+    else world.step();
     for (let j = 0; j < n.z; j++) {
       for (let i = 0; i < n.x; i++) {
         const x = x0 + i * S, z = z0 + j * S;
@@ -230,21 +235,23 @@ export class Trench {
     if (!this.fight.free) {
       this.sfx?.cue('doorStuck', this.pts.door);
       this.shake = Math.max(this.shake, 0.3);
-      if (this.stage === 'descend' || this.stage === 'front') {
-        this.stage = 'follow';
-        this.checkpoint = this.pts.respawn.clone();
-        this.s.harpoon?.draw(true);
-        this.sfx?.cue('draw');
-        this.game.ui.showToast("It won't open. Those are tentacles, wrapped round the whole station, and they run back along the floor into a cave. Follow them.", 8000);
-        this.s.say('doorHeld');
-      } else {
-        this.game.ui.showToast('The tentacles hold the door shut.', 2500);
-      }
+      this.s.say('doorHeld');
+      if (this.stage === 'descend' || this.stage === 'front') this._toFollow();
       return;
     }
     this._open('front');
     this.checkpoint = this.pts.inside.clone().add(new THREE.Vector3(0, 0.3, 0));
     if (this.stage === 'free') this.stage = 'enter';
+  }
+
+  // the "pipes" round the relay: follow them
+  _toFollow() {
+    if (this.stage !== 'descend' && this.stage !== 'front') return;
+    this.stage = 'follow';
+    this.checkpoint = this.pts.respawn.clone();
+    this.s.harpoon?.draw(true);
+    this.sfx?.cue('draw');
+    this.game.ui.showToast('Something is wrapped round the whole relay station, door and all. It runs back along the floor toward the cliff: follow it.', 7000);
   }
 
   async _plug() {
@@ -563,9 +570,9 @@ export class Trench {
     const P = this.pts;
     switch (this.stage) {
       case 'descend':
-        if (p.distanceTo(P.front) < 12) {
+        if (p.distanceTo(P.front) < 14) {
           this.stage = 'front';
-          this.s.say('relay');
+          this.s.say('relay').then(() => { if (this.stage === 'front') this._toFollow(); });
         } else if (!this._toldDescend && p.y < TRENCH_TOP + 10) {
           this._toldDescend = true;
           this.s.say('descend');
@@ -573,6 +580,13 @@ export class Trench {
         break;
       case 'enter':
         if (Math.hypot(p.x - P.inside.x, p.z - P.inside.z) < 3.8) this.stage = 'inside';
+        break;
+      case 'follow':
+        // at the cave's mouth: they go right into the rock
+        if (!this._mouthSaid && p.distanceTo(P.mouth) < 10) {
+          this._mouthSaid = true;
+          this.s.say('caveMouth');
+        }
         break;
     }
   }
@@ -636,7 +650,7 @@ export class Trench {
     switch (this.stage) {
       case 'descend': return { text: 'Swim down to the relay station at the bottom of the trench', target: P.front, label: 'RELAY' };
       case 'front': return { text: 'Open the relay station door', target: P.door, label: 'DOOR' };
-      case 'follow': return { text: 'Tentacles hold the station shut. Follow them back to what they belong to', target: this._followTarget(p), label: this.inCave(p) ? '???' : 'CAVE' };
+      case 'follow': return { text: 'Something huge covers the door. Follow the "pipes" and see where they go', target: this._followTarget(p), label: this.inCave(p) ? '???' : 'FOLLOW' };
       case 'fight': {
         const F = this.fight, tip = F.stuckTip(this._v);
         if (tip) return { text: 'Its arm is stuck in the rock: SHOOT IT (left click)', target: tip, label: 'ARM' };

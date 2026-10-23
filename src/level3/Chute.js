@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 
 // The chute: the way down from Level 2's hatch to the drowned deck, ridden at the start of Level 3
-// (straight after its title). Under the hatch the shaft bends into a steep round pipe with water
-// running down it, and Voss slides the 300 m to the bottom like a bobsled: A and D steer him across
-// the pipe's curved floor (and up its walls), Space ducks. Snapped cables hang sparking into it,
-// burst pipes spray across half of it, fallen gratings lie on one side, and round shutters hang
-// half shut (duck under them). Red lamps on the walls warn of each one. A hit jolts him and costs a
+// (straight after its title). Under the hatch the shaft bends into a steep round steel pipe, and
+// Voss slides the 300 m to the bottom on its worn floor like a bobsled, metal grinding under him
+// and the pipe's joints clacking past: A and D steer him across the curved floor (and up its
+// walls), Space ducks. Snapped cables hang sparking into it, burst pipes blast steam across half of
+// it, fallen gratings lie on one side, and round shutters hang half shut (duck under them). Red lamps on the walls warn of each one. A hit jolts him and costs a
 // little integrity, never all of it: it is a ride, not a test. At the bottom he shoots out into the
 // pump room's water.
 //
@@ -28,7 +28,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 
 // What is in the way: [kind, metres down, where across (radians from the bottom, + = right)]
 //   cable    snapped cables hanging from the roof, sparking: steer round them
-//   spray    a burst pipe spraying across one half (+1 = from the right wall): keep to the other
+//   spray    a burst pipe blasting steam across one half (+1 = from the right wall): keep to the other
 //   debris   a fallen grating lying on the floor: steer round it
 //   gate     a round shutter hanging half shut in the middle of the pipe: duck under it
 const COURSE = [
@@ -50,9 +50,10 @@ const TUBE_VERT = /* glsl */`
     gl_Position = projectionMatrix * mv;
   }
 `;
-// The pipe's wall: uv = (radians round from the floor, metres down). Dark steel with seams, wetter
-// toward the floor, a ring of lamps on the roof every 6 m that lights the wall round it, the light
-// at the bottom, and the dark swallowing what is far off.
+// The pipe's wall: uv = (radians round from the floor, metres down). Dark steel with seams, the
+// floor worn bright by everything that has slid down it (scratched along its length), a ring of
+// lamps on the roof every 6 m that lights the wall round it, the light at the bottom, and the dark
+// swallowing what is far off.
 const TUBE_FRAG = /* glsl */`
   uniform float uEnd;
   varying vec2 vUv;
@@ -60,7 +61,10 @@ const TUBE_FRAG = /* glsl */`
   void main() {
     float th = vUv.x, s = vUv.y;
     float c = cos(th);                                   // 1 on the floor, -1 on the roof
-    vec3 col = mix(vec3(0.04, 0.047, 0.058), vec3(0.022, 0.028, 0.036), smoothstep(0.3, 1.0, c));
+    vec3 col = vec3(0.04, 0.047, 0.058);
+    float worn = smoothstep(0.75, 0.95, c);
+    float scratch = fract(sin(floor(th * 90.0) * 12.9898) * 43758.5453);
+    col = mix(col, vec3(0.075, 0.08, 0.088) * (0.8 + 0.4 * scratch), worn);
     float ringSeam = 1.0 - smoothstep(0.01, 0.04, abs(fract(s / 2.0 + 0.5) - 0.5) * 2.0);
     float runSeam = 1.0 - smoothstep(0.01, 0.03, abs(fract(th / 0.7854 + 0.5) - 0.5) * 0.7854 * ${R.toFixed(2)});
     col *= 1.0 - 0.4 * max(ringSeam, runSeam);
@@ -74,24 +78,7 @@ const TUBE_FRAG = /* glsl */`
     #include <colorspace_fragment>
   }
 `;
-// The water running down the floor, faster than he slides: broken bright streaks, added on top
-const WATER_FRAG = /* glsl */`
-  uniform float uTime;
-  varying vec2 vUv;
-  varying float vDist;
-  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-  void main() {
-    float th = vUv.x, s = vUv.y - uTime * 17.0;
-    float edge = smoothstep(0.62, 0.3, abs(th));
-    float lane = floor(th * 40.0);
-    float r = hash(vec2(lane, floor(s / 2.5 + hash(vec2(lane, 3.0)) * 4.0)));
-    float streak = smoothstep(0.8, 1.0, r) * (1.0 - abs(fract(th * 40.0) - 0.5) * 2.0);
-    vec3 col = vec3(0.3, 0.52, 0.66) * (0.1 + 0.75 * streak) * edge * exp(-vDist * 0.06);
-    gl_FragColor = vec4(col, 1.0);
-    #include <colorspace_fragment>
-  }
-`;
-// A burst pipe's jet: bright streaks rushing out along the cone
+// A burst pipe's jet of steam: pale streaks billowing out along the cone
 const JET_FRAG = /* glsl */`
   uniform float uTime;
   varying vec2 vUv;
@@ -99,9 +86,9 @@ const JET_FRAG = /* glsl */`
   float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
   void main() {
     float lane = floor(vUv.x * 24.0);
-    float r = hash(vec2(lane, floor(vUv.y * 6.0 - uTime * 14.0 + hash(vec2(lane, 1.0)) * 5.0)));
-    float a = (0.06 + 0.8 * smoothstep(0.55, 1.0, r)) * (1.0 - vUv.y * 0.6);
-    gl_FragColor = vec4(vec3(0.55, 0.8, 0.95) * a * exp(-vDist * 0.05), 1.0);
+    float r = hash(vec2(lane, floor(vUv.y * 4.0 - uTime * 9.0 + hash(vec2(lane, 1.0)) * 5.0)));
+    float a = (0.1 + 0.55 * smoothstep(0.4, 1.0, r)) * (1.0 - vUv.y * 0.5);
+    gl_FragColor = vec4(vec3(0.75, 0.78, 0.8) * a * exp(-vDist * 0.05), 1.0);
     #include <colorspace_fragment>
   }
 `;
@@ -214,11 +201,8 @@ export class Chute {
     this.uniforms = { uTime: { value: 0 }, uEnd: { value: LENGTH } };
     const wall = new THREE.Mesh(this._strip(-Math.PI, Math.PI, SIDES, 0),
       new THREE.ShaderMaterial({ uniforms: this.uniforms, vertexShader: TUBE_VERT, fragmentShader: TUBE_FRAG, side: THREE.DoubleSide }));
-    const water = new THREE.Mesh(this._strip(-0.62, 0.62, 10, 0.03),
-      new THREE.ShaderMaterial({ uniforms: this.uniforms, vertexShader: TUBE_VERT, fragmentShader: WATER_FRAG,
-        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
-    wall.frustumCulled = water.frustumCulled = false;
-    this.group.add(wall, water);
+    wall.frustumCulled = false;
+    this.group.add(wall);
   }
 
   // Each obstacle in its own group, set in the pipe's cross-section: local x right, y up, z back
@@ -394,7 +378,8 @@ export class Chute {
       <div class="fh-tip">Red lamps on the walls: something is just ahead.</div>`;
     document.getElementById('ui-layer').appendChild(this.help);
     requestAnimationFrame(() => this.help.classList.add('visible'));
-    this.s.sfx?.startLoop('chute', 'water-pour', { ui: true, vol: 0.45, rate: 0.8 });
+    this.s.sfx?.startLoop('chute', 'chute-slide', { ui: true, vol: 0.55, rate: 0.8 });
+    this._joint = 0;
     return new Promise((resolve) => { this._done = resolve; });
   }
 
@@ -420,6 +405,12 @@ export class Chute {
       this.dist += speed * dt;
       this.slow = Math.max(0, this.slow - dt * 0.8);
       this._collide(before, this.dist);
+      // the metal grinds faster as he speeds up, and each of the pipe's joints clacks under him
+      const loop = this.s.sfx?.loops?.chute?.src;
+      if (loop) loop.playbackRate.value = 0.75 + 0.4 * (speed / SPEED[1]);
+      if (Math.floor(this.dist / 6) > Math.floor(before / 6)) {
+        this.s.sfx?.play('chute-joint-' + (1 + (this._joint++ % 2)), { ui: true, vol: 0.35, rand: 0.08 });
+      }
       this._prompt(speed);
       if (this.dist >= LENGTH - 4) return this._finish();
     }
@@ -463,7 +454,7 @@ export class Chute {
     this.shake = 0.35;
     this.slow = 1;
     this.spin += (Math.random() - 0.5) * 3;
-    this.s.sfx?.play(o.kind === 'spray' ? 'bubble-2' : 'clang', { ui: true, vol: 0.6, rate: 0.9, rand: 0.1 });
+    this.s.sfx?.play(o.kind === 'spray' ? 'air-hiss' : 'clang', { ui: true, vol: 0.6, rate: 0.9, rand: 0.1 });
   }
 
   // what to press, as each one comes up (the shutters always; the first couple of the rest)
@@ -524,7 +515,7 @@ export class Chute {
     cam.lookAt(fwd.add(eye));
   }
 
-  // Out of the bottom: a burst of white water, and he is falling into the pump room
+  // Out of the bottom: a white flash as he drops into the pump room's water
   _finish() {
     this.active = false;
     const ui = this.game.ui;

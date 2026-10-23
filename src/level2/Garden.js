@@ -252,10 +252,6 @@ export class Garden {
     this.idleTime = 0;
     this.audio.crackle();
     for (const d of frozen) for (let k = 0; k < 6; k++) this.fx.mist(d.position, 0.2, 40);
-    if (!this._said.firstFreeze) {
-      this._said.firstFreeze = true;
-      this._queue('firstFreeze');
-    }
     return true;
   }
 
@@ -323,7 +319,6 @@ export class Garden {
         if (this.wave < WAVES.length - 1) {
           this.state = 'rest';
           this.restTimer = REST_SECONDS;
-          this._queue('gardenRest');
         } else {
           this.state = 'done';
           this._pending.length = 0;

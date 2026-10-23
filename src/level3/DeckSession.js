@@ -398,10 +398,10 @@ export class DeckSession {
     const playing = g.state === 'PLAYING';
     this.time += dt;
     deckUniforms.uTime.value = this.time;
-    // on the chute: it has the camera, and he is not on his feet yet
+    // on the chute: it has the camera, and he is not on his feet yet (and the deck's drips and
+    // creaks wait till he is down in it: only the chute's own metal sounds)
     if (this.chute?.active) {
       this.chute.update(dt, playing);
-      this.sfx?.update(dt);
       this.hud.setVisible(playing);
       this.hud.update(this.player);
       g.reticle.classList.remove('visible');

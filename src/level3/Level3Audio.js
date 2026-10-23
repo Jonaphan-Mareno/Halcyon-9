@@ -38,7 +38,8 @@ const FILES = [
   'hit-flesh', 'punch', 'rock-hit', 'harpoon', 'kraken-roar', 'kraken-scream-1', 'kraken-scream-2', 'kraken-growl-1',
   'kraken-growl-2', 'kraken-growl-3', 'kraken-roar-short', 'kraken-chomp', 'kraken-hiss',
   'shing-1', 'shing-2', 'ratchet-1', 'ratchet-2', 'slide', 'clang', 'rock-smash', 'rock-smash-2', 'ink',
-  'snarl-1', 'snarl-2', 'snarl-3', 'snarl-4', 'roar-b', 'roar-c', 'heart', 'dash'
+  'snarl-1', 'snarl-2', 'snarl-3', 'snarl-4', 'roar-b', 'roar-c', 'heart', 'dash',
+  'chute-slide', 'chute-joint-1', 'chute-joint-2'
 ];
 
 // What each moment sounds like: layers of [file, options]. Options: vol, rate (pitch), delay (s),

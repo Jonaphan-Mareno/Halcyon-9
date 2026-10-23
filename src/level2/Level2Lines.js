@@ -54,10 +54,8 @@ export const LINES = {
 
   // 2.3 The garden
   'l2-garden-1': aria('guarded', "Pick up the pipe, Voss. The one on the wall. Aim it, squeeze, and get them wet. I'll lower the temperature so they freeze."),
-  'l2-garden-2': aria('guarded', "Only when I'm asked nicely. And only when there's something nearby worth freezing."),
   'l2-bot-hit-1': aria('watching', "Ooof, that looked like it hurt. The equipment really isn't itself lately."),
   'l2-bot-hit-2': aria('sly', 'Careful. It still remembers how to grip. Just not what for.'),
-  'l2-garden-rest': aria('bubbly', "That's two. There are... a few more. Garden maintenance has a lot of staff."),
   'l2-garden-idle': aria('sly', "The pipe's right there on the wall, Voss. I know you can see it. I'm the one with cameras, not you, and even I can see it."),
   'l2-garden-win': aria('relieved', "There. See? Nothing you can't handle."),
 
@@ -212,10 +210,8 @@ export const TALKS = {
   stairs: ['l2-stairs'],
   tease: ['v-tease', 'l2-tease'],
   gardenStart: ['l2-garden-1'],
-  firstFreeze: ['l2-garden-2'],
   hitDirect: ['l2-bot-hit-1'],
   hitGraze: ['l2-bot-hit-2'],
-  gardenRest: ['l2-garden-rest'],
   gardenIdle: ['l2-garden-idle'],
   gardenWin: ['l2-garden-win'],
   hatchLocked: ['l2-hatch-1', 'v-hatch-how', 'l2-hatch-2'],

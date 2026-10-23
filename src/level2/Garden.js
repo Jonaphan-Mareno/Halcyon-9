@@ -14,7 +14,7 @@ import { withHubLighting } from '../graphics/HubMaterials.js';
 // wet drone freezes, falls and shatters, leaving glowing remains on the floor (the organism got
 // into them). When the fight ends he lets go and the nozzle drops to the floor with its hose.
 //
-// Two waves: two drones to learn it ("That's two. There are... a few more."), then six, never
+// Two waves: two drones to learn it, then the rest, never
 // more than four in the air. Until he has the pipe they dive only now and then. Only one drone
 // attacks at a time: a lock-on (its eye turns red), then a dive. When the last one breaks, the
 // level is told (onCleared).

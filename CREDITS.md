@@ -90,14 +90,14 @@ CC0 needs no credit, but the authors are named here (some ask for it).
 | Pack | Author | Used for | Link |
 |---|---|---|---|
 | RPG Audio | Kenney (kenney.nl) | creaks, doors, cloth (the suit), latches, clicks | https://kenney.nl/assets/rpg-audio |
-| Sci-fi Sounds | Kenney | hatches, the prep room's machine hum, the thrusters, the suit's seal, the slam, console beeps, the chute's low rumble | https://kenney.nl/assets/sci-fi-sounds |
-| Impact Sounds | Kenney | pipe knocks, hits, the spear striking flesh and rock, the chute's joints clacking past | https://kenney.nl/assets/impact-sounds |
+| Sci-fi Sounds | Kenney | hatches, the prep room's machine hum, the thrusters, the suit's seal, the slam, console beeps, the chute's low rumble, the weight under the metal bangs | https://kenney.nl/assets/sci-fi-sounds |
+| Impact Sounds | Kenney | pipe knocks, hits, the spear striking flesh and rock, the chute's joints clacking past, the heavy metal bangs (the chute, the hatch) | https://kenney.nl/assets/impact-sounds |
 | Interface Sounds | Kenney | the pickup chime, confirm/error beeps, the low-air tick | https://kenney.nl/assets/interface-sounds |
 | Tinysized SFX | Vehicle (Jan Schupke, vehiclemusic.eu) | floor creak, metal groans, water drops, the lock filling, air hiss, the harpoon, whooshes, the chute's metal grinding (knife and fork scrapes, slowed down) | https://opengameart.org/content/fantasy-sound-effects-tinysized-sfx |
 | Loopable Dungeon Ambience | JaggedStone | the deck's rumble and drips (and, slowed, the deep sea's) | https://opengameart.org/content/loopable-dungeon-ambience |
 | Bubble sound effects | Brian MacIntosh (BMacZero) | bubbles: his breath, the lock, the sea | https://opengameart.org/content/bubble-sound-effects |
 | CC0 Deep Monster Roar | trazzz123 | the kraken's roar | https://opengameart.org/content/cc0-deep-monster-roar |
-| 80 CC0 creature SFX | rubberduck | the kraken's screams, growls, hiss and snapping jaws (pitched down) | https://opengameart.org/content/80-cc0-creature-sfx |
+| 80 CC0 creature SFX | rubberduck | the kraken's screams, growls, hiss and snapping jaws (pitched down), and its shrieks and siren scream (the screams layered high and low, stretched and roughened) | https://opengameart.org/content/80-cc0-creature-sfx |
 | Sinister Boss Appears (music) | cynicmusic (cynicmusic.com, pixelsphere.org) | the kraken fight's base track (`level3-kraken.ogg`) | https://opengameart.org/content/sinister-boss-appears |
 | Dramatic Boss Encounter (music) | cynicmusic | the fight's rising drum layer (`level3-kraken-intense.ogg`) | https://opengameart.org/content/dramatic-boss-encounter |
 | Aquaria (music) | cynicmusic | the quiet music out in the sea (`level3-sea.ogg`) | https://opengameart.org/content/aquaria |

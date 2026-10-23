@@ -8,6 +8,8 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { Physics } from '../core/Physics.js';
+import { precompile } from '../core/precompile.js';
+import { mergeStatic } from '../core/mergeStatic.js';
 import { PlayerController } from '../player/PlayerController.js';
 import { createHubTextures, applyHubMaterials, surfaceMaterial, hubLighting, withHubLighting, bakeShadeMap, HUB_POOLS } from '../graphics/HubMaterials.js';
 import { surfaceFor, SURFACE } from '../levels/level1Look.js';
@@ -50,6 +52,8 @@ import '../ui/level2.css';
 // The 3D flashback (Flashback3D) plays when it is ready and the machine keeps up; the 2D one otherwise
 const FLASHBACK_3D = true;
 const SOLID = ['COL_', 'DOOR_'];
+// what the code finds by name, moves or hides: never joined with the still meshes round it
+const KEEP_SEPARATE = /^(DOOR_|LABDOOR_|ELEVATOR_|ARIA_|PT_|SPAWN_|ORG|FuseBox|COL_|Atrium_Hatch|Atrium_LiftCab|Cabin_|Door_)/;
 
 // The lift is level 1's (lift.glb, see levels/liftCabin.js), its origin the middle of the door
 // sill at the front of the frame. Set there, the frame's front corners sit on the curved inside
@@ -253,10 +257,16 @@ export class HabitatSession {
     Physics.create().then(async (physics) => {
       this.physics = physics;
       await this._load();
+      // the still meshes that share a material are drawn as one (core/mergeStatic.js)
+      for (const model of [this.atrium, this.lab]) if (model) mergeStatic(model, KEEP_SEPARATE);
+      // behind the title: only the lift he arrives in; the rest of the level is readied while ARIA
+      // talks to him in it, its doors shut (_readyWorld)
+      const held = this._holdWorld();
       await this._precompile();
       this.ready = true;
       this.game.applySettings?.();
       this.loadingEl.classList.remove('visible');
+      this._readyWorld(held);
       game.ui.showToast('WASD to move, Space to jump, E to use things, V to switch camera.', 7000);
     }).catch((e) => console.error('Level 2 atrium failed to load.', e));
   }
@@ -703,6 +713,7 @@ export class HabitatSession {
     fill(-halfWidth, frame.min.x + 0.01, 0, top);
     fill(frame.min.x, frame.max.x, frame.max.y - 0.01, top);
     scene.add(surround);
+    this._liftParts = [surround];
 
     // solid: the cabin, its frame and the surround (the atrium's old cab colliders are left
     // behind, outside these walls)
@@ -719,6 +730,7 @@ export class HabitatSession {
     const parts = makeLiftScreen(lift, material(SURFACE.softBlack, true));
     if (parts) {
       scene.add(parts.bezel);
+      this._liftParts?.push(parts.bezel);
       this.liftScreen = parts.screen;
     }
     this.liftStripMat = lift.getObjectByName('Cabin_LightStrip')?.material || null;
@@ -825,6 +837,7 @@ export class HabitatSession {
     }
     if (this.liftScreen) screens.add(this.liftScreen);
     this.game.scene.add(screens);
+    this._ariaScreens = screens;
     this.aria = new AriaManager(this.game.scene);
     this.aria.collectMonitors(screens);
     for (const m of this.aria.monitors) m.material = this.aria.ariaMaterial;
@@ -868,13 +881,63 @@ export class HabitatSession {
     });
   }
 
-  async _precompile() {
-    const webgl = this.game.renderer.instance;
-    try {
-      await webgl.compileAsync(this.game.scene, this.game.camera.instance);
-    } catch (e) {
-      webgl.compile(this.game.scene, this.game.camera.instance);
+  // In the lift, doors shut, he sees only the lift: everything else (the hall, the garden, the
+  // rooms upstairs) is taken out of the scene for now, so the title only waits for the lift's
+  // shaders. (The lights stay: they change every shader. So does anything with a light in it.)
+  _holdWorld() {
+    const scene = this.game.scene;
+    const keep = new Set([this.lift, this.controls.body, this.controls.character?.viewModel, this._ariaScreens, ...(this._liftParts || [])]);
+    const held = [];
+    for (const c of [...scene.children]) {
+      if (keep.has(c) || c.isLight || c.isCamera) continue;
+      let lit = false;
+      c.traverse((o) => { if (o.isLight) lit = true; });
+      if (lit) continue;
+      scene.remove(c);
+      held.push(c);
     }
+    return held;
+  }
+
+  // ...and readied while ARIA talks: its shaders compiled (off the main thread), its textures sent
+  // to the graphics card a few a frame (update(): _warmTextures), then it is put back, behind the
+  // shut doors, and its shadows drawn. The doors open only once this is done.
+  async _readyWorld(held) {
+    if (held.length && !this.disposed) {
+      const g = new THREE.Group();
+      for (const o of held) g.add(o);
+      const webgl = this.game.renderer.instance;
+      await precompile(webgl, this.game.scene, this.game.camera.instance, this.composer.renderTarget1, { root: g });
+      const textures = new Set();
+      g.traverse((o) => {
+        for (const m of [].concat(o.material || [])) {
+          for (const v of Object.values(m)) if (v?.isTexture) textures.add(v);
+          for (const u of Object.values(m.uniforms || {})) if (u?.value?.isTexture) textures.add(u.value);
+        }
+      });
+      await new Promise((resolve) => {
+        this._texQueue = [...textures];
+        this._texDone = resolve;
+      });
+      if (this.disposed) return;
+      for (const o of [...g.children]) this.game.scene.add(o);
+      webgl.shadowMap.needsUpdate = true;
+    }
+    this._worldReady = true;
+  }
+
+  _warmTextures() {
+    if (!this._texQueue) return;
+    const webgl = this.game.renderer.instance;
+    for (let i = 0; i < 2 && this._texQueue.length; i++) webgl.initTexture(this._texQueue.shift());
+    if (!this._texQueue.length) {
+      this._texQueue = null;
+      this._texDone?.();
+    }
+  }
+
+  async _precompile() {
+    await precompile(this.game.renderer.instance, this.game.scene, this.game.camera.instance, this.composer.renderTarget1);
     this.game.renderer.instance.shadowMap.needsUpdate = true;   // draw the shadows once (nothing casting them moves)
     this.composer.render();
   }
@@ -888,6 +951,7 @@ export class HabitatSession {
     const g = this.game;
     const dt = Math.min(delta, 0.05);
     const playing = g.state === 'PLAYING';
+    this._warmTextures();
     // dropping into the shaft: the view sinks into the hole while the screen fades
     if (this._dropping) g.camera.instance.position.y -= dt * 3.5;
     // stepping into the open hatch drops him in too (once the lid is all the way open)
@@ -903,7 +967,7 @@ export class HabitatSession {
       this._arrivalStarted = true;
       this._arrive();
     }
-    if (this._arrivalDone && !this.liftShut && this.doorOpen < 1) {
+    if (this._arrivalDone && this._worldReady && !this.liftShut && this.doorOpen < 1) {
       this.doorOpen = Math.min(1, this.doorOpen + dt / 1.6);
       this._setLiftDoors(this.doorOpen);
       // open wide enough to walk through: the invisible wall goes
@@ -1465,10 +1529,11 @@ export class HabitatSession {
     this.qualityStep = mode === 'medium' ? 1 : mode === 'low' ? 2 : 0;
     this.qualityTime = 0;
     this.qualityFrames = 0;
+    this._qualityDone = false;
   }
 
-  // A small frame counter (top right; F3 hides it), and automatic quality: if the first few
-  // seconds of play run slowly, the glow is switched off, then the resolution lowered a little.
+  // A small frame counter (top right; F3 hides it), and automatic quality: while play runs slowly,
+  // the glow is switched off, then the resolution lowered to 80%, then (still under ~28 fps) 67%.
   _perf(delta, playing) {
     if (!this.fpsEl) {
       this.fpsEl = document.createElement('div');
@@ -1492,13 +1557,13 @@ export class HabitatSession {
     if (this.fpsTime >= 0.5) {
       const fps = this.fpsFrames / this.fpsTime;
       this.fpsEl.textContent = Math.round(fps) + ' fps  ' + (1000 / fps).toFixed(1) + ' ms' +
-        (this.qualityStep ? '  (quality ' + ['', 'medium', 'low'][this.qualityStep] + ')' : '');
+        (this.qualityStep ? '  (quality ' + ['', 'medium', 'low', 'lowest'][this.qualityStep] + ')' : '');
       this.fpsFrames = 0;
       this.fpsTime = 0;
     }
-    // automatic quality: judge each 4 seconds of play, at most twice
+    // automatic quality: judge each 4 seconds of play, a step at a time until it is smooth enough
     // (not while the tab is hidden, and ignoring one-off stalls: the browser slows hidden tabs down)
-    if (!playing || this.qualityStep >= 2 || document.hidden || delta > 0.2) return;
+    if (!playing || this._qualityDone || document.hidden || delta > 0.2) return;
     if (this._qualityMode && this._qualityMode !== 'auto') return;      // the player chose a quality
     this.qualityTime += delta;
     this.qualityFrames++;
@@ -1506,19 +1571,28 @@ export class HabitatSession {
     const avg = this.qualityTime / this.qualityFrames;
     this.qualityTime = 0;
     this.qualityFrames = 0;
-    if (avg <= 1 / 40) { this.qualityStep = 2; return; }      // smooth enough: stop checking
+    if (avg <= 1 / 40) { this._qualityDone = true; return; }      // smooth enough: stop checking
     const webgl = this.game.renderer.instance;
-    if (this.bloom.enabled) {
-      this.bloom.enabled = false;
-      this.qualityStep = 1;
-    } else {
-      webgl.setPixelRatio(Math.min(webgl.getPixelRatio(), 0.8));
+    const scale = (pr) => {
+      webgl.setPixelRatio(Math.min(webgl.getPixelRatio(), pr));
       // (the composer keeps its own copy of the pixel ratio: without this the step did nothing)
       this.composer.setPixelRatio(webgl.getPixelRatio());
       this.composer.setSize(window.innerWidth, window.innerHeight);
-      const pr = webgl.getPixelRatio();
-      this.fxaa.material.uniforms.resolution.value.set(1 / (window.innerWidth * pr), 1 / (window.innerHeight * pr));
+      const p = webgl.getPixelRatio();
+      this.fxaa.material.uniforms.resolution.value.set(1 / (window.innerWidth * p), 1 / (window.innerHeight * p));
+    };
+    if (this.bloom.enabled) {
+      this.bloom.enabled = false;
+      this.qualityStep = 1;
+    } else if (webgl.getPixelRatio() > 0.8) {
+      scale(0.8);
       this.qualityStep = 2;
+    } else if (avg > 1 / 28 && webgl.getPixelRatio() > 0.67) {
+      scale(0.67);
+      this.qualityStep = 3;
+      this._qualityDone = true;
+    } else {
+      this._qualityDone = true;
     }
   }
 }

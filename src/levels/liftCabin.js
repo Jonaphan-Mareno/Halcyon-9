@@ -3,24 +3,27 @@ import * as THREE from 'three';
 // The lift Voss rides from the control room down to the habitat deck. Level 1 has it inside
 // controlroom.glb; level 2 loads the same parts from lift.glb (cut out of controlroom.glb by
 // scripts/extract-lift.mjs), so both ends of the ride are the same cabin. ARIA rides along on a
-// screen on its back wall, in both levels.
+// screen on its left wall (the call panel is on the right), in both levels: beside him as he
+// faces the doors, rather than behind him.
 
 export const LIFT_SCREEN_SIZE = [1.3, 0.73];
 const BEZEL = 0.07;          // the frame around the screen, each side
 const BEZEL_DEPTH = 0.05;
-const SCREEN_HEIGHT = 2.0;   // the screen's middle, above the cabin floor (a little over eye level)
+const SCREEN_HEIGHT = 1.95;  // the screen's middle, above the cabin floor (a little over eye level)
+const TOWARD_DOORS = 0.25;   // how far along the wall from its middle, toward the doors (m)
 
-// ARIA's screen on the cabin's back wall, facing the doors: a soft black bezel with the screen
-// just in front of it. Both come back in world space and unparented; the level adds them where
-// it keeps its things and gives the screen to its AriaManager (which finds monitors by name, so
-// the screen is called Lift_Monitor).
+// ARIA's screen on the cabin's left wall, facing across the cabin: a soft black bezel with the
+// screen just in front of it. Both come back in world space and unparented; the level adds them
+// where it keeps its things and gives the screen to its AriaManager (which finds monitors by name,
+// so the screen is called Lift_Monitor).
 export function makeLiftScreen(cabinRoot, bezelMaterial) {
-  const wall = cabinRoot.getObjectByName('Cabin_Wall_Back');
+  const wall = cabinRoot.getObjectByName('Cabin_Wall_Left');
   const cabin = cabinRoot.getObjectByName('ElevatorCabin');
   if (!wall || !cabin) return null;
   cabinRoot.updateMatrixWorld(true);
   const wallBox = new THREE.Box3().setFromObject(wall);
   const cabinCentre = new THREE.Box3().setFromObject(cabin).getCenter(new THREE.Vector3());
+  const doors = cabinRoot.getObjectByName('Cabin_Threshold_Hazard');
 
   // the wall is axis aligned: its thinnest side is the way it faces, into the cabin
   const size = wallBox.getSize(new THREE.Vector3());
@@ -33,6 +36,12 @@ export function makeLiftScreen(cabinRoot, bezelMaterial) {
   const [w, h] = LIFT_SCREEN_SIZE;
   const spot = new THREE.Vector3(centre.x, wallBox.min.y + SCREEN_HEIGHT, centre.z);
   spot[axis] = face;
+  // a little toward the doors, where he looks out
+  const along = axis === 'x' ? 'z' : 'x';
+  if (doors) {
+    const d = new THREE.Box3().setFromObject(doors).getCenter(new THREE.Vector3());
+    spot[along] += Math.sign(d[along] - centre[along]) * TOWARD_DOORS;
+  }
   const facing = spot.clone().add(normal);
 
   const bezel = new THREE.Mesh(new THREE.BoxGeometry(w + BEZEL * 2, h + BEZEL * 2, BEZEL_DEPTH), bezelMaterial);

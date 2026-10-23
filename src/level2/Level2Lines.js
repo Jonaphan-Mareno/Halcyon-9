@@ -28,7 +28,7 @@ const thinks = (text) => ({ who: 'voss', text, thought: true });
 
 export const LINES = {
   // 2.1 The lift
-  'l2-lift-1': aria('bubbly', "The elevator is unable to go to the third floor due to the water leakage, we'll have to take the emergency hatch on the second floor to get there."),
+  'l2-lift-1': aria('bubbly', "The elevator can't make it to the third floor due to the water leakage, we'll have to take the emergency hatch on the second floor to get there."),
   'l2-lift-2': aria('bubbly', "This is where everyone actually lived. We weren't just a station. We were trying to make a home down here. You'll see."),
   'v-trying': voss('...Trying?', 'l2lift-1'),
   'l2-lift-3': aria('guarded', "Oh, you know how it is. Deep-sea living is a work in progress. Go on, have a look around."),

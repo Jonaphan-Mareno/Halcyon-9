@@ -32,7 +32,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 //   debris   a fallen grating lying on the floor: steer round it
 //   gate     a round shutter hanging half shut in the middle of the pipe: duck under it
 const COURSE = [
-  ['cable', 45, 0.35], ['cable', 70, -0.4], ['gate', 95],
+  ['cable', 60, 0.35], ['cable', 78, -0.4], ['gate', 95],     // (the first after ARIA's warning)
   ['spray', 120, 1], ['debris', 140, -0.6], ['cable', 141, 0.55], ['gate', 165],
   ['spray', 185, -1], ['cable', 205, 0], ['gate', 222], ['debris', 230, 0.45],
   ['cable', 248, -0.5], ['cable', 256, 0.45], ['gate', 274]
@@ -379,6 +379,7 @@ export class Chute {
     document.getElementById('ui-layer').appendChild(this.help);
     requestAnimationFrame(() => this.help.classList.add('visible'));
     this.s.sfx?.startLoop('chute', 'chute-slide', { ui: true, vol: 0.55, rate: 0.8 });
+    this.s.say?.('chute');           // ARIA: what is in the way, and what to do about it
     this._joint = 0;
     return new Promise((resolve) => { this._done = resolve; });
   }
@@ -454,7 +455,9 @@ export class Chute {
     this.shake = 0.35;
     this.slow = 1;
     this.spin += (Math.random() - 0.5) * 3;
-    this.s.sfx?.play(o.kind === 'spray' ? 'air-hiss' : 'clang', { ui: true, vol: 0.6, rate: 0.9, rand: 0.1 });
+    // a heavy metal bang (one of three), or the steam's hiss
+    if (o.kind === 'spray') this.s.sfx?.play('air-hiss', { ui: true, vol: 0.7, rate: 0.9, rand: 0.1 });
+    else this.s.sfx?.play('metal-bang-' + (1 + Math.floor(Math.random() * 3)), { ui: true, vol: 0.9, rand: 0.06 });
   }
 
   // what to press, as each one comes up (the shutters always; the first couple of the rest)

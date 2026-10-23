@@ -84,7 +84,15 @@ export class Trench {
     const hit = this.fight.spearTest(p0, p1);
     if (hit) {
       this.sfx?.cue(hit.flesh ? 'spearFlesh' : 'spearRock', hit.point);
-      if (hit.flesh) this._blood(hit.point, hit.big ? 2.2 : 1);
+      if (hit.flesh) {
+        this._blood(hit.point, hit.big ? 2.2 : 1);
+        // it screams at every one (not on top of itself, nor over the siren of a wound)
+        const t = this.s.time;
+        if (t >= (this._shriekAt || 0)) {
+          this._shriekAt = t + 0.5;
+          this.sfx?.cue('shriek' + (1 + Math.floor(Math.random() * 3)), hit.point);
+        }
+      }
       return hit;
     }
     const d = this._v.subVectors(p1, p0);
@@ -372,6 +380,7 @@ export class Trench {
   }
 
   onLungeRush() {
+    this._shriekAt = this.s.time + 1.5;
     this.sfx?.cue('lungeRoar', this.fight.kraken.mouthWorld());
   }
 
@@ -418,6 +427,7 @@ export class Trench {
 
   onWounded(n, of) {
     this.shake = 1.2;
+    this._shriekAt = this.s.time + 1.8;      // (its siren scream: no screeches over it)
     this._drawBoss(true);
     this.sfx?.cue('wounded', this.fight.kraken.mouthWorld());
     this.game.ui.showToast(`A hit! (${n} of ${of})`, 2500);

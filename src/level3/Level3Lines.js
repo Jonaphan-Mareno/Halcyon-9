@@ -9,6 +9,8 @@ const aria = (cue, text, extra = {}) => ({ who: 'aria', cue, text, ...extra });
 const voss = (text, clip) => ({ who: 'voss', text, clip });
 
 export const LINES = {
+  // 3.1 The chute, on the way down from the garden's hatch (DRAFT: new, not in the script yet)
+  'l3-chute': aria('hesitant', "Careful, Voss! This chute's full of loose cables and broken equipment. Steer round them, and duck under the shutters!"),
   // 3.2 The flooded hall: on landing
   'l3hall-1': aria('bubbly', "Voss, the water's rising faster than I said. Straight ahead, then left. I'll open the doors."),
   // the window into the engine room, where they were locked in (DRAFT: the script only says he
@@ -54,6 +56,7 @@ export const LINES = {
 };
 
 export const TALKS = {
+  chute: ['l3-chute'],
   landing: ['l3hall-1'],
   window: ['v-window-1', 'v-window-2', 'l3-window-1'],
   sealedGate: ['v-sealed-gate'],

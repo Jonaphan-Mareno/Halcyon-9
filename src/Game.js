@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Renderer } from './core/Renderer.js';
 import { PerfMonitor } from './core/PerfMonitor.js';
 import { Physics } from './core/Physics.js';
+import { precompile } from './core/precompile.js';
 import { Camera } from './core/Camera.js';
 import { Controls } from './core/Controls.js';
 import { Level1 } from './levels/Level1.js';
@@ -613,8 +614,17 @@ export class Game {
     this._lockHint.id = 'lock-hint';
     this._lockHint.textContent = 'Click to look around';
     document.getElementById('ui-layer').appendChild(this._lockHint);
-    // ready once the first room is built and the physics engine (for Level 2) has loaded
-    return Promise.all([this.currentLevel.ready, this._physicsLoaded]);
+    // ready once the first room is built, its shaders compiled (behind the black screen, so they do
+    // not stall his first look round) and the physics engine (for Level 2) has loaded
+    const level = this.currentLevel;
+    return Promise.all([level.ready.then(() => this._precompileLevel1()), this._physicsLoaded]);
+  }
+
+  _precompileLevel1() {
+    const composer = this.renderer.composer;
+    if (!composer) return null;
+    return precompile(this.renderer.instance, this.scene, this.camera.instance, composer.renderTarget1)
+      .catch((e) => console.warn('Level 1: shaders not precompiled.', e));
   }
 
   // The eyes are open: hand him over

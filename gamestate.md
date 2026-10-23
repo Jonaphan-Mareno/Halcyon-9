@@ -1,7 +1,7 @@
 # Halcyon-9 — Game State
 
-Snapshot of the repository and game on branch **`level1-restyle`**.
-Generated 2026-10-14.
+Snapshot of the repository and game on branch **`main`**.
+Updated 2026-10-23 (the first version, 2026-10-14, described `level1-restyle`).
 
 ---
 
@@ -9,154 +9,188 @@ Generated 2026-10-14.
 
 | Item | Value |
 |---|---|
-| Branch | `level1-restyle` (tracks `origin/level1-restyle`, in sync) |
-| Commits ahead of `main` | 12 |
-| Working tree | Clean except `package-lock.json` (modified, unstaged — npm churn) |
-| HEAD | `acd5418` — "Level 2 arrives in level 1's lift, with ARIA on a screen in both" |
-| Source size | ~16,181 lines of JS across `src/` |
+| Branch | `main` (in sync with `origin/main`) |
+| HEAD | `56f6905` — "Level 2: drop ARIA's 'asked nicely' and 'that's two' lines (and their audio). The chute is bare steel now…" |
+| Source size | ~33,400 lines of JS across `src/` (was ~16,200 on 14 Oct) |
+| Merged since the last snapshot | `level1-restyle`, `level2-gameplay`, `level-3-drowned-deck`, `bedroom-branch`, `cut-scenes`, `drones` |
+| Not merged (on purpose) | `music` (superseded by `src/audio/Soundtrack.js`), `control-room` and `interactables` (September; `RingPuzzle` is already in main) |
 
 ### Engine / stack
 - Vanilla JavaScript (ES Modules), no framework.
-- **Three.js** `^0.185.1` — rendering, PBR materials, custom GLSL shaders, post-processing.
-- **@dimforge/rapier3d-compat** `^0.21.0` — physics (used by Level 2 sessions).
+- **Three.js** `^0.185.1` — rendering, PBR and toon materials, custom GLSL shaders, post-processing
+  (bloom, colour grade, FXAA).
+- **@dimforge/rapier3d-compat** `^0.21.0` — physics (Levels 2 and 3: the player is a kinematic capsule).
 - **Vite** `^8.2.2` — dev server + build (`base: './'` for subdirectory/LAMP deploy).
 - Asset tooling: `@gltf-transform/*`, `draco3dgltf`, `meshoptimizer` (`npm run optimize-models`).
-- Blender 5.2.2 used offline to author/export `.glb` models (`Blender/scripts/*.py`).
+- Blender 5.2 used offline to author/export the `.glb` models (`Blender/scripts/*.py`).
 
 ### Commands
 ```bash
 npm run dev              # Vite dev server (http://localhost:5173)
 npm run build            # production build -> /dist
+npm run preview          # serve the build (http://localhost:4173)
 npm run optimize-models  # thin + Draco-compress the .glb assets
 npm run extract-lift     # extract lift.glb from the control room model
 ```
-URL flags for testing: `?level=2` (habitat atrium), `?level=hose` (coolant hose test room),
-`?level=reactor` (old cargo atrium).
+
+### Test links (URL flags)
+| Flag | What it does |
+|---|---|
+| (none) | The opening cinematic, then Level 1 |
+| `?nointro` | Level 1 with the old WAKE UP start screen, no cinematic |
+| `?level=2` | Straight into Level 2 (the habitat atrium) |
+| `?level=3` | Straight into Level 3 (starts with the chute) |
+| `?level=3&nochute` | Level 3 without the chute (lands in the pump room) |
+| `?debug` (with `?level=2`) | `]` sets the next story flag, `[` plays the next dialogue exchange |
+| `?level=hose`, `?level=reactor` | Old test rooms (coolant hose; old cargo atrium) |
+
+### Controls
+WASD move, mouse look, Space jump, Shift sprint, V first/third person, E use, I inventory,
+Esc or P pause menu, M mute the music, Enter skip a line.
+Level 1: F torch. Level 2 fight: E take the water pipe, hold left click spray, Q ARIA's freeze.
+Level 3 chute: A / D steer, Space duck. Level 3 sea: W/S swim where you look, Shift tap dash,
+left click fire the spear rifle, R reload.
 
 ---
 
 ## Game overview
 
-Deep-sea 3D survival/puzzle game. You play **Voss**, a reconstructed consciousness trapped in a
-flooding research station, guided by the AI **ARIA** (motivations unclear). First-person camera,
-WASD + mouse-look, physics-based interaction, and a health/lives ("restore from backup") system.
+Deep-sea 3D survival/mystery game. You play **Voss**, a reconstructed consciousness in a sinking
+research station, guided (and lied to) by the AI **ARIA**. The player is in Cycle 9: ARIA has wiped
+and restored Voss eight times before, and the clues in Level 2 show it. Each level has objective
+text, a marker on the exact thing to use, and feedback for every step.
 
 ---
 
 ## Level status
 
 ### Level 1 — "Reboot" (control room) — PLAYABLE, complete flow
-The most developed level. `src/levels/Level1.js` (~2,670 lines) plus `src/Game.js` (~1,327 lines)
-drive a full objective ladder:
+`src/levels/Level1.js` + `src/Game.js`. Now opens with a cinematic (`src/intro/intro-cinematic.js`:
+the intro video, then Voss wakes through an eyelid shader). The objective ladder is unchanged:
+cell → wall panel → talk to ARIA → torch → generator circuit (`CircuitPuzzle`) → relay rings
+(`RingPuzzle`) → lift keypad → ride the lift down to Level 2.
 
-1. **Starting cell** — concrete cell, real brick, see-through; door handle you must reach out to
-   turn; a brick you can pick up, throw (click) or drop (E).
-2. **Fix the wall panel** to bring the monitor online (circuit panel).
-3. **Talk to ARIA** at her glowing monitor (intro dialogue sequence).
-4. **Find the torch** on the floor (F toggles, I opens inventory, live 3D torch preview).
-5. **Repair the generator circuit** — the timed "Overload" `CircuitPuzzle` (rotate tiles to carry
-   power from battery to bulbs, avoid red fuses). Failure overloads, damages health, ARIA gives
-   hints; each stage repaired heals Voss.
-6. **Align the relay rings** — `RingPuzzle`: turn each ring until its marker lines up with the rail
-   (rings are linked).
-7. **Use the security keypad** beside the lift doors (6-digit code; TEMP code `123456`).
-8. **Ride the lift down** — console screen closes the doors (reverse-played animation) and departs
-   to Level 2.
+Since the last snapshot: the opening cinematic; Voss's recorded voice (`src/audio/VossVoice.js`);
+the lift keypad's code is `441009`, with a maintenance-tag hint after a wrong code (Sivunile).
 
-Systems in place: aim-assist interaction picking, reticle prompts, waypoints + edge arrows,
-per-stage objectives, ARIA idle quips, health/damage/death/revive, checkpoint restore,
-restart-without-reload, adaptive quality (`PerfMonitor` + `LEVEL1_QUALITY` steps), FXAA
-post-processing. Habitat "restyle" look: sci-fi monitor wall, glitching/smashed monitors,
-parallax occlusion mapped floors, real brick, farm soil.
+Known open item (still there): **the lift is not gated on finishing Level 1** —
+`Game.onKeypadSubmit` does not check `relaySolved`.
 
-Known open item (deliberate): **the lift is not gated on finishing Level 1** — a player can go
-straight to the keypad and descend without solving the relay. A one-line guard in
-`Game.onKeypadSubmit` would lock it behind `relaySolved`.
+### Level 2 — habitat atrium — PLAYABLE, complete flow
+`src/level2/HabitatSession.js` with `Level2Story.js` (story flags and objectives) and
+`Level2Lines.js` (every line, and which exchanges play when). The flow:
+1. **The lift** — ARIA welcomes Voss and briefs the drone fight; the doors open after.
+2. **The hall** — optional clues with floating diamonds over them (photo board, framed photo,
+   ration tray, the escape pod sign as a thought bubble).
+3. **The garden fight** (`Garden.js`, `Drone.js`) — take the water pipe off the wall, spray the
+   drones, press Q and ARIA freezes the wet ones. Two waves (2, then 10); from the second wave
+   half are **robots** (`src/entities/Robot.js`, Simphiwe). A controls panel shows throughout.
+4. **Power returns** — the lights come back, the stair bulkheads sink, the hatch keypad wakes.
+5. **The hatch is locked** — Kessler's code is needed, so Voss goes upstairs against ARIA's wishes.
+6. **Upstairs** (`Readables.js`, `RoomProps.js`) — the crew bunk (logs, corkboard, Voss's personal
+   logs as a montage; Kessler's card ends up in his inventory), the lab (terminal; Kessler's door
+   wants her card and the lab's authorisation), Kessler's room (final log, code card, a flashback
+   in 3D or 2D, ARIA snaps and the room turns red).
+7. **The hatch** (`Gates.js`) — a round pressure hatch with a keypad on its deck plate; the right
+   code spins its wheel and swings it open onto a lit shaft. Climb in → Level 3.
 
-### Level 2 — habitat atrium — ENVIRONMENT PREVIEW (no gameplay yet)
-`src/level2/HabitatSession.js` (~607 lines). You arrive in Level 1's lift, doors open, and you can
-walk the whole atrium. Includes the two hand-authored crew quarters (Voss + Kessler) with full
-collision, sliding quarter doors (proximity-triggered), toon material conversion, per-room warm
-panel lights, lab screens, holo screens, organism, and a deep-sea video window. Rapier physics via
-`PlayerController`. **No interactables / pickups / objectives yet** — those are designed after the
-environment is approved. See `SESSION.md` for the full atrium/bedroom authoring + export pipeline.
+Also: pause menu with options, inventory (card, hatch code), damaged/uneven atrium lighting,
+the lab's organism, bedrooms by Simphiwe, Voss logs and animations by Jonaphan.
+Placeholder: the FuseBox in Bedroom 2 only shows "FuseBox used."
 
-Other Level 2 sessions available via URL flag:
-- `src/level2/HoseTestSession.js` — coolant hose test room.
-- `src/levels/Level2Session.js` — old cargo atrium, kept to become Level 3's reactor room.
+### Level 3 — "The Drowned Deck" — PLAYABLE up to the relay station
+`src/level3/DeckSession.js` runs it; the parts:
+1. **The chute** (`Chute.js`) — a 25 s slide down a steel pipe: steer round sparking cables, steam
+   blasts and fallen gratings, duck under half-shut shutters. Hits cost health (never below 20%).
+2. **The flooded deck** (`l3-drowned.glb`, `Water.js`, `DrownedCrew.js`) — waist-deep water; the
+   engine room window shows the drowned crew; ARIA opens the sealed bulkhead (placeholder for a
+   puzzle).
+3. **The EVA prep room** (`PrepRoom.js`, `DiveSuit.js`) — hold E to suit up, take the spear rifle
+   and the uplink cable, flood the water lock, open the outer hatch.
+4. **The sea** (`SeaScene.js`, `Swim.js`, `SeaLife.js`, `Headlamp.js`) — murky deep water, a
+   headlamp beam, swimming with a thruster pack, the cable as a tether, oxygen as the clock, ARIA's
+   face in the visor (`VisorAria.js`).
+5. **The trench and the kraken** (`Trench.js`, `Kraken.js`, `KrakenFight.js`, `Harpoon.js`) —
+   the kraken's tentacles hold the relay station's door shut; follow them into its cave; the boss
+   fight (boss bar, 4 hits in its glowing mouth, punches, slams, thrown boulders, lunges, ink;
+   Shift-tap dash; automatic spear rifle with an 8-round magazine). Beaten, it lets go and the
+   relay's door opens.
+6. **Inside the relay — THE TEAM'S PART.** Hook: `RELAY` in `src/level3/Trench.js`
+   (`RELAY.enter(trench)` runs when Voss first comes in; `RELAY.guide(trench)` returns the
+   objective). Still to build: the puzzles, the uplink, the two endings.
 
-### Level 3 — "Containment" — STUB ONLY
-`src/levels/Level3.js` is a placeholder class (`name = 'Containment'`, empty `update`). The rising
-water shader / flooding endgame described in the rubric is not yet built here.
+Health or oxygen running out: ARIA restores Voss from backup at the last safe place.
 
 ---
 
-## Transition: Level 1 → Level 2
+## Transitions
 
-Fully wired (see `docs/session-2026-10-04-level1-ending.md`). `Game.onElevatorDepart` introduces a
-`DEPARTING` state (freeze controls, hide UI, toast "Descending to the habitat deck..."), then
-`_leaveForLevel2` disposes Level 1, removes its input listeners, prunes the UI layer (keeping the
-welcome screen, reticle and reused UIManager elements), drops Level 1's post-processing/perf
-monitor, flips `level2Mode`, and mounts `HabitatSession` **without** recreating the renderer,
-camera, UIManager or animation loop (`startLoop` is a non-cancellable recursive rAF).
+- **Level 1 → Level 2**: unchanged (`Game.onElevatorDepart` → `_leaveForLevel2`; Level 2 arrives
+  in Level 1's lift).
+- **Level 2 → Level 3**: `HabitatSession._climbDown` fades out, `Game.enterLevel3()` disposes
+  Level 2 (`HabitatSession.dispose`, `core/disposeScene.js`) and mounts `DeckSession`; its loading
+  title ("LEVEL 3 — The drowned deck"), then the chute.
+
+---
+
+## Audio
+
+- **Music**: your own files in `public/assets/audio/music/` (`src/audio/Soundtrack.js`; names in
+  that folder's `README.txt`). The kraken fight has its own CC0 tracks (`level3-kraken*.ogg`).
+- **ARIA's voice**: recordings in `public/assets/audio/aria/<line id>.mp3` (`AriaManager.speak`).
+- **Voss's voice**: `public/assets/audio/voss/<line id>.mp3` (`vossSays`).
+- Any line without a recording shows as a timed subtitle.
+- **Sound effects**: synthesized in Levels 1–2 (`AudioManager`, `FrostAudio`); CC0 recordings in
+  Level 3 and the Level 2 hatch (`src/level3/Level3Audio.js`, `public/assets/audio/sfx/l3/`).
+  All third-party assets are credited in `CREDITS.md`.
 
 ---
 
 ## Core systems (src/)
 
-- `core/` — `Renderer` (WebGL + post/FXAA + resolution scaling), `Camera` (first-person + flashlight),
-  `Controls` (raycast floor-follower, no physics, ground-snap step clamp), `Physics` (Rapier wrapper,
-  preloaded), `PerfMonitor` (adaptive quality steps), `loaders` (GLTF + Draco).
-- `entities/` — `Player` (toon material helpers), `PlayerStats` (health/lives/score), `ARIA` +
-  `AriaHead` + `AriaManager` (mood, face shader, monitor pinning, subtitles/voice), `Drone`,
-  `Machine`, `RingPuzzle`.
-- `graphics/` — `Lighting`, `Shaders` (GLSL: water, ARIA glitch, toon ramp), `HubMaterials`,
-  `HubDecals`, `DeepSeaWindow`, `VideoWindow`, `parallax`.
-- `ui/` — `UIManager`, `HUD`, `Inventory`, `ItemPreview`, `KeypadUI`.
-- `puzzles/` — `CircuitPuzzle` (~1,194 lines, the "Overload" generator minigame).
-- `audio/` — `AudioManager` (spatial/ambient, hum, ticks, zaps, ARIA voice clips).
-- `story/` — `IntroSequence` (opening Voss/ARIA conversation).
-
-Audio assets present: ARIA intro lines 1–4, idle, puzzle start/success, overload 1–2, relay success.
-Some referenced clips (hints, zaps, restore lines, idle quips) fall back to timed subtitles with a
-talking face until recorded.
+- `core/` — `Renderer`, `Camera`, `Controls` (Level 1), `Physics` (Rapier), `PerfMonitor`,
+  `Settings` (saved options), `PauseClock`, `disposeScene`, `loaders`, `precompile` (compiles a
+  level's shaders before they are seen, for the composer's render target), `mergeStatic` (joins
+  still meshes that share a material into one draw call).
+- `player/` — `PlayerController` (Rapier capsule, first/third person, swimming), `PlayerStats`.
+- `entities/` — `ARIA`, `AriaHead`, `AriaManager`, `Drone` (base) and `Robot`, `Kessler`,
+  `FaceRig`, `ArmIK`, `RingPuzzle`, …
+- `graphics/` — `Lighting`, `Shaders`, `HubMaterials` (atrium lighting), `MoodLight`, windows.
+- `ui/` — `UIManager`, `HUD`, `Inventory`, `KeypadUI`, `PauseMenu`, `FightHelp`, `waypoint`,
+  `level2.css`, `level3.css`.
+- `puzzles/` — `CircuitPuzzle`. `story/` — `IntroSequence`. `intro/` — the opening cinematic.
+- `audio/` — `AudioManager`, `Soundtrack`, `VossVoice`.
+- `level2/`, `level3/` — the sessions above.
 
 ---
 
-## Recent work on this branch (vs `main`)
-
-37 files changed, +6,195 / −738. Highlights:
-- Level 1 restyle: monitor wall (`MonitorWall.js`), damaged/glitching screens (`DamagedScreens.js`),
-  brick texture (`brickTexture.js`), habitat control-room look (`level1Look.js`), lift cabin
-  (`liftCabin.js`), parallax occlusion floors (`graphics/parallax.js`).
-- Big `Shaders.js` rework (+292/−…) and `HubMaterials.js` (+137).
-- CircuitPuzzle rewrite (+503/−…), easier cell-door handle, aim assist, tighter wiring hints.
-- Model optimisation: `controlroom.glb` 21.7 MB → 637 KB, `l2-atrium.glb` 9.7 MB → 3.0 MB,
-  `l2-lab.glb` 2.07 MB → 234 KB; new `lift.glb`; Draco compression.
-- Performance pass (`PerfMonitor.js`, Renderer FXAA + adaptive resolution) for the school server /
-  slower machines; atrium vegetables + farm soil slimmed down.
-- Level 2 arrives in Level 1's lift with ARIA on a screen in both.
-
----
-
-## Notable pitfalls / conventions (from session docs)
+## Notable pitfalls / conventions
 
 - **Relative paths only**; **lowercase-hyphenated filenames** (Linux servers are case-sensitive).
-- **`.dispose()`** unused geometries/materials/textures on level teardown to avoid leaks.
-- GLTFLoader strips `. : / [ ]` and spaces from node names but keeps material names intact — any
-  name-matching/alias list must be dot-free and verified through the real loader.
-- The export log can lie: verify `.glb` contents (materials/`COLOR_0`/`COL_` counts), not just the
-  "exported" line. Hard-refresh (Ctrl+Shift+R) after re-export — `.glb` is cached aggressively.
-- Toon materials ignore `scene.environment` and need real lights (hence per-room point lights).
+- **`.dispose()`** everything a level adds when it is torn down (Level 2 does this on the way to 3).
+- `Blender/l2-atrium.blend` is hand-edited: never rebuild it from script; export with
+  `Blender/scripts/export_l2_atrium.py` (see `SESSION.md`).
+- GLTFLoader strips `. : / [ ]` and spaces from node names; verify `.glb` contents after export,
+  and hard-refresh (Ctrl+Shift+R): `.glb` files are cached aggressively.
+- Rapier raycasts made right after colliders are added miss until `world.updateSceneQueries()`.
 - `startLoop()` is a recursive rAF with no cancel handle; `UIManager`'s constructor appends DOM —
   neither may be instantiated twice.
+- Must run on school PCs (Intel UHD 620): keep shaders cheap, no shadow maps in Level 3.
+- **After re-exporting a model, run `npm run optimize-models`** (Draco compression: `l2-atrium.glb`
+  goes from ~12 MB to ~3 MB). Already-compressed files are skipped.
+- Loading is staged: Level 2 compiles only the lift behind its title and readies the atrium while
+  ARIA talks in the lift (the doors wait for it); Level 3 readies the sea and the kraken while the
+  chute plays. Every light must exist before a level's first compile (a new light recompiles every
+  shader).
+- Meshes the code finds by name must match the `KEEP_SEPARATE` / `DECK_KEEP` / `SEA_KEEP` patterns
+  in the sessions, or `mergeStatic` will join them with their neighbours.
 
 ---
 
 ## Summary
 
-Level 1 is a complete, playable, polished arc from waking in the cell to riding the lift down.
-Level 2 (habitat atrium) is a walkable environment preview with collision, doors and lighting but
-no gameplay objectives yet. Level 3 is a stub. The immediate next steps implied by the code and
-docs are: gate the lift on Level 1 completion, design and add Level 2 interactables/objectives, and
-build out Level 3's containment/flooding sequence.
+Levels 1 and 2 are complete, playable arcs. Level 3 plays from the chute through the flooded
+deck, the dive, and the kraken boss fight to the relay station's door. Still to do: the inside
+of the relay (the team's puzzles, the uplink and the two endings), the Level 3 bulkhead puzzle
+(ARIA opens it for now), gating Level 1's lift on the relay rings, the Level 2 FuseBox, a credits
+screen, and the remaining voice recordings.

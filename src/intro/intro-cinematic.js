@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { settings } from '../core/Settings.js';
+import { CREDITS_HTML } from './credits.js';
 
 // HALCYON-9's opening cinematic.
 //
@@ -9,7 +10,9 @@ import { settings } from '../core/Settings.js';
 //      moody shot of the generated video, 4.5 s, cut before it changes to a brighter shot; the
 //      whole video is kept as reference/intro-original.mp4.)
 //   2. a few seconds in, at the music's drop, the title and then the subtitle fade in
-//   3. near the end the picture, the titles and the sound fade to black together
+//   3. near the end the title holds (the video plays out and stays on its last frame) with two
+//      buttons under it: BEGIN, and CREDITS (CREDITS.md, on a panel over the title; Esc or Close
+//      takes it away). Begin (or Enter) fades the picture, the titles and the sound to black.
 //   4. a short black hold
 //   5. the wake-up: the game (built during the black, so nothing heavy runs while the video plays)
 //      is seen through Voss's eyes
@@ -18,7 +21,7 @@ import { settings } from '../core/Settings.js';
 //      again when it is done.
 //   6. a beat later ARIA's first line is cued
 //
-// Space skips to step 4 (a quick fade to black). It runs once per page load.
+// Space skips to step 3 (the buttons). It runs once per page load.
 //
 // Use (see main.js):
 //   startIntro({
@@ -54,12 +57,11 @@ export const INTRO_CONFIG = {
   TITLE_TOP: '7vh',           // how far down the title sits
   TITLE_SHIFT_X: '0vw',       // how far right of the centre (0: centred)
 
-  FADE_START: null,           // when the fade to black starts, in video seconds; null: duration minus FADE_OUT_BEFORE_END
+  FADE_START: null,           // when the buttons come up, in video seconds; null: duration minus FADE_OUT_BEFORE_END
   FADE_OUT_BEFORE_END: 1.5,
-  FADE_OUT: 1.5,              // picture, titles and sound fade together over this long
+  FADE_OUT: 1.5,              // after Begin, the picture, titles and sound fade together over this long
   BLACK_HOLD: 0.6,            // then black, before the eyes open (longer while the game is still loading)
-  SKIP_FADE: 0.5,             // the quick fade to black when Space is pressed
-  SKIP_HINT_DELAY: 1.0,       // "Press Space to skip" shows after this long
+  SKIP_HINT_DELAY: 1.0,       // "Press Space to skip" (to the buttons) shows after this long
 
   GAME_READY_TIMEOUT: 20,     // wait this long (in black) for Level 1 to load before waking up anyway
   WARMUP_MAX: 3.0,            // then, still in black, let the game draw until its frames come smoothly (at most this long)
@@ -117,6 +119,35 @@ const STYLE = `
 #hi-gate button { background: transparent; color: #cfe8e6; border: 1px solid rgba(207, 232, 230, 0.5); padding: 0.9rem 2.6rem;
   font: 200 clamp(1rem, 1.6vw, 1.5rem)/1 inherit; letter-spacing: 0.4em; cursor: pointer; }
 #hi-gate button:hover { background: rgba(207, 232, 230, 0.12); }
+#hi-menu { position: absolute; left: 0; right: 0; bottom: 14vh; display: flex; flex-direction: column;
+  align-items: center; gap: 1.1rem; opacity: 0; transition: opacity 0.9s ease; pointer-events: none; }
+#hi-menu.on { opacity: 1; pointer-events: auto; }
+.hi-btn { min-width: 15rem; background: rgba(0, 0, 0, 0.25); color: #eef5f3; border: 1px solid rgba(207, 232, 230, 0.45);
+  padding: 0.85rem 2.4rem; font: 200 clamp(0.95rem, 1.4vw, 1.3rem)/1 'Helvetica Neue', 'Segoe UI Light', 'Segoe UI', Arial, sans-serif;
+  letter-spacing: 0.42em; padding-left: calc(2.4rem + 0.42em); cursor: pointer;
+  text-shadow: 0 0 12px rgba(0, 229, 255, 0.3); transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
+.hi-btn:hover, .hi-btn:focus-visible { background: rgba(0, 229, 255, 0.1); border-color: rgba(0, 229, 255, 0.7);
+  box-shadow: 0 0 18px rgba(0, 229, 255, 0.25); outline: none; }
+#hi-credits { position: absolute; inset: 0; display: none; background: rgba(2, 8, 12, 0.88); backdrop-filter: blur(3px); }
+#hi-credits.on { display: block; }
+#hi-credits-scroll { position: absolute; inset: 0; overflow-y: auto; padding: 5vh 16px 8vh; }
+#hi-credits-body { max-width: 920px; margin: 0 auto; color: rgba(232, 244, 241, 0.86); font-size: 0.92rem;
+  line-height: 1.55; letter-spacing: 0.02em; user-select: text; }
+#hi-credits-body h1 { font-weight: 200; font-size: clamp(1.4rem, 3vw, 2.2rem); letter-spacing: 0.3em; color: #eef5f3;
+  text-shadow: 0 0 18px rgba(0, 229, 255, 0.3); margin: 0 0 1.2rem; padding-right: 7rem; }
+#hi-credits-body h2 { font-weight: 300; font-size: 1.15rem; letter-spacing: 0.14em; color: #9feaf5; margin: 2.2rem 0 0.6rem;
+  padding-bottom: 0.35rem; border-bottom: 1px solid rgba(0, 229, 255, 0.2); }
+#hi-credits-body p, #hi-credits-body ul { margin: 0.6rem 0; }
+#hi-credits-body ul { padding-left: 1.3rem; }
+#hi-credits-body a { color: #7fdcea; word-break: break-all; }
+#hi-credits-body code { font-family: Consolas, monospace; font-size: 0.85em; color: #cfe8e6;
+  background: rgba(255, 255, 255, 0.06); padding: 0 0.25em; word-break: break-all; }
+.hi-table { overflow-x: auto; margin: 0.8rem 0; }
+#hi-credits-body table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+#hi-credits-body th, #hi-credits-body td { text-align: left; vertical-align: top; padding: 0.45rem 0.7rem;
+  border-bottom: 1px solid rgba(207, 232, 230, 0.12); }
+#hi-credits-body th { font-weight: 400; color: #9feaf5; letter-spacing: 0.06em; }
+#hi-credits-close { position: absolute; top: 2.4vh; right: max(16px, 2.4vw); min-width: 0; z-index: 1; background: rgba(2, 8, 12, 0.94); }
 `;
 
 // ---------------------------------------------------------------------------------------------
@@ -273,7 +304,25 @@ export function startIntro(options = {}) {
   soundHint.id = 'hi-sound';
   soundHint.className = 'hi-hint';
   soundHint.textContent = 'Click or press any key for sound';
-  root.append(video, titles, fade, skipHint, soundHint);
+  const menu = document.createElement('div');
+  menu.id = 'hi-menu';
+  const beginBtn = document.createElement('button');
+  beginBtn.type = 'button';
+  beginBtn.className = 'hi-btn';
+  beginBtn.textContent = 'BEGIN';
+  const creditsBtn = document.createElement('button');
+  creditsBtn.type = 'button';
+  creditsBtn.className = 'hi-btn';
+  creditsBtn.textContent = 'CREDITS';
+  menu.append(beginBtn, creditsBtn);
+  const credits = document.createElement('div');
+  credits.id = 'hi-credits';
+  credits.setAttribute('role', 'dialog');
+  credits.setAttribute('aria-label', 'Credits');
+  credits.innerHTML = `<button type="button" class="hi-btn" id="hi-credits-close">CLOSE</button>
+    <div id="hi-credits-scroll"><div id="hi-credits-body">${CREDITS_HTML}</div></div>`;
+  const closeBtn = credits.querySelector('#hi-credits-close');
+  root.append(video, titles, fade, menu, credits, skipHint, soundHint);
   document.body.appendChild(root);
 
   const timers = new Set();
@@ -289,10 +338,25 @@ export function startIntro(options = {}) {
       state.skipResolve?.();
     }
   }
+  const openCredits = (on) => {
+    credits.classList.toggle('on', on);
+    (on ? closeBtn : creditsBtn).focus({ preventScroll: true });
+  };
+  creditsBtn.addEventListener('click', () => openCredits(true));
+  closeBtn.addEventListener('click', () => openCredits(false));
   const onKey = (e) => {
-    if (e.code === 'Space') {
+    if (e.code === 'Space' && state.phase !== 'menu') {
       e.preventDefault();
       requestSkip();
+    }
+    // on the buttons: Esc closes the credits, Enter begins (unless it is on another button)
+    if (state.phase === 'menu') {
+      if (e.code === 'Escape' && credits.classList.contains('on')) openCredits(false);
+      else if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !credits.classList.contains('on') &&
+               document.activeElement !== creditsBtn) {
+        e.preventDefault();
+        beginBtn.click();
+      }
     }
   };
   // the first click or key unmutes a video that had to start silent
@@ -394,9 +458,9 @@ export function startIntro(options = {}) {
     // ---- the timeline, read from the video's own clock so it stays with the picture ----
     const duration = isFinite(video.duration) ? video.duration : 10;
     const fadeStart = cfg.FADE_START ?? Math.max(0, duration - cfg.FADE_OUT_BEFORE_END);
-    let titleShown = false, fadeBegan = 0, stopDrive = () => {};
-    // The picture and titles fade under a black layer animated by CSS (smooth even if the page is
-    // busy); the sound follows it down from here
+    let titleShown = false, stopDrive = () => {};
+    // After Begin the picture and titles fade under a black layer animated by CSS (smooth even if
+    // the page is busy); the sound follows it down
     const fadeTo = (seconds) => {
       fade.style.transition = `opacity ${seconds}s linear`;
       fade.style.opacity = '1';
@@ -420,40 +484,38 @@ export function startIntro(options = {}) {
             sub.style.opacity = '1';
           }, cfg.SUBTITLE_DELAY * 1000);
         }
-        if (!fadeBegan && (t >= fadeStart || video.ended)) {
-          fadeBegan = performance.now();
-          skipHint.classList.remove('on');
-          fadeTo(cfg.FADE_OUT);
-        }
-        if (fadeBegan) {
-          const p = Math.min(1, (performance.now() - fadeBegan) / (cfg.FADE_OUT * 1000));
-          setSound(p);
-          if (p >= 1) resolve();
-        }
+        if (t >= fadeStart || video.ended) resolve();
       };
       stopDrive = drive(tick);
     });
     stopDrive();
 
-    // ---- Space: a quick fade to black from wherever we are ----
+    // ---- the title holds, with BEGIN and CREDITS under it (the video plays out and stays on its
+    // last frame). If Space got here early, the titles come up at once ----
+    state.phase = 'menu';
+    skipHint.classList.remove('on');
     if (state.skip) {
-      skipHint.classList.remove('on');
-      soundHint.classList.remove('on');
-      const from = parseFloat(getComputedStyle(fade).opacity) || 0;
-      fade.style.transition = 'none';
-      fade.style.opacity = String(from);
-      void fade.offsetWidth;
-      fadeTo(cfg.SKIP_FADE * (1 - from));
-      const gain0 = state.fadeGain;
-      const t0 = performance.now();
-      await new Promise((resolve) => {
-        const stop = drive(() => {
-          const p = Math.min(1, (performance.now() - t0) / (cfg.SKIP_FADE * 1000 * Math.max(0.05, 1 - from)));
-          setSound(1 - gain0 * (1 - p));
-          if (p >= 1) { stop(); resolve(); }
-        });
-      });
+      for (const el of [title, sub]) {
+        el.style.transition = 'opacity 0.4s ease';
+        el.style.opacity = '1';
+      }
     }
+    menu.classList.add('on');
+    beginBtn.focus({ preventScroll: true });
+    await new Promise((resolve) => beginBtn.addEventListener('click', resolve, { once: true }));
+    menu.classList.remove('on');
+
+    // ---- Begin: the picture, the titles and the sound fade to black together ----
+    soundHint.classList.remove('on');
+    fadeTo(cfg.FADE_OUT);
+    const fadeT0 = performance.now();
+    await new Promise((resolve) => {
+      const stop = drive(() => {
+        const p = Math.min(1, (performance.now() - fadeT0) / (cfg.FADE_OUT * 1000));
+        setSound(p);
+        if (p >= 1) { stop(); resolve(); }
+      });
+    });
     state.phase = 'black';
     unlocking = false;
     video.pause();

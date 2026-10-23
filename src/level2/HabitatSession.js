@@ -529,7 +529,7 @@ export class HabitatSession {
         id: 'hatch', position: this.gates.keypadSpot, radius: 0.35, reach: 2.2,
         label: hatchLabel, when: () => !this.story.has('hatchOpen'), use: () => this._useHatch()
       });
-      // the hatch itself works too (the keypad is just beside it)
+      // the hatch itself works too (the keypad is on its deck plate)
       if (this.gates.hatchCentre) {
         this.interact.add({
           id: 'hatchSlab', position: this.gates.hatchCentre.clone().add(new THREE.Vector3(0, 0.15, 0)), radius: 1.0, reach: 2.8,
@@ -538,7 +538,7 @@ export class HabitatSession {
         // once it is open: down into the shaft, and on to Level 3
         this.interact.add({
           id: 'shaft', position: this.gates.hatchCentre.clone().add(new THREE.Vector3(0, 0.15, 0)), radius: 1.0, reach: 2.8,
-          label: 'Climb down into the shaft', when: () => this.story.has('hatchOpen'), use: () => this._climbDown()
+          label: 'Climb down into the shaft', when: () => this.gates.hatchIsOpen, use: () => this._climbDown()
         });
       }
     }
@@ -886,8 +886,8 @@ export class HabitatSession {
     const playing = g.state === 'PLAYING';
     // dropping into the shaft: the view sinks into the hole while the screen fades
     if (this._dropping) g.camera.instance.position.y -= dt * 3.5;
-    // stepping onto the open hatch drops him in too
-    if (playing && this.story?.has('hatchOpen') && this.gates?.hatchCentre && !this._leaving) {
+    // stepping into the open hatch drops him in too (once the lid is all the way open)
+    if (playing && this.gates?.hatchIsOpen && !this._leaving) {
       const c = this.gates.hatchCentre, q = this.controls.position;
       if (Math.hypot(q.x - c.x, q.z - c.z) < 0.6) this._climbDown();
     }

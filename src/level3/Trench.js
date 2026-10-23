@@ -526,13 +526,7 @@ export class Trench {
           RELAY.enter?.(this);
         }
         break;
-      case 'follow':
-        // at the cave's mouth: they go right into the rock
-        if (!this._mouthSaid && p.distanceTo(P.mouth) < 10) {
-          this._mouthSaid = true;
-          this.s.say('caveMouth');
-        }
-        break;
+
     }
   }
 

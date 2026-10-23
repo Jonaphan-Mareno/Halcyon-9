@@ -65,7 +65,8 @@ export const TALKS = {
   harpoon: ['v-harpoon'],
   needHarpoon: ['v-need-harpoon'],
   descend: ['l3-trench-1'],
-  relay: ['v-relay-1', 'l3-relay-1', 'v-relay-2', 'l3-relay-2'],
+  // (arriving at the relay, quickly: the "pipes", and ARIA reading something big)
+  relay: ['v-relay-2', 'l3-cave'],
   doorHeld: ['v-door-held'],
   caveMouth: ['v-cave', 'l3-cave'],
   kraken: ['v-kraken', 'l3-kraken-0', 'v-kraken-2', 'l3-kraken-1', 'v-harpoon-fight'],

@@ -40,6 +40,7 @@ const BITE_RADIUS = 3.6;
 const MOUTH_RADIUS = 1.4;             // the weak spot, for the harpoon (metres)
 const BODY_RADIUS = 3.6;              // he cannot swim into its body
 const ENGAGE = 24;                    // metres from its body that it comes for him
+const WAKE = 14;                      // ... or from its cave's mouth
 const KEEP = [9, 13];                 // how near it keeps to him while it swims after him (metres)
 const SWIM = { speed: 6.5, accel: 5.0, drag: 1.4 };   // its swimming: top speed (m/s), how fast it gets there, how it slows
 const STALK = { chance: [0.35, 0.45, 0.55], time: [3.5, 6.0], far: 21 };   // slipping off into the murk to ambush him
@@ -145,6 +146,8 @@ export class KrakenFight {
   spearTest(p0, p1) {
     if (this.state === 'gone' || !this.kraken.body) return null;
     const k = this.kraken, a = this.attack;
+    // (shot at while it lurks, it wakes)
+    if ((this.state === 'lurk' || this.state === 'wait') && segmentNear(p0, p1, this._bodyCentre(new THREE.Vector3()), BODY_RADIUS * 1.5)) this._engage();
     // a punching arm stuck in the rock: shoot it and it is stunned
     if (this.state === 'fight' && a?.kind === 'punch' && a.phase === 'stuck') {
       const tip = k.pointOn(k.tents[a.tent], 0.85, new THREE.Vector3());
@@ -227,15 +230,23 @@ export class KrakenFight {
     this.pos.lerp(this._w.copy(this.homeAt).add(this._p.set(0, Math.sin(this.time * 0.6) * 0.2, 0)), 1 - Math.exp(-2 * dt));
     this._face(dt, player && this.t.inCave(player) ? player : null, 0.6);
     this._menace(null, -1);
-    if (player && this._bodyCentre(this._v).distanceTo(player) < ENGAGE && this.t.inCave(player)) {
-      this._set('fight');
-      this._release();
-      this.attack = null;
-      this.next = 2.6;
-      this.shake = 1.6;
-      this._roarT = 1.8;
-      this.t.onRoar();
-    }
+    // (it wakes the moment he comes near its cave's mouth, or into it)
+    const near = player && (this.t.inCave(player) || player.distanceTo(this.t.pts.mouth) < WAKE
+      || this._bodyCentre(this._v).distanceTo(player) < ENGAGE);
+    if (near) this._engage();
+  }
+
+  // it roars, tears its tentacles off the station, and comes straight for him
+  _engage() {
+    if (this.state !== 'lurk' && this.state !== 'wait') return;
+    this._set('fight');
+    this._release();
+    this.attack = null;
+    this.next = 0.9;
+    this._charge = true;                // (its first move: it comes at him)
+    this.shake = 1.6;
+    this._roarT = 1.8;
+    this.t.onRoar();
   }
 
   _face(dt, player, rate) {
@@ -375,7 +386,10 @@ export class KrakenFight {
         return;
       }
       this.next -= dt;
-      if (this.next <= 0 && player) this._begin(player);
+      if (this.next <= 0 && player) {
+        this._begin(player, this._charge ? 'lunge' : null);
+        this._charge = false;
+      }
       return;
     }
     a.t += dt * SPEED[this.phase];

@@ -1,4 +1,7 @@
 """
+SUPERSEDED by build_kessler_from_female.py (the red-haired Kessler): running this overwrites her
+kessler.glb with the old blond one. Kept for reference.
+
 Dr. Elena Kessler, made from Voss (human_scientist_v2.glb) so the two look like they come from the
 same game: the same painted toon style, the same skeleton and clips, the same face morphs.
 

@@ -1,5 +1,5 @@
-# Logs
-logs
+# Logs (the root logs folder only: public/assets/audio/logs is the game's log audio)
+/logs
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -41,3 +41,13 @@ halcyon-9.zip
 # Working notes and reference images (handover documents, character/lab references, flashback frames)
 HANDOVER_*.txt
 reference/
+
+# Models used only to render the prologue photos (local only; removed once the photos are final)
+Blender/assets/babyTpose.fbx
+Blender/assets/young_boy_in_olive_sweatshirt_and_jeans.glb
+Blender/assets/woman_head/
+Blender/assets/sasha-grey-portrait/
+
+# Prologue photo working renders and comparisons (the finished six are exported to
+# public/assets/textures/prologue by scripts/prologue/export-photos.mjs)
+docs/reference-art/

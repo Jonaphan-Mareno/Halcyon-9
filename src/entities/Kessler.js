@@ -2,18 +2,19 @@ import * as THREE from 'three';
 import { createGLTFLoader } from '../core/loaders.js';
 import { makeToonRamp, toonFrom } from './Player.js';
 
-// Dr. Elena Kessler (kessler.glb, built by Blender/scripts/build_kessler_from_voss.py): made from
-// Voss's model so they share the game's painted look. Shorter, blond hair swept back into a low bun,
-// a long white coat over white clothes and boots, a small white earpiece over her right ear.
+// Dr. Elena Kessler (kessler.glb, built by Blender/scripts/build_kessler_from_female.py from
+// "Female scientist" by photon and the head of "Angelica" by Sell Asset Store, both CC-BY-4.0, see
+// CREDITS.md): in her thirties, curly red hair to her shoulders, green eyes, dark glasses, a white
+// coat over a slate shirt, a deep red tie and dark trousers.
 //
 // Her skeleton and clips are Voss's (Idle and Walk are in her file). Her face has the same morph
-// targets as his (jaw_open, mouth_wide, blink, ...) for FaceRig. Only the inside of her mouth has
-// vertex colours (its shade toward the throat).
+// targets as his (jaw_open, mouth_wide, blink, ...) for FaceRig.
 //
-// Body parts are separate meshes (Head, Hands, Coat, Shirt, Pants, Hair, Bun, EarPiece).
+// Body parts are separate meshes (Head, Eyes, Hands, Body, Glasses, Hair). Her hair and the inside
+// of her mouth are coloured per vertex (COLOR_0).
 
 const MODEL = './assets/models/kessler.glb';
-// Her model is in the same units as Voss's (his 1.394 is 1.8 m in the game); she is about 1.69 m
+// Her model is in the same units as Voss's (his 1.394 is 1.8 m in the game); she is about 1.72 m
 const SCALE = 1.8 / 1.394;
 
 let cached = null;           // the loaded file, kept: the flashback can play more than once
@@ -45,7 +46,7 @@ export class Kessler {
       o.castShadow = false;
       o.receiveShadow = false;
       let p = o;
-      while (p.parent && p.parent !== model && !['Head', 'Hands', 'Coat', 'Shirt', 'Pants', 'Hair', 'Bun', 'EarPiece'].includes(p.name)) p = p.parent;
+      while (p.parent && p.parent !== model && !['Head', 'Eyes', 'Hands', 'Body', 'Glasses', 'Hair'].includes(p.name)) p = p.parent;
       (this.parts[p.name] ||= []).push(o);
     });
     this.root.add(model);

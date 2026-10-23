@@ -28,6 +28,7 @@ import { Harpoon } from './Harpoon.js';
 import { Trench } from './Trench.js';
 import { Level3Audio } from './Level3Audio.js';
 import { Headlamp } from './Headlamp.js';
+import { Chute } from './Chute.js';
 import '../ui/level3.css';
 import { LINES, TALKS } from './Level3Lines.js';
 import { disposeScene } from '../core/disposeScene.js';
@@ -256,6 +257,8 @@ export class DeckSession {
     this.trench = new Trench(this);
     await this.trench.ready;
     this.visorAria = new VisorAria(this);
+    // the way down from the garden's hatch: ridden first, then taken down (Chute.js)
+    if (!new URLSearchParams(window.location.search).has('nochute')) this.chute = new Chute(this);
   }
 
   // the window's glass: a faint green tint with a brighter rim, so the room behind reads as water
@@ -370,8 +373,15 @@ export class DeckSession {
     this.composer.render();
   }
 
-  // He drops in from the shaft; a moment after he lands, ARIA, through the static in his ear
+  // He slides down the chute from the garden's hatch (?nochute skips it), shoots out over the pump
+  // room and drops into its water; a moment after he lands, ARIA, through the static in his ear
   async _arrive() {
+    if (this.chute) {
+      await this.chute.ride();
+      this.chute = null;
+      if (this.disposed) return;
+      this.controls.teleport(this.spawn.clone().add(new THREE.Vector3(0, 2.2, 0)));
+    }
     this._falling = true;
     await sleep(2600);
     if (!this.disposed) this.say('landing');
@@ -388,6 +398,16 @@ export class DeckSession {
     const playing = g.state === 'PLAYING';
     this.time += dt;
     deckUniforms.uTime.value = this.time;
+    // on the chute: it has the camera, and he is not on his feet yet
+    if (this.chute?.active) {
+      this.chute.update(dt, playing);
+      this.sfx?.update(dt);
+      this.hud.setVisible(playing);
+      this.hud.update(this.player);
+      g.reticle.classList.remove('visible');
+      this._perf(delta, playing);
+      return;
+    }
     const p = this.controls.position;
     // in the water he wades (slower), and every few steps the water rings round his legs (in the
     // water lock, its own water)
@@ -595,6 +615,7 @@ export class DeckSession {
     window.removeEventListener('keydown', this._onKey);
     window.removeEventListener('keyup', this._onKeyUp);
     window.removeEventListener('resize', this._onResize);
+    this.chute?.dispose();
     this.swim?.dispose();
     this.trench?.dispose();
     this.harpoon?.dispose();

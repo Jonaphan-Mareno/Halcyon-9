@@ -28,6 +28,8 @@ import { Swim } from './Swim.js';
 import { VisorAria } from './VisorAria.js';
 import { Harpoon } from './Harpoon.js';
 import { Trench } from './Trench.js';
+import { WOUNDS } from './KrakenFight.js';
+import { dressInSuit, attachAtBind } from './DiveSuit.js';
 import { Level3Audio } from './Level3Audio.js';
 import { Headlamp } from './Headlamp.js';
 import { Chute } from './Chute.js';
@@ -126,7 +128,8 @@ export class DeckSession {
       this.ready = true;
       game.applySettings?.();
       this.loadingEl.classList.remove('visible');
-      this._arrive();
+      if (this._skipRelay) this._skipToRelay();
+      else this._arrive();
       this._readyOutside();
     }).catch((e) => console.error('Level 3 failed to load.', e));
   }
@@ -270,7 +273,10 @@ export class DeckSession {
     await this.trench.ready;
     this.visorAria = new VisorAria(this);
     // the way down from the garden's hatch: ridden first, then taken down (Chute.js)
-    if (!new URLSearchParams(window.location.search).has('nochute')) this.chute = new Chute(this);
+    // (?nochute skips the ride; ?relay skips the whole level up to the relay station's door)
+    const params = new URLSearchParams(window.location.search);
+    this._skipRelay = params.has('relay');
+    if (!params.has('nochute') && !this._skipRelay) this.chute = new Chute(this);
   }
 
   // the window's glass: a faint green tint with a brighter rim, so the room behind reads as water
@@ -418,6 +424,60 @@ export class DeckSession {
     this._falling = true;
     await sleep(2600);
     if (!this.disposed) this.say('landing');
+  }
+
+  // ?level=3&relay: skip the chute, the deck, the prep room and the sea; land already suited,
+  // cable in hand, in front of the relay station's door, with the kraken already beaten
+  _skipToRelay() {
+    const prep = this.prep, trench = this.trench;
+    const front = trench?.pts?.front;
+    if (!prep || !trench || !front) return this._arrive();
+    // the prep room, as if he had done it all (no sounds, no dialogue, no waits)
+    prep.suited = true;
+    prep.cable = true;
+    prep.harpoon = true;
+    prep.gate = 'open';
+    prep.lock = 'open';
+    prep.breathing = true;
+    prep.oxygen = 240;
+    prep._outside = true;
+    prep._suitTold = true;
+    if (prep.rackSuit) prep.rackSuit.visible = false;
+    if (prep.cableEnd) prep.cableEnd.visible = false;
+    if (prep.rackGun) prep.rackGun.visible = false;
+    const player = this.controls.character;
+    if (player?.bodyRoot) dressInSuit(player.bodyRoot, { mutate: true });
+    if (player?.viewModel) dressInSuit(player.viewModel, { mutate: true, parts: false });
+    this.harpoon.taken = true;
+    this.harpoon.sling(player?.bodyRoot, attachAtBind);
+    prep._visor.classList.add('on');
+    prep._oxy.classList.add('on');
+    prep._carry.classList.add('on');
+    prep._drawScreen();
+    // the kraken is already beaten; the relay's door is free
+    const fight = trench.fight;
+    fight.wounds = WOUNDS;
+    fight.state = 'gone';
+    fight.kraken.root.visible = false;
+    trench.stage = 'free';
+    trench.checkpoint = trench.pts.respawn.clone();
+    trench._showBoss(false);
+    // hide the deck; walk the prep room's zone through to 'sea' so its lights and the sea show
+    if (this.deck) this.deck.visible = false;
+    prep.zone = 'prep';
+    prep._zone(front);
+    // land him right outside the relay's door (a couple of metres back toward the open water, so
+    // he is not inside the station's collision), swimming
+    const door = trench.pts.door;
+    const spawn = door ? door.clone().lerp(front, 0.3).setY(door.y + 0.4) : front.clone();
+    // the uplink cable is already run in and plugged at the relay's port, so its tether no longer
+    // holds him back (Swim._limit returns early once the end is plugged)
+    if (this.swim) this.swim.plugged = (trench.pts.port || spawn).clone();
+    this.controls.teleport(spawn);
+    this.controls.setSwimming(true);
+    // the wake-up blink may still be running (?relay is instant); hand him over now
+    if (this.game.state === 'WAKING' || this.game.state === 'INIT') this.game.state = 'PLAYING';
+    this.game.ui.showToast('Skipped to the relay station. The kraken is beaten; its door is free.', 6000);
   }
 
   update(delta) {

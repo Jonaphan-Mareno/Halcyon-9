@@ -3,6 +3,7 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 import { FaceRig } from '../entities/FaceRig.js';
 import { Kessler } from '../entities/Kessler.js';
 import { makeToonRamp, showWound } from '../entities/Player.js';
+import { audioSrc } from '../audio/AudioCache.js';
 
 // The flashback in Dr. Kessler's room (scene 2.8, step 3), in 3D: the first time the player sees
 // faces. Kessler stands at the shutdown console. Voss (the living Voss: no wound, no wear) argues
@@ -215,7 +216,7 @@ export class Flashback3D {
     this._last = performance.now();
     this.hint.style.opacity = 0;
     this.hint.classList.add('on');
-    this.audio = new Audio(AUDIO);
+    this.audio = new Audio(audioSrc(AUDIO));
     this.audio.addEventListener('error', () => { this.audio = null; });
     this.audio.play().catch(() => { this.audio = null; });
     // everyone to their marks

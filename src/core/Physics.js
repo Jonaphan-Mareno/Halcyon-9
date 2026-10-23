@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 
-// Rapier (about 4 MB, most of the game's code) is only needed in level 2, so it is loaded on
-// demand instead of with the rest of the game: level 1 starts sooner, and fetches it quietly in
-// the background (preload) so the lift ride down does not wait for it.
+// Rapier (about 4 MB, most of the game's code) is loaded on demand instead of with the rest of the
+// game: level 1 starts sooner, and fetches it quietly in the background (preload). Until it is
+// there, level 1 walks Voss without it (see core/Controls.js).
 let RAPIER = null;
 let loading = null;
 
@@ -36,13 +36,15 @@ export class Physics {
   }
 
   // Bake every mesh under `object` into one static trimesh collider, in world space
-  addStaticObject(object) {
+  // (skip(mesh): true leaves that mesh out, e.g. a door that moves; oriented: false for meshes whose
+  // triangles do not all face outwards, like level 1's, drawn from both sides)
+  addStaticObject(object, skip = null, { oriented = true } = {}) {
     object.updateWorldMatrix(true, true);
     const verts = [];
     const indices = [];
     let base = 0;
     object.traverse((mesh) => {
-      if (!mesh.isMesh) return;
+      if (!mesh.isMesh || skip?.(mesh)) return;
       const geo = mesh.geometry;
       const pos = geo.attributes.position;
       for (let i = 0; i < pos.count; i++) {
@@ -58,7 +60,7 @@ export class Physics {
     });
     if (!indices.length) return null;
     // FIX_INTERNAL_EDGES stops the capsule catching on the seams between triangles
-    const flags = RAPIER.TriMeshFlags ? RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES : undefined;
+    const flags = RAPIER.TriMeshFlags && oriented ? RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES : undefined;
     const desc = RAPIER.ColliderDesc.trimesh(new Float32Array(verts), new Uint32Array(indices), flags);
     return this.world.createCollider(desc);
   }

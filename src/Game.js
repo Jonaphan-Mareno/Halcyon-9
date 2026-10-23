@@ -25,6 +25,7 @@ import { MoodLight } from './graphics/MoodLight.js';
 import { CircuitPuzzle } from './puzzles/CircuitPuzzle.js';
 import { PlayerStats } from './player/PlayerStats.js';
 import { vossVoice } from './audio/VossVoice.js';
+import { preloadVoices } from './audio/AudioCache.js';
 
 // The goal shown top-left for each stage of the opening
 const OBJECTIVES = [
@@ -149,6 +150,9 @@ export class Game {
     this.lastTime = performance.now();
     // ?level=2 in the address starts straight in level 2, at the elevator (for testing)
     this.startLevel = new URLSearchParams(window.location.search).get('level');
+    // the first level's recorded lines start downloading now (during the opening), so they play
+    // the moment they are said
+    preloadVoices(this.startLevel === '3' ? 3 : this.startLevel === '2' ? 2 : 1);
 
     this.width = window.innerWidth;
     this.height = window.innerHeight;
@@ -328,6 +332,8 @@ export class Game {
     const sessions = { '2': HabitatSession, '3': DeckSession, hose: HoseTestSession, reactor: Level2Session };
     this.startLevel = kind;
     this.music?.setLevel(kind === '3' ? 3 : 2);
+    if (kind === '3') preloadVoices(3);
+    else if (kind === '2') { preloadVoices(2); preloadVoices(3); }   // (Level 3's queue up behind Level 2's)
     this.level2 = new sessions[kind](this);
   }
 
@@ -1171,8 +1177,8 @@ export class Game {
 
       return;
     }
-    // Space or Enter skips whatever ARIA is saying, from almost anywhere
-    if ((event.code === 'Space' || event.code === 'Enter') && this.ui.isAriaLine() &&
+    // Enter skips whatever ARIA is saying, from almost anywhere (as in Levels 2 and 3; Space is jump)
+    if (event.code === 'Enter' && this.ui.isAriaLine() &&
         (this.state === 'PLAYING' || this.state === 'PUZZLE' || this.state === 'INVENTORY')) {
       event.preventDefault();
       this.currentLevel.ariaManager.skip();

@@ -1,9 +1,9 @@
 """
-Prologue photo 1 (our little Voss): a sunny garden; his mother, young (jet black hair, the teal
+Prologue photo 1 (my little Voss): a sunny garden; his mother, young (jet black hair, the teal
 cardigan, the pendant), smiling, cradles baby Voss (Blender/assets/babyTpose.fbx, local only): a
 newborn, swaddled in a pale yellow blanket (only his head is kept), asleep in the crook of her left
 arm. Renders the whole frame; scripts/prologue/compose-photo1.mjs grades it and puts it in the
-Polaroid, captioned "Our little Voss". His mother and the helpers are in prologue_common.py.
+Polaroid, captioned "My little Voss". His mother and the helpers are in prologue_common.py.
 
 Run (from the repo root):
   blender -b --factory-startup --python Blender/scripts/render_prologue_photo1.py -- [out.png]

@@ -1,6 +1,6 @@
 # Story Delivery Plan — Part 1: The Polaroid Prologue
 
-Status: planning. Nothing here is built yet.
+Status: built, as `src/story/PrologueSequence.js` (played by `src/intro/intro-cinematic.js` between BEGIN and the wake-up). The built version differs from the plan below: each photo is voiced by its own clip (`public/assets/audio/lvl1-mom&voss/`), and the last day is four separate lines over black.
 Series: this is idea 1 of several ways to let the player piece the story together. Later parts go in sibling files (`story-delivery-02-*.md`, ...).
 
 ---
@@ -45,10 +45,10 @@ All images are painted/illustrated in one consistent style (same mother, same bo
 
 | # | Moment | What the picture shows | Caption on the strip | Mood |
 |---|---|---|---|---|
-| 1 | Baby | Mother, young, holding baby Voss, both squinting at the light | *"Our little Voss"* | Warm, bright |
+| 1 | Baby | Mother, young, holding baby Voss, both squinting at the light | *"My little Voss"* | Warm, bright |
 | 2 | Child | Voss about 6–7, gap-toothed, on the floor with a toy submarine or a science kit, mother laughing behind him | *"He wants to be an explorer"* | Warm |
-| 3 | Teenager | Voss about 15, a science fair or a model on a table, mother proud beside him, first grey hairs | *"Top of the class again"* | Warm, a little tired |
-| 4 | Graduation | Voss in cap and gown, mother standing next to him holding the certificate, older, smiling | *"Dr. Voss"* or the year | Peak happiness |
+| 3 | Teenager | Voss about 15, a science fair or a model on a table, mother proud beside him, first grey hairs | *"He's top of the class again"* | Warm, a little tired |
+| 4 | Graduation | Voss in cap and gown, mother standing next to him holding the certificate, older, smiling | *"My Dr. Voss!"* | Peak happiness |
 | 5 | Collapse | Mother on the floor of a kitchen or hallway, Voss kneeling over her in panic. Photo is crooked, partly blurred, as if taken by accident or by someone else | none, or a scribbled-out caption | Turn: cold, desaturated, harsh flash |
 | 6 | Hospital | Mother in a hospital bed, frail, Voss's hand in hers at the edge of frame. A banner or chart in the background | see section 6 | Quiet, cold blue-grey |
 

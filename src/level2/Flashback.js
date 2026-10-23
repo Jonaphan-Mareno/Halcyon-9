@@ -1,3 +1,5 @@
+import { audioSrc } from '../audio/AudioCache.js';
+
 // The flashback in Dr. Kessler's room (scene 2.8, step 3): a wordless memory, the first time the
 // player sees faces. Kessler stands at the shutdown console. Voss argues with her, protective of
 // the work, while ARIA pleads from a speaker (her words indistinct: only her pulsing light). Kessler
@@ -53,7 +55,7 @@ export class Flashback {
     this.t = 0;
     this.el.classList.add('on');
     this.hint.style.opacity = 0;
-    this.audio = new Audio(AUDIO);
+    this.audio = new Audio(audioSrc(AUDIO));
     this.audio.addEventListener('error', () => { this.audio = null; });
     this.audio.play().catch(() => { this.audio = null; });
     return new Promise((resolve) => {

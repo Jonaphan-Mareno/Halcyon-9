@@ -481,22 +481,30 @@ function loadSoil() {
   return { albedo: tex, height: tex, packed: tex };
 }
 
+// The drawn textures (each kind: albedo, height, and the two packed in one): painting them takes
+// about a tenth of a second a kind, so each kind is painted the first time something asks for it,
+// and only once for the whole game (Level 1 and Level 2 share them; a level that is torn down only
+// frees them on the graphics card, and they go back up when next used).
+const PAINTERS = {
+  plate: [paintPlate, 11], floor: [paintFloor, 23], paint: [paintPaint, 31], plastic: [paintPlastic, 37],
+  fabric: [paintFabric, 41], paper: [paintPaper, 43], label: [paintLabel, 47], brushed: [paintBrushed, 53],
+  wall: [paintWall, 59], concrete: [paintConcrete, 61], concreteFloor: [paintConcreteFloor, 67]
+};
+let shared = null;
+
 export function createHubTextures() {
-  const sets = {
-    plate: { albedo: makeTexture(paintPlate, 'albedo', 11, true), height: makeTexture(paintPlate, 'height', 11, false) },
-    floor: { albedo: makeTexture(paintFloor, 'albedo', 23, true), height: makeTexture(paintFloor, 'height', 23, false) },
-    paint: { albedo: makeTexture(paintPaint, 'albedo', 31, true), height: makeTexture(paintPaint, 'height', 31, false) },
-    plastic: { albedo: makeTexture(paintPlastic, 'albedo', 37, true), height: makeTexture(paintPlastic, 'height', 37, false) },
-    fabric: { albedo: makeTexture(paintFabric, 'albedo', 41, true), height: makeTexture(paintFabric, 'height', 41, false) },
-    paper: { albedo: makeTexture(paintPaper, 'albedo', 43, true), height: makeTexture(paintPaper, 'height', 43, false) },
-    label: { albedo: makeTexture(paintLabel, 'albedo', 47, true), height: makeTexture(paintLabel, 'height', 47, false) },
-    brushed: { albedo: makeTexture(paintBrushed, 'albedo', 53, true), height: makeTexture(paintBrushed, 'height', 53, false) },
-    wall: { albedo: makeTexture(paintWall, 'albedo', 59, true), height: makeTexture(paintWall, 'height', 59, false) },
-    concrete: { albedo: makeTexture(paintConcrete, 'albedo', 61, true), height: makeTexture(paintConcrete, 'height', 61, false) },
-    concreteFloor: { albedo: makeTexture(paintConcreteFloor, 'albedo', 67, true), height: makeTexture(paintConcreteFloor, 'height', 67, false) }
-  };
-  for (const set of Object.values(sets)) set.packed = pack(set.albedo, set.height);
-  return sets;
+  shared ??= new Proxy({}, {
+    get(sets, kind) {
+      if (!(kind in sets) && PAINTERS[kind]) {
+        const [paint, seed] = PAINTERS[kind];
+        const set = { albedo: makeTexture(paint, 'albedo', seed, true), height: makeTexture(paint, 'height', seed, false) };
+        set.packed = pack(set.albedo, set.height);
+        sets[kind] = set;
+      }
+      return sets[kind];
+    }
+  });
+  return shared;
 }
 
 // Which texture each model material uses, and how big one tile is in metres

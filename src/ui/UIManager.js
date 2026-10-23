@@ -142,8 +142,9 @@ export class UIManager {
   // (click / Space / Enter / E). Clicking while typing shows the full line.
   // timed: the caller moves on by itself after a reading time, so no "continue" hint is shown
   // (level 2's thoughts, which play while Voss keeps walking)
-  showVossLine(text, { timed = false } = {}) {
+  showVossLine(text, { timed = false, thought = false } = {}) {
     this._setSpeaker('VOSS', 'voss');
+    this.dialogue.classList.toggle('thought', thought);
     this.dialogue.classList.add('visible');
     this._timed = timed;
     this._startTyping(text);
@@ -189,7 +190,7 @@ export class UIManager {
 
   _setSpeaker(name, className) {
     this.speakerEl.textContent = name;
-    this.dialogue.classList.remove('voss', 'aria');
+    this.dialogue.classList.remove('voss', 'aria', 'thought');
     this.dialogue.classList.add(className);
   }
 

@@ -8,6 +8,8 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { Physics } from '../core/Physics.js';
+import { precompile } from '../core/precompile.js';
+import { mergeStatic } from '../core/mergeStatic.js';
 import { PlayerController } from '../player/PlayerController.js';
 import { createHubTextures, applyHubMaterials, surfaceMaterial, hubLighting, withHubLighting, bakeShadeMap, HUB_POOLS } from '../graphics/HubMaterials.js';
 import { surfaceFor, SURFACE } from '../levels/level1Look.js';
@@ -27,6 +29,7 @@ import { buildHallClues } from './HallClues.js';
 import { Gates } from './Gates.js';
 import { KeypadUI } from '../ui/KeypadUI.js';
 import { Garden } from './Garden.js';
+import { Robot } from '../entities/Robot.js';
 import { PlayerStats, MAX_INTEGRITY } from '../player/PlayerStats.js';
 import { HUD } from '../ui/HUD.js';
 import { FightHelp } from '../ui/FightHelp.js';
@@ -49,6 +52,8 @@ import '../ui/level2.css';
 // The 3D flashback (Flashback3D) plays when it is ready and the machine keeps up; the 2D one otherwise
 const FLASHBACK_3D = true;
 const SOLID = ['COL_', 'DOOR_'];
+// what the code finds by name, moves or hides: never joined with the still meshes round it
+const KEEP_SEPARATE = /^(DOOR_|LABDOOR_|ELEVATOR_|ARIA_|PT_|SPAWN_|ORG|FuseBox|COL_|Atrium_Hatch|Atrium_LiftCab|Cabin_|Door_)/;
 
 // The lift is level 1's (lift.glb, see levels/liftCabin.js), its origin the middle of the door
 // sill at the front of the frame. Set there, the frame's front corners sit on the curved inside
@@ -252,10 +257,16 @@ export class HabitatSession {
     Physics.create().then(async (physics) => {
       this.physics = physics;
       await this._load();
+      // the still meshes that share a material are drawn as one (core/mergeStatic.js)
+      for (const model of [this.atrium, this.lab]) if (model) mergeStatic(model, KEEP_SEPARATE);
+      // behind the title: only the lift he arrives in; the rest of the level is readied while ARIA
+      // talks to him in it, its doors shut (_readyWorld)
+      const held = this._holdWorld();
       await this._precompile();
       this.ready = true;
       this.game.applySettings?.();
       this.loadingEl.classList.remove('visible');
+      this._readyWorld(held);
       game.ui.showToast('WASD to move, Space to jump, E to use things, V to switch camera.', 7000);
       // ?flashback in the address (with ?level=2): Kessler's flashback plays as soon as the level is
       // in, for testing it (?flashback=2d: the drawn one)
@@ -434,6 +445,9 @@ export class HabitatSession {
     // his tally on his bunk's locker, in his quarter (the logs show it growing up to Cycle 8)
     scene.add(tallyInRoom());
 
+    // Preload the robot model so the first spawn is instant
+    Robot.preload().catch((e) => console.warn('Robot preload failed:', e));
+
     // arrive in the lift, facing the hall (north) 
     const spawn = atrium.getObjectByName('SPAWN_Lift').getWorldPosition(new THREE.Vector3());
     this.controls.attach(this.physics, spawn.setY(spawn.y + 0.1), 0);
@@ -492,11 +506,18 @@ export class HabitatSession {
     // things Voss can use (E): the hall's optional clues, scene 2.2
     this.interact = new Interact(this.game.camera.instance, this.physics);
     const clues = buildHallClues(scene, atrium);
-    if (clues.board) this.interact.add({ id: 'board', position: clues.board, radius: 0.9, label: 'Look at the photo board', use: () => this.say('chore') });
-    if (clues.frame) this.interact.add({ id: 'frame', position: clues.frame, radius: 0.2, label: 'Look at the photo', use: () => this.say('photo') });
-    if (clues.ration) this.interact.add({ id: 'ration', position: clues.ration, radius: 0.2, label: 'Look at the tray', use: () => this.say('ration') });
     const pods = at('PT_PodDoor', 0);
-    if (pods) this.interact.add({ id: 'pods', position: pods, radius: 1.2, label: 'Read the sign on the pod door', use: () => this.say('pods') });
+    this._looked = new Set();
+    // (each with where its diamond floats: over the board's top edge, over the pod door's sign)
+    this._hallClues = [
+      ['board', clues.board, 0.9, 'Look at the photo board', 'chore', clues.boardTop],
+      ['frame', clues.frame, 0.2, 'Look at the photo', 'photo'],
+      ['ration', clues.ration, 0.2, 'Look at the tray', 'ration'],
+      ['pods', pods, 1.2, 'Read the sign on the pod door', 'pods', pods?.clone().add(new THREE.Vector3(0, 0.35, 0))]
+    ].filter(([, p]) => p);
+    for (const [id, position, radius, label, talk] of this._hallClues) {
+      this.interact.add({ id, position, radius, label, use: () => { this._looked.add(id); this.say(talk); } });
+    }
     // FuseBox interaction (Bedroom 2)
     const fuseBoxObj = atrium.getObjectByName('FuseBox00001') || atrium.getObjectByName('FuseBox00.001') || atrium.getObjectByName('COL_Kess_FuseBox00');
     if (fuseBoxObj) {
@@ -526,7 +547,7 @@ export class HabitatSession {
         id: 'hatch', position: this.gates.keypadSpot, radius: 0.35, reach: 2.2,
         label: hatchLabel, when: () => !this.story.has('hatchOpen'), use: () => this._useHatch()
       });
-      // the hatch itself works too (the keypad is just beside it)
+      // the hatch itself works too (the keypad is on its deck plate)
       if (this.gates.hatchCentre) {
         this.interact.add({
           id: 'hatchSlab', position: this.gates.hatchCentre.clone().add(new THREE.Vector3(0, 0.15, 0)), radius: 1.0, reach: 2.8,
@@ -535,7 +556,7 @@ export class HabitatSession {
         // once it is open: down into the shaft, and on to Level 3
         this.interact.add({
           id: 'shaft', position: this.gates.hatchCentre.clone().add(new THREE.Vector3(0, 0.15, 0)), radius: 1.0, reach: 2.8,
-          label: 'Climb down into the shaft', when: () => this.story.has('hatchOpen'), use: () => this._climbDown()
+          label: 'Climb down into the shaft', when: () => this.gates.hatchIsOpen, use: () => this._climbDown()
         });
       }
     }
@@ -696,6 +717,7 @@ export class HabitatSession {
     fill(-halfWidth, frame.min.x + 0.01, 0, top);
     fill(frame.min.x, frame.max.x, frame.max.y - 0.01, top);
     scene.add(surround);
+    this._liftParts = [surround];
 
     // solid: the cabin, its frame and the surround (the atrium's old cab colliders are left
     // behind, outside these walls)
@@ -712,6 +734,7 @@ export class HabitatSession {
     const parts = makeLiftScreen(lift, material(SURFACE.softBlack, true));
     if (parts) {
       scene.add(parts.bezel);
+      this._liftParts?.push(parts.bezel);
       this.liftScreen = parts.screen;
     }
     this.liftStripMat = lift.getObjectByName('Cabin_LightStrip')?.material || null;
@@ -818,6 +841,7 @@ export class HabitatSession {
     }
     if (this.liftScreen) screens.add(this.liftScreen);
     this.game.scene.add(screens);
+    this._ariaScreens = screens;
     this.aria = new AriaManager(this.game.scene);
     this.aria.collectMonitors(screens);
     for (const m of this.aria.monitors) m.material = this.aria.ariaMaterial;
@@ -861,13 +885,63 @@ export class HabitatSession {
     });
   }
 
-  async _precompile() {
-    const webgl = this.game.renderer.instance;
-    try {
-      await webgl.compileAsync(this.game.scene, this.game.camera.instance);
-    } catch (e) {
-      webgl.compile(this.game.scene, this.game.camera.instance);
+  // In the lift, doors shut, he sees only the lift: everything else (the hall, the garden, the
+  // rooms upstairs) is taken out of the scene for now, so the title only waits for the lift's
+  // shaders. (The lights stay: they change every shader. So does anything with a light in it.)
+  _holdWorld() {
+    const scene = this.game.scene;
+    const keep = new Set([this.lift, this.controls.body, this.controls.character?.viewModel, this._ariaScreens, ...(this._liftParts || [])]);
+    const held = [];
+    for (const c of [...scene.children]) {
+      if (keep.has(c) || c.isLight || c.isCamera) continue;
+      let lit = false;
+      c.traverse((o) => { if (o.isLight) lit = true; });
+      if (lit) continue;
+      scene.remove(c);
+      held.push(c);
     }
+    return held;
+  }
+
+  // ...and readied while ARIA talks: its shaders compiled (off the main thread), its textures sent
+  // to the graphics card a few a frame (update(): _warmTextures), then it is put back, behind the
+  // shut doors, and its shadows drawn. The doors open only once this is done.
+  async _readyWorld(held) {
+    if (held.length && !this.disposed) {
+      const g = new THREE.Group();
+      for (const o of held) g.add(o);
+      const webgl = this.game.renderer.instance;
+      await precompile(webgl, this.game.scene, this.game.camera.instance, this.composer.renderTarget1, { root: g });
+      const textures = new Set();
+      g.traverse((o) => {
+        for (const m of [].concat(o.material || [])) {
+          for (const v of Object.values(m)) if (v?.isTexture) textures.add(v);
+          for (const u of Object.values(m.uniforms || {})) if (u?.value?.isTexture) textures.add(u.value);
+        }
+      });
+      await new Promise((resolve) => {
+        this._texQueue = [...textures];
+        this._texDone = resolve;
+      });
+      if (this.disposed) return;
+      for (const o of [...g.children]) this.game.scene.add(o);
+      webgl.shadowMap.needsUpdate = true;
+    }
+    this._worldReady = true;
+  }
+
+  _warmTextures() {
+    if (!this._texQueue) return;
+    const webgl = this.game.renderer.instance;
+    for (let i = 0; i < 2 && this._texQueue.length; i++) webgl.initTexture(this._texQueue.shift());
+    if (!this._texQueue.length) {
+      this._texQueue = null;
+      this._texDone?.();
+    }
+  }
+
+  async _precompile() {
+    await precompile(this.game.renderer.instance, this.game.scene, this.game.camera.instance, this.composer.renderTarget1);
     this.game.renderer.instance.shadowMap.needsUpdate = true;   // draw the shadows once (nothing casting them moves)
     this.composer.render();
   }
@@ -881,10 +955,11 @@ export class HabitatSession {
     const g = this.game;
     const dt = Math.min(delta, 0.05);
     const playing = g.state === 'PLAYING';
+    this._warmTextures();
     // dropping into the shaft: the view sinks into the hole while the screen fades
     if (this._dropping) g.camera.instance.position.y -= dt * 3.5;
-    // stepping onto the open hatch drops him in too
-    if (playing && this.story?.has('hatchOpen') && this.gates?.hatchCentre && !this._leaving) {
+    // stepping into the open hatch drops him in too (once the lid is all the way open)
+    if (playing && this.gates?.hatchIsOpen && !this._leaving) {
       const c = this.gates.hatchCentre, q = this.controls.position;
       if (Math.hypot(q.x - c.x, q.z - c.z) < 0.6) this._climbDown();
     }
@@ -896,7 +971,7 @@ export class HabitatSession {
       this._arrivalStarted = true;
       this._arrive();
     }
-    if (this._arrivalDone && !this.liftShut && this.doorOpen < 1) {
+    if (this._arrivalDone && this._worldReady && !this.liftShut && this.doorOpen < 1) {
       this.doorOpen = Math.min(1, this.doorOpen + dt / 1.6);
       this._setLiftDoors(this.doorOpen);
       // open wide enough to walk through: the invisible wall goes
@@ -982,7 +1057,7 @@ export class HabitatSession {
     this.reader.update(dt);
     this._idleLines(dt, playing, p);
     for (const k of this._markers || []) {
-      const show = !k.done() && k.m.position.distanceToSquared(p) < 100;
+      const show = !k.done() && k.m.position.distanceToSquared(p) < k.range2;
       k.m.visible = show;
       if (show) {
         k.m.rotation.y += dt * 1.6;
@@ -1037,7 +1112,7 @@ export class HabitatSession {
         continue;
       }
       if (line.who === 'voss') {
-        await vossSays(ui, line.text, line.clip);
+        await vossSays(ui, line.text, line.thought ? null : line.clip || id, { thought: line.thought });
         continue;
       }
       // a long silence before she answers: the music drops out and the lights stutter
@@ -1086,7 +1161,7 @@ export class HabitatSession {
   }
 
   // The last drone is down and the pumps restart (end of scene 2.3): a stutter and a deep hit,
-  // the atrium's light comes back, the stair bulkheads sink into the floor, and ARIA denies it
+  // the atrium's light comes back and the stair bulkheads sink into the floor
   _powerReturns() {
     const g = this.game;
     g.mood?.flicker(0.9);
@@ -1096,7 +1171,6 @@ export class HabitatSession {
       this.gates?.setKeypadPowered(true);
       g.ui.showToast('POWER RESTORED. THE STAIR BULKHEADS ARE OPEN.', 5000);
     }, 700);
-    setTimeout(() => this.say('bulkhead'), 2600);
   }
 
   // ---------------------------------------------------------
@@ -1110,7 +1184,6 @@ export class HabitatSession {
     const add = (id, position, radius, label, use, when) => this.interact.add({ id, position, radius, label, use, when, reach: 2.2 });
     add('bunkLogA', spots.bunkLogA, 0.25, 'Play the crew log', () => r.read('bunkLogA'));
     add('bunkLogB', spots.bunkLogB, 0.25, 'Play the crew log', () => r.read('bunkLogB'));
-    if (spots.myBunk) add('myBunk', spots.myBunk, 0.3, 'Read the name plate', () => this.say('myBunk'));
     add('corkboard', spots.corkboard, 0.55, 'Look at the corkboard', () => r.read('rota', () => this.say('corkboard')));
     add('personalLog', spots.personalLog, 0.3,
       () => (this.story.has('logWatched') ? 'Watch the memories again' : "Watch Voss's personal logs"),
@@ -1138,13 +1211,15 @@ export class HabitatSession {
     this._markers = [
       [spots.bunkLogA, seen('bunkLogA')], [spots.bunkLogB, seen('bunkLogB')], [spots.corkboard, seen('rota')],
       [spots.personalLog, () => this.story.has('logWatched')],
-      [t.labTerminal, () => this.story.has('labDone')], [spots.kesslerLog, seen('kesslerLog')], [spots.codeCard, seen('codeCard')]
-    ].filter(([p]) => p).map(([p, done], i) => {
+      [t.labTerminal, () => this.story.has('labDone')], [spots.kesslerLog, seen('kesslerLog')], [spots.codeCard, seen('codeCard')],
+      // and the hall's optional clues, until he has looked at each (seen from further off: the hall is big)
+      ...this._hallClues.map(([id, p, , , , over]) => [over || p, () => this._looked.has(id), 16])
+    ].filter(([p]) => p).map(([p, done, range = 10], i) => {
       const m = new THREE.Mesh(this._markerGeo ??= new THREE.OctahedronGeometry(0.085), this._markerMat ??= new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 1.5, 1.8) }));
       m.position.copy(p).add(new THREE.Vector3(0, 0.32, 0));
       m.scale.set(1, 1.5, 1);
       scene.add(m);
-      return { m, y: m.position.y, done, phase: i };
+      return { m, y: m.position.y, done, phase: i, range2: range * range };
     });
   }
 
@@ -1281,7 +1356,7 @@ export class HabitatSession {
   // The hatch keypad: dead until the pumps restart, then it wants Kessler's code
   _useHatch() {
     if (!this.story.has('gardenCleared')) {
-      this.say(['v-dead-keypad']);
+      this.game.ui.showToast('The keypad is dead. There is no power to it yet.', 3000);
       return;
     }
     this.game.state = 'KEYPAD';
@@ -1480,10 +1555,11 @@ export class HabitatSession {
     this.qualityStep = mode === 'medium' ? 1 : mode === 'low' ? 2 : 0;
     this.qualityTime = 0;
     this.qualityFrames = 0;
+    this._qualityDone = false;
   }
 
-  // A small frame counter (top right; F3 hides it), and automatic quality: if the first few
-  // seconds of play run slowly, the glow is switched off, then the resolution lowered a little.
+  // A small frame counter (top right; F3 hides it), and automatic quality: while play runs slowly,
+  // the glow is switched off, then the resolution lowered to 80%, then (still under ~28 fps) 67%.
   _perf(delta, playing) {
     if (!this.fpsEl) {
       this.fpsEl = document.createElement('div');
@@ -1507,13 +1583,13 @@ export class HabitatSession {
     if (this.fpsTime >= 0.5) {
       const fps = this.fpsFrames / this.fpsTime;
       this.fpsEl.textContent = Math.round(fps) + ' fps  ' + (1000 / fps).toFixed(1) + ' ms' +
-        (this.qualityStep ? '  (quality ' + ['', 'medium', 'low'][this.qualityStep] + ')' : '');
+        (this.qualityStep ? '  (quality ' + ['', 'medium', 'low', 'lowest'][this.qualityStep] + ')' : '');
       this.fpsFrames = 0;
       this.fpsTime = 0;
     }
-    // automatic quality: judge each 4 seconds of play, at most twice
+    // automatic quality: judge each 4 seconds of play, a step at a time until it is smooth enough
     // (not while the tab is hidden, and ignoring one-off stalls: the browser slows hidden tabs down)
-    if (!playing || this.qualityStep >= 2 || document.hidden || delta > 0.2) return;
+    if (!playing || this._qualityDone || document.hidden || delta > 0.2) return;
     if (this._qualityMode && this._qualityMode !== 'auto') return;      // the player chose a quality
     this.qualityTime += delta;
     this.qualityFrames++;
@@ -1521,19 +1597,28 @@ export class HabitatSession {
     const avg = this.qualityTime / this.qualityFrames;
     this.qualityTime = 0;
     this.qualityFrames = 0;
-    if (avg <= 1 / 40) { this.qualityStep = 2; return; }      // smooth enough: stop checking
+    if (avg <= 1 / 40) { this._qualityDone = true; return; }      // smooth enough: stop checking
     const webgl = this.game.renderer.instance;
-    if (this.bloom.enabled) {
-      this.bloom.enabled = false;
-      this.qualityStep = 1;
-    } else {
-      webgl.setPixelRatio(Math.min(webgl.getPixelRatio(), 0.8));
+    const scale = (pr) => {
+      webgl.setPixelRatio(Math.min(webgl.getPixelRatio(), pr));
       // (the composer keeps its own copy of the pixel ratio: without this the step did nothing)
       this.composer.setPixelRatio(webgl.getPixelRatio());
       this.composer.setSize(window.innerWidth, window.innerHeight);
-      const pr = webgl.getPixelRatio();
-      this.fxaa.material.uniforms.resolution.value.set(1 / (window.innerWidth * pr), 1 / (window.innerHeight * pr));
+      const p = webgl.getPixelRatio();
+      this.fxaa.material.uniforms.resolution.value.set(1 / (window.innerWidth * p), 1 / (window.innerHeight * p));
+    };
+    if (this.bloom.enabled) {
+      this.bloom.enabled = false;
+      this.qualityStep = 1;
+    } else if (webgl.getPixelRatio() > 0.8) {
+      scale(0.8);
       this.qualityStep = 2;
+    } else if (avg > 1 / 28 && webgl.getPixelRatio() > 0.67) {
+      scale(0.67);
+      this.qualityStep = 3;
+      this._qualityDone = true;
+    } else {
+      this._qualityDone = true;
     }
   }
 }

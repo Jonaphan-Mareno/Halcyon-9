@@ -8,6 +8,8 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { Physics } from '../core/Physics.js';
+import { precompile } from '../core/precompile.js';
+import { mergeStatic } from '../core/mergeStatic.js';
 import { PlayerController } from '../player/PlayerController.js';
 import { AriaManager } from '../entities/AriaManager.js';
 import { PlayerStats } from '../player/PlayerStats.js';
@@ -28,6 +30,7 @@ import { Harpoon } from './Harpoon.js';
 import { Trench } from './Trench.js';
 import { Level3Audio } from './Level3Audio.js';
 import { Headlamp } from './Headlamp.js';
+import { Chute } from './Chute.js';
 import '../ui/level3.css';
 import { LINES, TALKS } from './Level3Lines.js';
 import { disposeScene } from '../core/disposeScene.js';
@@ -52,6 +55,10 @@ const GLOW_SCALE = 0.35;                // the lamp lenses and strips glow, but 
 const FLICKER_LAMP = 2;                 // the corridor lamp that stutters
 const DEAD_LAMPS = [4];                 // no light left in them
 const WINDOW_NEAR = 3.0;                // this close to the window, the crew are seen
+// what the code finds by name, moves or hides: never joined with the still meshes round it
+// (core/mergeStatic.js). The sea's plants sway by their own shape, so they stay apart too.
+const DECK_KEEP = /^(DOOR_|PROP_|GATE_|PT_|SPAWN_|COL_)/;
+const SEA_KEEP = /^(GATE_|PT_|SEA_Life|TERRAIN_Cave|TRENCH_|COL_|SPAWN_)/;
 
 export class DeckSession {
   constructor(game) {
@@ -109,12 +116,18 @@ export class DeckSession {
       if (this.disposed) return;
       this.physics = physics;
       await this._load();
-      await this._precompile();
-      this.sea?.setShown(false);          // (compiled while the loading screen was up; hidden till the hatch opens)
+      // the still meshes that share a material are drawn as one
+      if (this.deck) mergeStatic(this.deck, DECK_KEEP);
+      if (this.sea?.model) mergeStatic(this.sea.model, SEA_KEEP);
+      // behind the title: only what he sees first (the chute, the deck, the crew); the outside
+      // (hidden till the outer hatch opens) is readied while he rides the chute
+      this.sea?.setShown(false);
+      await this._precompile([this.sea?.group]);
       this.ready = true;
       game.applySettings?.();
       this.loadingEl.classList.remove('visible');
       this._arrive();
+      this._readyOutside();
     }).catch((e) => console.error('Level 3 failed to load.', e));
   }
 
@@ -256,6 +269,8 @@ export class DeckSession {
     this.trench = new Trench(this);
     await this.trench.ready;
     this.visorAria = new VisorAria(this);
+    // the way down from the garden's hatch: ridden first, then taken down (Chute.js)
+    if (!new URLSearchParams(window.location.search).has('nochute')) this.chute = new Chute(this);
   }
 
   // the window's glass: a faint green tint with a brighter rim, so the room behind reads as water
@@ -360,18 +375,46 @@ export class DeckSession {
     this.game.scene.add(plate);
   }
 
-  async _precompile() {
-    const webgl = this.game.renderer.instance;
-    try {
-      await webgl.compileAsync(this.game.scene, this.game.camera.instance);
-    } catch (e) {
-      webgl.compile(this.game.scene, this.game.camera.instance);
-    }
+  async _precompile(skip) {
+    await precompile(this.game.renderer.instance, this.game.scene, this.game.camera.instance, this.composer.renderTarget1, { skip });
     this.composer.render();
   }
 
-  // He drops in from the shaft; a moment after he lands, ARIA, through the static in his ear
+  // The outside (the sea, the trench, the kraken), readied in the background long before the outer
+  // hatch opens: its shaders compiled (off the main thread), then its textures sent to the graphics
+  // card a few at a time (update(): _warmTextures), so nothing stalls when he swims out
+  async _readyOutside() {
+    const group = this.sea?.group;
+    if (!group || this.disposed) return;
+    const webgl = this.game.renderer.instance;
+    await precompile(webgl, this.game.scene, this.game.camera.instance, this.composer.renderTarget1, { root: group });
+    if (this.disposed) return;
+    const textures = new Set();
+    group.traverse((o) => {
+      for (const m of [].concat(o.material || [])) {
+        for (const v of Object.values(m)) if (v?.isTexture) textures.add(v);
+        for (const u of Object.values(m.uniforms || {})) if (u?.value?.isTexture) textures.add(u.value);
+      }
+    });
+    if (this.sea.sky?.isTexture) textures.add(this.sea.sky);
+    this._texQueue = [...textures];
+  }
+
+  _warmTextures() {
+    if (!this._texQueue?.length) return;
+    const webgl = this.game.renderer.instance;
+    for (let i = 0; i < 2 && this._texQueue.length; i++) webgl.initTexture(this._texQueue.shift());
+  }
+
+  // He slides down the chute from the garden's hatch (?nochute skips it), shoots out over the pump
+  // room and drops into its water; a moment after he lands, ARIA, through the static in his ear
   async _arrive() {
+    if (this.chute) {
+      await this.chute.ride();
+      this.chute = null;
+      if (this.disposed) return;
+      this.controls.teleport(this.spawn.clone().add(new THREE.Vector3(0, 2.2, 0)));
+    }
     this._falling = true;
     await sleep(2600);
     if (!this.disposed) this.say('landing');
@@ -388,6 +431,17 @@ export class DeckSession {
     const playing = g.state === 'PLAYING';
     this.time += dt;
     deckUniforms.uTime.value = this.time;
+    this._warmTextures();
+    // on the chute: it has the camera, and he is not on his feet yet (and the deck's drips and
+    // creaks wait till he is down in it: only the chute's own metal sounds)
+    if (this.chute?.active) {
+      this.chute.update(dt, playing);
+      this.hud.setVisible(playing);
+      this.hud.update(this.player);
+      g.reticle.classList.remove('visible');
+      this._perf(delta, playing);
+      return;
+    }
     const p = this.controls.position;
     // in the water he wades (slower), and every few steps the water rings round his legs (in the
     // water lock, its own water)
@@ -520,7 +574,7 @@ export class DeckSession {
       const line = LINES[id];
       if (!line) continue;
       if (line.who === 'voss') {
-        await vossSays(ui, line.text, line.clip);
+        await vossSays(ui, line.text, line.clip || id);   // (his recording: public/assets/audio/voss/<id>.mp3)
         continue;
       }
       const cue = CUES[line.cue] || CUES.guarded;
@@ -559,17 +613,45 @@ export class DeckSession {
   // draws at 80% resolution
   setQualityMode(mode) {
     this._qualityMode = mode;
+    this._quality = { step: 0, time: 0, frames: 0, done: false };
     if (!this.bloom) return;
-    const webgl = this.game.renderer.instance;
     this.bloom.enabled = mode === 'high' || mode === 'auto';
-    webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, mode === 'low' ? 0.8 : 1));
+    this._scale(mode === 'low' ? 0.8 : 1, true);
+  }
+
+  _scale(pr, set = false) {
+    const webgl = this.game.renderer.instance;
+    const want = Math.min(window.devicePixelRatio || 1, pr);
+    webgl.setPixelRatio(set ? want : Math.min(webgl.getPixelRatio(), want));
     this.composer.setPixelRatio(webgl.getPixelRatio());
     this.composer.setSize(window.innerWidth, window.innerHeight);
     this._fitFxaa();
   }
 
+  // Automatic quality (Options: Auto), as in Level 2: every 4 seconds of play the frame rate is
+  // judged, and while it is slow one more step is taken: the glow off, 80% resolution, then (still
+  // under ~28 fps) 67%. Once it is smooth enough it stops judging.
+  _autoQuality(delta, playing) {
+    const q = this._quality ??= { step: 0, time: 0, frames: 0, done: false };
+    if (!playing || q.done || document.hidden || delta > 0.2 || !this.bloom) return;
+    if (this._qualityMode && this._qualityMode !== 'auto') return;
+    q.time += delta;
+    q.frames++;
+    if (q.time < 4) return;
+    const avg = q.time / q.frames;
+    q.time = 0;
+    q.frames = 0;
+    const pr = this.game.renderer.instance.getPixelRatio();
+    if (avg <= 1 / 40) q.done = true;
+    else if (this.bloom.enabled) { this.bloom.enabled = false; q.step = 1; }
+    else if (pr > 0.8) { this._scale(0.8); q.step = 2; }
+    else if (avg > 1 / 28 && pr > 0.67) { this._scale(0.67); q.step = 3; q.done = true; }
+    else q.done = true;
+  }
+
   // a frame counter in the top right (F3 or Options hide it)
   _perf(delta, playing) {
+    this._autoQuality(delta, playing);
     if (!this.fpsEl) {
       this.fpsEl = document.createElement('div');
       this.fpsEl.className = 'fps-counter';
@@ -582,7 +664,9 @@ export class DeckSession {
     this._fps.time += delta;
     if (this._fps.time >= 0.5) {
       const fps = this._fps.frames / this._fps.time;
-      this.fpsEl.textContent = Math.round(fps) + ' fps  ' + (1000 / fps).toFixed(1) + ' ms';
+      const step = this._quality?.step;
+      this.fpsEl.textContent = Math.round(fps) + ' fps  ' + (1000 / fps).toFixed(1) + ' ms' +
+        (step ? '  (quality ' + ['', 'medium', 'low', 'lowest'][step] + ')' : '');
       this._fps.frames = 0;
       this._fps.time = 0;
     }
@@ -595,6 +679,7 @@ export class DeckSession {
     window.removeEventListener('keydown', this._onKey);
     window.removeEventListener('keyup', this._onKeyUp);
     window.removeEventListener('resize', this._onResize);
+    this.chute?.dispose();
     this.swim?.dispose();
     this.trench?.dispose();
     this.harpoon?.dispose();

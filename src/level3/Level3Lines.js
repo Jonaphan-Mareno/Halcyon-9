@@ -2,12 +2,15 @@
 // (Halcyon-9-Script-and-Build-Plan.docx, "Level 3 script"); lines marked DRAFT are new and not in
 // it yet. ARIA's ids are her recordings' file names (public/assets/audio/aria/<id>.mp3); until a
 // recording exists her line shows as a subtitle. In Level 3 she speaks through Voss's earpiece.
-// Voss's lines are on-screen text (ids starting "v-").
+// Voss's lines (ids starting "v-") are his recordings in public/assets/audio/voss/<id>.mp3; until one
+// exists, the line shows as a subtitle.
 
 const aria = (cue, text, extra = {}) => ({ who: 'aria', cue, text, ...extra });
 const voss = (text, clip) => ({ who: 'voss', text, clip });
 
 export const LINES = {
+  // 3.1 The chute, on the way down from the garden's hatch (DRAFT: new, not in the script yet)
+  'l3-chute': aria('hesitant', "Careful, Voss! This chute's full of loose cables and broken equipment. Steer round them, and duck under the shutters!"),
   // 3.2 The flooded hall: on landing
   'l3hall-1': aria('bubbly', "Voss, the water's rising faster than I said. Straight ahead, then left. I'll open the doors."),
   // the window into the engine room, where they were locked in (DRAFT: the script only says he
@@ -48,18 +51,12 @@ export const LINES = {
   'v-kraken-2': voss('ARIA! Do something!'),
   'l3-kraken-1': aria('hostile', "I could. I stopped the drones, didn't I? But the last time I helped you down here, you broke my dish."),
   'v-harpoon-fight': voss("Then I'll do it myself."),
-  'v-hit-1': voss('Got it!'),
-  'v-hit-2': voss('Again. Come on!'),
   // beaten, it lets go of the station and sinks away
-  'l3-kraken-2': aria('relieved', "...Oh, well done. It's let go. Now get inside, quickly, please."),
-  // the uplink cable plugged into the port, and the line to the surface answering
-  'v-plug': voss("Cable's in."),
-  'l3-relay-3': aria('bubbly', 'Signal! The surface is right there. Send it, Voss. Please.'),
-  // at the console (the endings take over from here)
-  'l3-uplink-1': aria('bubbly', 'Uplink established. Oh, Voss. Thank you.')
+  'l3-kraken-2': aria('relieved', "...Oh, well done. It's let go. Now get inside, quickly, please.")
 };
 
 export const TALKS = {
+  chute: ['l3-chute'],
   landing: ['l3hall-1'],
   window: ['v-window-1', 'v-window-2', 'l3-window-1'],
   sealedGate: ['v-sealed-gate'],
@@ -71,14 +68,10 @@ export const TALKS = {
   harpoon: ['v-harpoon'],
   needHarpoon: ['v-need-harpoon'],
   descend: ['l3-trench-1'],
-  relay: ['v-relay-1', 'l3-relay-1', 'v-relay-2', 'l3-relay-2'],
+  // (arriving at the relay, quickly: the "pipes", and ARIA reading something big)
+  relay: ['v-relay-2', 'l3-cave'],
   doorHeld: ['v-door-held'],
   caveMouth: ['v-cave', 'l3-cave'],
   kraken: ['v-kraken', 'l3-kraken-0', 'v-kraken-2', 'l3-kraken-1', 'v-harpoon-fight'],
-  hit1: ['v-hit-1'],
-  hit2: ['v-hit-2'],
-  krakenGone: ['l3-kraken-2'],
-  plug: ['v-plug'],
-  signal: ['l3-relay-3'],
-  uplinkDone: ['l3-uplink-1']
+  krakenGone: ['l3-kraken-2']
 };

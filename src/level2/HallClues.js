@@ -211,6 +211,7 @@ export function buildHallClues(scene, atrium) {
     board.lookAt(0, p.y, 0);
     scene.add(board);
     out.board = p.clone();
+    out.boardTop = p.clone().setY(p.y + BOARD_AT.h / 2);
   }
 
   // the framed photo on a coffee table, standing on its easel, a little dusty

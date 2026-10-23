@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Drone } from './Drone.js';
+import { Robot } from '../entities/Robot.js';
 import { FrostFX } from './FrostFX.js';
 import { FrostAudio } from './FrostAudio.js';
 import { Remains } from './Remains.js';
@@ -13,14 +14,18 @@ import { withHubLighting } from '../graphics/HubMaterials.js';
 // wet drone freezes, falls and shatters, leaving glowing remains on the floor (the organism got
 // into them). When the fight ends he lets go and the nozzle drops to the floor with its hose.
 //
-// Two waves: two drones to learn it ("That's two. There are... a few more."), then six, never
+// Two waves: two drones to learn it, then the rest, never
 // more than four in the air. Until he has the pipe they dive only now and then. Only one drone
 // attacks at a time: a lock-on (its eye turns red), then a dive. When the last one breaks, the
 // level is told (onCleared).
+//
+// Robots join from the second wave onward: they use the same state machine as drones but load
+// the Robot.glb model. The danger signal is on the robot itself: its head lamp (node A6, mesh
+// Circle.008) glows red from the moment it spawns - see Robot.js.
 
-const WAVES = [2, 6];
+const WAVES = [2, 10];
 const MAX_ALIVE = 4;
-const WAKE_RADIUS = 8;           // he comes this close to the hatch: the drones drop
+const WAKE_RADIUS = 4;           // he comes this close to the hatch: the drones drop
 const REST_SECONDS = 6;
 const COLD_SNAP_COOLDOWN = 5;
 const JET_RANGE = 18;            // the water reaches about this far
@@ -46,6 +51,8 @@ export class Garden {
     this.fx = new FrostFX(this.scene);
     this.audio = new FrostAudio();
     this.drones = [];
+    this._dangerActive = false;    // a robot has spawned: the warning toast has been shown
+    this._spawnIndex = 0;          // tracks spawn order within a wave (for deterministic robot ratio)
     this.state = 'idle';             // idle -> fight -> rest -> fight -> done
     this.wave = -1;
     this.queue = 0;
@@ -59,7 +66,6 @@ export class Garden {
     this.freezeHeld = false;         // Q is held down
     this._said = {};
     this._pending = [];              // remarks waiting for a quiet moment, so none cuts another off
-    this._lastCooldownLine = -99;
     this._time = 0;
     this._v = new THREE.Vector3();
     this._w = new THREE.Vector3();
@@ -201,6 +207,7 @@ export class Garden {
     this.wave = i;
     this.queue = WAVES[i];
     this.spawnTimer = 0.4;
+    this._spawnIndex = 0;
   }
 
   _spawn() {
@@ -208,22 +215,33 @@ export class Garden {
     const a = Math.random() * Math.PI * 2;
     const r = rand(4, 7);
     const start = new THREE.Vector3(this.centre.x + Math.cos(a) * r, 8.5, this.centre.z + Math.sin(a) * r);
-    this.drones.push(new Drone(this.scene, start));
+    // From wave 1 onward, exactly half the spawns are robots (alternating: drone, robot, drone, ...)
+    const isRobot = this.wave >= 1 && (this._spawnIndex % 2 === 1);
+    this._spawnIndex++;
+    if (isRobot) {
+      const robot = new Robot(this.scene, start);
+      this.drones.push(robot);
+      this._activateDangerIndicator();
+    } else {
+      this.drones.push(new Drone(this.scene, start));
+    }
     this.queue--;
     this.fx.mist(start, 0.4, 40);
+  }
+
+  // A robot has spawned: its own A6 lamp (Circle.008) is already red - see Robot.js. Here we
+  // just warn Voss once, the first time it happens in a fight.
+  _activateDangerIndicator() {
+    if (this._dangerActive) return;
+    this._dangerActive = true;
+    this.toast?.('WARNING: HOSTILE UNITS DETECTED');
   }
 
   // Q: ARIA drops the temperature. Every wet drone freezes and falls. While Q is held this runs
   // every frame, quietly, so it freezes the moment one is wet enough and she is ready.
   freeze(quiet = false) {
     if (!this.active) return false;
-    if (this.coldSnap > 0) {
-      if (!quiet && this._time - this._lastCooldownLine > 10) {
-        this._lastCooldownLine = this._time;
-        this.say?.('cooldown');
-      }
-      return false;
-    }
+    if (this.coldSnap > 0) return false;
     const frozen = this.drones.filter((d) => d.freeze());
     if (!frozen.length) {
       if (!quiet) this.toast?.('Nothing is wet enough to freeze. Spray them first: they spark when they are ready.');
@@ -234,10 +252,6 @@ export class Garden {
     this.idleTime = 0;
     this.audio.crackle();
     for (const d of frozen) for (let k = 0; k < 6; k++) this.fx.mist(d.position, 0.2, 40);
-    if (!this._said.firstFreeze) {
-      this._said.firstFreeze = true;
-      this._queue('firstFreeze');
-    }
     return true;
   }
 
@@ -305,7 +319,6 @@ export class Garden {
         if (this.wave < WAVES.length - 1) {
           this.state = 'rest';
           this.restTimer = REST_SECONDS;
-          this._queue('gardenRest');
         } else {
           this.state = 'done';
           this._pending.length = 0;

@@ -230,6 +230,38 @@ body, html {
   color: #ff6b6b;
 }
 
+/* what Voss thinks (or reads to himself) rather than says: a rounded thought bubble, its trail of
+   two little bubbles off the bottom left, the words in italics */
+#dialogue-box.voss.thought {
+  border-radius: 2.2rem;
+  border-style: dashed;
+  background: rgba(24, 4, 6, 0.72);
+  bottom: calc(6% + 1.6rem);
+}
+#dialogue-box.voss.thought #dialogue-text {
+  font-style: italic;
+}
+#dialogue-box.voss.thought::before,
+#dialogue-box.voss.thought::after {
+  content: '';
+  position: absolute;
+  border: 1px dashed #ff4d4d;
+  border-radius: 50%;
+  background: rgba(24, 4, 6, 0.72);
+}
+#dialogue-box.voss.thought::before {
+  width: 1.1rem;
+  height: 1.1rem;
+  left: 2.4rem;
+  bottom: -1.4rem;
+}
+#dialogue-box.voss.thought::after {
+  width: 0.6rem;
+  height: 0.6rem;
+  left: 1.6rem;
+  bottom: -2.3rem;
+}
+
 #toast {
   position: absolute;
   left: 50%;

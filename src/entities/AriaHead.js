@@ -16,24 +16,31 @@ const HEAD_MODEL = './assets/models/aria-head.glb';
 const TARGET_WIDTH = 512;
 const TARGET_HEIGHT = 288;
 
-// Facial expression targets, blended smoothly. tilt/nod are head movements,
-// gaze turns the eyes sideways (0 = straight at the player).
+// Facial expressions, blended smoothly. brow_up, brow_down and smile are morph amounts; lids is
+// how far the upper eyelids rest down (lower: eyes wider, higher: narrowed); tilt and pitch are
+// head movements (pitch > 0: chin down); gaze turns the eyes sideways (0 = straight at the
+// player). life is how much the face moves while she talks: brows lifting on stressed words (or,
+// angry, the frown deepening), the eyes widening with them, little nods. Brow amounts a little
+// over 1 push the frown further than the sculpted target.
 const EXPRESSIONS = {
-  neutral:   { brow_up: 0.0,  brow_down: 0.0,  smile: 0.0,  tilt: 0.0,  gaze: 0.0, nod: false },
-  relief:    { brow_up: 0.35, brow_down: 0.0,  smile: 0.25, tilt: 0.0,  gaze: 0.0, nod: false },
-  robotic:   { brow_up: 0.0,  brow_down: 0.0,  smile: 0.0,  tilt: 0.14, gaze: 0.0, nod: false },
-  hesitant:  { brow_up: 0.55, brow_down: 0.0,  smile: 0.0,  tilt: 0.0,  gaze: 0.45, nod: false },
-  deadpan:   { brow_up: 0.0,  brow_down: 0.0,  smile: 0.0,  tilt: 0.0,  gaze: 0.0, nod: true },
-  directive: { brow_up: 0.0,  brow_down: 0.28, smile: 0.0,  tilt: 0.0,  gaze: 0.0, nod: false },
-  // ARIA's bubbly personality, with a few half-true, slightly-too-bright moods
-  bubbly:    { brow_up: 0.18, brow_down: 0.0,  smile: 0.45, tilt: 0.0,  gaze: 0.0, nod: false },
-  sly:       { brow_up: 0.25, brow_down: 0.0,  smile: 0.30, tilt: 0.10, gaze: 0.25, nod: false },
-  watching:  { brow_up: 0.0,  brow_down: 0.12, smile: 0.25, tilt: 0.06, gaze: 0.0, nod: false },
+  neutral:   { brow_up: 0.0,  brow_down: 0.0,  smile: 0.05, lids: 0.28, tilt: 0.0,   pitch: 0.0,   gaze: 0.0,  life: 1.0 },
+  relief:    { brow_up: 0.55, brow_down: 0.0,  smile: 0.55, lids: 0.16, tilt: 0.05,  pitch: -0.03, gaze: 0.0,  life: 1.0 },
+  robotic:   { brow_up: 0.0,  brow_down: 0.0,  smile: 0.0,  lids: 0.34, tilt: 0.14,  pitch: 0.0,   gaze: 0.0,  life: 0.3 },
+  // worried: brows up, eyes sliding away, head down a little
+  hesitant:  { brow_up: 0.9,  brow_down: 0.0,  smile: 0.0,  lids: 0.24, tilt: -0.05, pitch: 0.05,  gaze: 0.45, life: 0.8 },
+  deadpan:   { brow_up: 0.0,  brow_down: 0.1,  smile: 0.0,  lids: 0.48, tilt: 0.0,   pitch: 0.0,   gaze: 0.0,  life: 0.4, nod: true },
+  directive: { brow_up: 0.0,  brow_down: 0.45, smile: 0.0,  lids: 0.32, tilt: 0.0,   pitch: 0.02,  gaze: 0.0,  life: 0.9 },
+  // ARIA's bubbly personality, with a few half-true, slightly-too-bright moods: happy is wide
+  // eyes, raised brows and a real smile
+  bubbly:    { brow_up: 0.6,  brow_down: 0.0,  smile: 0.85, lids: 0.06, tilt: 0.07,  pitch: -0.03, gaze: 0.0,  life: 1.4 },
+  sly:       { brow_up: 0.25, brow_down: 0.3,  smile: 0.5,  lids: 0.5,  tilt: 0.12,  pitch: 0.03,  gaze: 0.25, life: 0.9 },
+  watching:  { brow_up: 0.0,  brow_down: 0.25, smile: 0.25, lids: 0.42, tilt: 0.06,  pitch: 0.02,  gaze: 0.0,  life: 0.6 },
   // hiding something: a thin smile, eyes sliding away (level 2)
-  guarded:   { brow_up: 0.1,  brow_down: 0.15, smile: 0.08, tilt: 0.04, gaze: 0.35, nod: false },
-  // the mask slips: no smile, brows down, staring straight out (level 2's snap)
-  hostile:   { brow_up: 0.0,  brow_down: 0.55, smile: 0.0,  tilt: 0.0,  gaze: 0.0, nod: false }
+  guarded:   { brow_up: 0.2,  brow_down: 0.3,  smile: 0.1,  lids: 0.38, tilt: 0.04,  pitch: 0.03,  gaze: 0.35, life: 0.7 },
+  // the mask slips: a hard frown, narrowed eyes, chin down, staring straight out (level 2's snap)
+  hostile:   { brow_up: 0.0,  brow_down: 1.25, smile: 0.0,  lids: 0.46, tilt: 0.0,   pitch: 0.09,  gaze: 0.0,  life: 1.2, angry: true }
 };
+const EASED = ['brow_up', 'brow_down', 'smile', 'lids', 'tilt', 'pitch', 'gaze', 'life'];
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const smoothstep = (a, b, x) => {
@@ -73,12 +80,17 @@ export class AriaHead {
     this.time = 0;
     this.expr = { ...EXPRESSIONS.neutral };
     this.exprTarget = { ...EXPRESSIONS.neutral };
-    this.tilt = 0;
-    this.gaze = 0;
+    this.exprName = 'neutral';
     this.nodTime = -1;
     this.blinkValue = 0;
     this.nextBlink = 2.5;
     this.blinkTime = -1;
+    // the eyes' small darting moves, and how much she is talking (eased 0..1)
+    this.saccade = { x: 0, y: 0, tx: 0, ty: 0, next: 1 };
+    this.talk = 0;
+    // a stressed syllable: a quick pulse the brows, eyes and head answer
+    this.emphasis = 0;
+    this._loudAvg = 0;
 
     // Speech
     this.speaking = false;
@@ -183,6 +195,9 @@ export class AriaHead {
 
   setExpression(name) {
     const target = EXPRESSIONS[name] || EXPRESSIONS.neutral;
+    // a change of mood comes with a blink, as a person's does
+    if (name !== this.exprName && this.blinkTime < 0) this.blinkTime = 0;
+    this.exprName = name;
     this.exprTarget = { ...target };
     if (target.nod) this.nodTime = 0;
   }
@@ -196,34 +211,64 @@ export class AriaHead {
 
     this._updateSpeech(delta);
     this._updateBlink(delta);
+    this._updateEyes(delta);
 
-    // Ease the expression toward its target
-    const k = 1 - Math.exp(-6 * delta);
-    for (const key of ['brow_up', 'brow_down', 'smile', 'tilt', 'gaze']) {
-      this.expr[key] += (this.exprTarget[key] - this.expr[key]) * k;
+    // Ease the expression toward its target (the brows move quicker than the rest)
+    const k = 1 - Math.exp(-6 * delta), kb = 1 - Math.exp(-10 * delta);
+    for (const key of EASED) {
+      const rate = key === 'brow_up' || key === 'brow_down' ? kb : k;
+      this.expr[key] += (this.exprTarget[key] - this.expr[key]) * rate;
     }
+    this.talk += ((this.speaking ? 1 : 0) - this.talk) * (1 - Math.exp(-4 * delta));
+    const e = this.emphasis * this.expr.life;
+    const angry = !!this.exprTarget.angry;
+    // a faint drift in the brows even when still: a face is never quite frozen
+    const drift = Math.sin(this.time * 0.7) * 0.03 + Math.sin(this.time * 1.9 + 1) * 0.02;
 
     this._setMorph('jaw_open', Math.min(1, this.jaw * 1.35)); // a little extra range so the mouth reads on the small screen
     this._setMorph('mouth_wide', this.wide);
     this._setMorph('mouth_pucker', this.pucker);
-    this._setMorph('mouth_smile', this.expr.smile);
-    this._setMorph('brow_up', this.expr.brow_up);
-    this._setMorph('brow_down', this.expr.brow_down);
-    // Eyelids rest half-lowered: calm and composed instead of startled
-    this._setMorph('blink', Math.max(this.blinkValue, 0.34));
+    this._setMorph('mouth_smile', this.expr.smile * (1 - this.jaw * 0.4));
+    this._setMorph('brow_up', Math.max(0, this.expr.brow_up + (angry ? 0 : e * 0.45) + drift));
+    this._setMorph('brow_down', this.expr.brow_down + (angry ? e * 0.35 : 0));
+    // the eyelids: where the mood rests them (stressed words open them, or angry, narrow them),
+    // and the blinks
+    const lids = clamp01(this.expr.lids + (angry ? e * 0.06 : -e * 0.12));
+    this._setMorph('blink', Math.max(this.blinkValue, lids));
 
-    // Idle: slow breathing and a faint sway, plus tilt / nod / gaze
+    // the head: slow breathing and sway; nods and tilts of the mood; while she talks it moves with
+    // her words (a dip on each syllable, a lift on stressed ones, a slow turn back and forth)
     let nod = 0;
     if (this.nodTime >= 0) {
       this.nodTime += delta;
       nod = Math.sin(Math.min(1, this.nodTime / 1.4) * Math.PI) * 0.16;
       if (this.nodTime > 1.4) this.nodTime = -1;
     }
-    this.root.rotation.y = Math.sin(this.time * 0.35) * 0.05;
-    this.root.rotation.x = Math.sin(this.time * 0.5) * 0.015 + nod;
-    this.root.rotation.z = this.expr.tilt;
-    this.root.scale.setScalar(1 + Math.sin(this.time * 1.1) * 0.006);
-    for (const eye of this.eyes) eye.rotation.y = this.expr.gaze;
+    const t = this.time, talk = this.talk;
+    this.root.rotation.y = Math.sin(t * 0.35) * 0.05 + Math.sin(t * 0.13 + 2) * 0.03 + Math.sin(t * 1.7) * 0.035 * talk;
+    this.root.rotation.x = Math.sin(t * 0.5) * 0.015 + nod + this.expr.pitch + this.jaw * 0.03 * talk - e * 0.045;
+    this.root.rotation.z = this.expr.tilt + Math.sin(t * 1.1 + 0.5) * 0.02 * talk;
+    this.root.scale.setScalar(1 + Math.sin(t * 1.1) * 0.006);
+    for (const eye of this.eyes) {
+      eye.rotation.y = this.expr.gaze + this.saccade.x;
+      eye.rotation.x = this.saccade.y;
+    }
+  }
+
+  // The eyes dart a little every second or two, as eyes do, quick to move and still between; while
+  // she talks they come back to the player more often
+  _updateEyes(delta) {
+    const s = this.saccade;
+    s.next -= delta;
+    if (s.next <= 0) {
+      const toPlayer = this.speaking && Math.random() < 0.6;
+      s.tx = toPlayer ? 0 : (Math.random() - 0.5) * 0.18;
+      s.ty = toPlayer ? 0 : (Math.random() - 0.5) * 0.08;
+      s.next = this.speaking ? 0.5 + Math.random() * 1.2 : 0.9 + Math.random() * 2.2;
+    }
+    const k = 1 - Math.exp(-30 * delta);
+    s.x += (s.tx - s.x) * k;
+    s.y += (s.ty - s.y) * k;
   }
 
   _setMorph(name, value) {
@@ -235,7 +280,8 @@ export class AriaHead {
     this.nextBlink -= delta;
     if (this.nextBlink <= 0 && this.blinkTime < 0) {
       this.blinkTime = 0;
-      this.nextBlink = 3 + Math.random() * 4; // ARIA blinks rarely
+      // every few seconds, more often while she talks
+      this.nextBlink = this.speaking ? 1.8 + Math.random() * 2.5 : 3 + Math.random() * 4;
     }
     if (this.blinkTime >= 0) {
       this.blinkTime += delta;
@@ -280,6 +326,12 @@ export class AriaHead {
       wide = clamp01(0.5 * Math.sin(t * 5.3)) * jaw;
       pucker = clamp01(0.5 * Math.sin(t * 4.1 + 2)) * jaw * 0.6;
     }
+
+    // a stressed syllable: the voice jumping well above its recent loudness
+    this._loudAvg += (jaw - this._loudAvg) * (1 - Math.exp(-3 * delta));
+    const rise = jaw - this._loudAvg;
+    if (this.speaking && rise > 0.16 && this.emphasis < 0.35) this.emphasis = Math.min(1, rise * 2.5);
+    this.emphasis = Math.max(0, this.emphasis - delta * 2.2);
 
     // Smooth: quick to open, a little slower to close
     const rate = jaw > this.jaw ? 30 : 16;

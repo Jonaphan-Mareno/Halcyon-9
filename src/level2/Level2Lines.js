@@ -20,12 +20,15 @@ export const CUES = {
 };
 
 const aria = (cue, text, extra = {}) => ({ who: 'aria', cue, text, ...extra });
-// clip: his recording in public/assets/audio/voss/ (none yet: text only)
+// clip: his recording in public/assets/audio/voss/ (by default the line's id: v-acting-up.mp3 and so
+// on; until it is there the line is text only)
 const voss = (text, clip) => ({ who: 'voss', text, clip });
+// what he reads to himself: a thought bubble, not spoken (no recording)
+const thinks = (text) => ({ who: 'voss', text, thought: true });
 
 export const LINES = {
   // 2.1 The lift
-  'l2-lift-1': aria('bubbly', "The elevator is unable to go to the third floor due to the water leakage, we'll have to take the emergency hatch on the second floor to get there."),
+  'l2-lift-1': aria('bubbly', "The elevator can't make it to the third floor due to the water leakage, we'll have to take the emergency hatch on the second floor to get there."),
   'l2-lift-2': aria('bubbly', "This is where everyone actually lived. We weren't just a station. We were trying to make a home down here. You'll see."),
   'v-trying': voss('...Trying?', 'l2lift-1'),
   'l2-lift-3': aria('guarded', "Oh, you know how it is. Deep-sea living is a work in progress. Go on, have a look around."),
@@ -41,31 +44,22 @@ export const LINES = {
   'v-chore': voss('Someone still had chore duty down here. Tidying up, watering the beds... like any of that mattered anymore.'),
   'v-ration': voss('Left mid-meal. Nobody just walks away from dinner.'),
   'v-photo': voss("Seven people. I keep looking for a face I'd know."),
-  'v-pods-sign': voss('ESCAPE PODS: LOCKED. Remote override: ARIA.'),
+  'v-pods-sign': thinks('ESCAPE PODS: LOCKED. Remote override: ARIA.'),
   'v-pods-why': voss('Why would she lock the way out?'),
   'l2-pods': aria('sly', "The pods are offline. Water got into the release mechanism, it's such a shame."),
-  'v-sea': voss('...Did something just move out there?'),
   'l2-sea': aria('bubbly', "Like I said before we're deep down in the sea."),
-  'v-stairs': voss("There's a light on up there."),
   'l2-stairs': aria('guarded', "It isn't safe to go upstairs, there's been a lot of structural damage."),
   'v-tease': voss('...Was that supposed to move like that?', 'l2worried'),
   'l2-tease': aria('guarded', "That's just one of the garden maintenance equipment. Be careful the equipment have ran rampage."),
 
   // 2.3 The garden
   'l2-garden-1': aria('guarded', "Pick up the pipe, Voss. The one on the wall. Aim it, squeeze, and get them wet. I'll lower the temperature so they freeze."),
-  'v-anytime': voss('You can do that any time?'),
-  'l2-garden-2': aria('guarded', "Only when I'm asked nicely. And only when there's something nearby worth freezing."),
-  'l2-cool': aria('flat', 'Compressors recharging. Give me a few seconds.'),
   'l2-bot-hit-1': aria('watching', "Ooof, that looked like it hurt. The equipment really isn't itself lately."),
   'l2-bot-hit-2': aria('sly', 'Careful. It still remembers how to grip. Just not what for.'),
-  'l2-garden-rest': aria('bubbly', "That's two. There are... a few more. Garden maintenance has a lot of staff."),
   'l2-garden-idle': aria('sly', "The pipe's right there on the wall, Voss. I know you can see it. I'm the one with cameras, not you, and even I can see it."),
   'l2-garden-win': aria('relieved', "There. See? Nothing you can't handle."),
-  'v-power-back': voss("The lights are back... and the bulkheads on the stairs just opened."),
-  'l2-bulkhead': aria('guarded', "That wasn't me."),
 
   // 2.4 The hatch
-  'v-dead-keypad': voss("Dead. There's no power to the keypad."),
   'l2-hatch-1': aria('guarded', "That's Kessler's lock. She cut me out of it before..."),
   'v-hatch-how': voss("Then how do I get through ARIA?! We don't have much time!", 'l2-hatch-angry'),
   'l2-hatch-2': aria('bubbly', "We'll find another way, just don't go upstairs! It isn't safe."),
@@ -77,7 +71,6 @@ export const LINES = {
 
   // 2.6 The crew bunk
   'v-initials': voss('My initials. Again.'),
-  'v-my-bunk': voss("J. Voss. This was my bunk... I don't remember ever sleeping here."),
   'v-handwriting': voss("...That's my handwriting. Why does this sound like I already knew what was going on?"),
   'l2-bunk-interrupt': aria('guarded', "Voss? You've been in there a while. Everything alright?"),
   'l2-bunk-idle': aria('sly', "It's only bunks, Voss. I'd leave the lockers. Everyone's so private about their laundry."),
@@ -213,24 +206,19 @@ export const TALKS = {
   ration: ['v-ration'],
   photo: ['v-photo'],
   pods: ['v-pods-sign', 'v-pods-why', 'l2-pods'],
-  sea: ['v-sea', 'l2-sea'],
-  stairs: ['v-stairs', 'l2-stairs'],
+  sea: ['l2-sea'],
+  stairs: ['l2-stairs'],
   tease: ['v-tease', 'l2-tease'],
   gardenStart: ['l2-garden-1'],
-  firstFreeze: ['v-anytime', 'l2-garden-2'],
-  cooldown: ['l2-cool'],
   hitDirect: ['l2-bot-hit-1'],
   hitGraze: ['l2-bot-hit-2'],
-  gardenRest: ['l2-garden-rest'],
   gardenIdle: ['l2-garden-idle'],
   gardenWin: ['l2-garden-win'],
-  bulkhead: ['v-power-back', 'l2-bulkhead'],
   hatchLocked: ['l2-hatch-1', 'v-hatch-how', 'l2-hatch-2'],
   galleryTop: ['l2-gallery-1'],
   sealedDoor: ['v-sealed'],
   galleryIdle: ['l2-gallery-idle'],
   corkboard: ['v-initials'],
-  myBunk: ['v-my-bunk'],
   letter: ['v-handwriting'],
   bunkInterrupt: ['l2-bunk-interrupt'],
   bunkIdle: ['l2-bunk-idle'],

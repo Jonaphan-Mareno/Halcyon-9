@@ -575,6 +575,8 @@ NEW_HEAD = os.path.join(ROOT, 'Blender', 'assets', 'woman_head', 'scene.gltf')
 NEW_NOSE, NEW_SCALE = Vector((1.492, 0.0, -0.35)), 0.066
 OLD_NOSE = Vector((0.0, -0.0769, 1.213))                # her old nose tip (Object_9, at rest)
 OLD_NECK_TOP = 1.165                                    # her old head is kept below this: her neck
+HEAD_SIZE = 0.86                                        # nose to nose it is too big for her body: shrunk
+                                                        # about where it meets her neck
 
 
 def put_new_head(cast, grey=0.0, streaks=0.0):
@@ -602,8 +604,13 @@ def put_new_head(cast, grey=0.0, streaks=0.0):
     # into her units: faces -y (a quarter turn), scaled, its nose tip on hers
     head.data.transform(Matrix.Translation(-NEW_NOSE))
     head.data.transform(Matrix.Rotation(math.radians(-90), 4, 'Z') @ Matrix.Scale(NEW_SCALE, 4))
-    head.location = OLD_NOSE
     head.data.polygons.foreach_set('use_smooth', [True] * len(head.data.polygons))
+    # smaller, by the object's scale (its object space, which the hair mask below is in, unchanged),
+    # about the middle of the neck at the join
+    ring = [v.co for v in head.data.vertices if abs(v.co.z + OLD_NOSE.z - OLD_NECK_TOP) < 0.01]
+    pivot = Vector((0.0, sum(c.y for c in ring) / len(ring), OLD_NECK_TOP - OLD_NOSE.z)) + OLD_NOSE
+    head.location = pivot + (OLD_NOSE - pivot) * HEAD_SIZE
+    head.scale = (HEAD_SIZE,) * 3
 
     # her old head: only the neck kept; her old eyes hidden (they stay, for their positions)
     import bmesh
@@ -717,8 +724,9 @@ def shut_new_eyes(head):
     head.data.calc_loop_triangles()
     uvl = head.data.uv_layers.active.data
     lids = []
+    k = head.scale.x                                     # (lids and lashes sized with the head)
     for side in (-1, 1):
-        eye = Vector((side * 0.025, 0.0, OLD_NOSE.z + 0.032)) - head.location
+        eye = Vector((side * 0.025, 0.0, 0.032))           # (its object space: from the nose tip)
         hit, loc, nrm, fi = head.ray_cast(Vector((eye.x, -0.5, eye.z)), Vector((0, 1, 0)))
         if not hit:
             continue
@@ -730,16 +738,16 @@ def shut_new_eyes(head):
         lin = tuple(float(c) / 12.92 if c <= 0.04045 else ((float(c) + 0.055) / 1.055) ** 2.4 for c in skin)
         lid_m = flat(f'Lid{side}', lin, 0.6)              # (the texture's pixels are sRGB)
         world = head.matrix_world @ loc
-        bpy.ops.mesh.primitive_uv_sphere_add(radius=1, location=world - Vector((0, 0.0025, 0)), segments=24, ring_count=12)
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=1, location=world - Vector((0, 0.0025 * k, 0)), segments=24, ring_count=12)
         lid = bpy.context.object
-        lid.scale = (0.0125, 0.0045, 0.0062)
+        lid.scale = (0.0125 * k, 0.0045 * k, 0.0062 * k)
         lid.rotation_euler[1] = math.radians(-side * 6)
         lid.data.materials.append(lid_m); bpy.ops.object.shade_smooth()
-        lash = bpy.data.curves.new('Lash', 'CURVE'); lash.dimensions = '3D'; lash.bevel_depth = 0.0007
+        lash = bpy.data.curves.new('Lash', 'CURVE'); lash.dimensions = '3D'; lash.bevel_depth = 0.0007 * k
         sp = lash.splines.new('POLY'); sp.points.add(6)
         for i, pt in enumerate(sp.points):
             t = i / 6 * 2 - 1
-            pt.co = (*(world + Vector((t * 0.011, -0.006, -0.0045 + 0.002 * t * t))), 1)
+            pt.co = (*(world + Vector((t * 0.011, -0.006, -0.0045 + 0.002 * t * t)) * k), 1)
         lo = bpy.data.objects.new('Lash', lash); scene().collection.objects.link(lo)
         lash.materials.append(flat('LashMat', srgb('#1c1614'), 0.6))
         lids += [lid, lo]

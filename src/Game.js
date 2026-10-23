@@ -396,6 +396,7 @@ export class Game {
     this.ui.hideToast();
     this.currentLevel?.dispose?.();
     this.currentLevel = null;
+    this.controls.disposeBody();
     this.ringCloseBtn?.remove();
     this.ringCloseBtn = null;
 
@@ -910,7 +911,11 @@ export class Game {
         this.currentLevel?.ariaManager?.renderHead(this.renderer.instance);
         this.perf?.update(delta, this.state === 'PLAYING');
       }
+      // (level 1's third person: the camera behind Voss for the frame only, then back at his eyes)
+      if (!this.level2Mode) this.controls?.showArms?.(this._inPlainPlay());
+      const behind = !this.level2Mode && this.controls?.beginThirdPerson?.(this._inPlainPlay());
       this.renderer.render(this.scene, this.camera.instance);
+      if (behind) this.controls.endThirdPerson();
     };
     requestAnimationFrame(loop);
   }
@@ -932,6 +937,7 @@ export class Game {
     if (live && this.currentLevel) {
       this.currentLevel.update(delta, this.camera.instance.position, this.camera.instance);
     }
+    if (this.state === 'PLAYING') this.controls.updateBody(delta);
     if (live && this.state !== 'DEAD' && this.state !== 'WAKING') {
       this.player.playSeconds += delta;
     }
@@ -950,7 +956,10 @@ export class Game {
 
     if (this.state === 'PLAYING') {
       this.updateReticle();
+      // (the waypoint is placed on screen from where the frame is drawn)
+      const behind = this.controls.beginThirdPerson(this._inPlainPlay());
       this.updateGuidance(delta);
+      if (behind) this.controls.endThirdPerson();
     } else {
       this.ui.setPrompt(null);
       this.ui.setWaypoint(null);
@@ -1017,7 +1026,7 @@ export class Game {
     info.x = (nx * 0.5 + 0.5) * window.innerWidth;
     info.y = (-ny * 0.5 + 0.5) * window.innerHeight;
     info.label = target.label;
-    info.distance = camera.position.distanceTo(target.position);
+    info.distance = this.controls.eyePosition.distanceTo(target.position);
     this.ui.setWaypoint(info);
   }
 
@@ -1053,6 +1062,22 @@ export class Game {
   // like the brick, still works. (Objects marked userData.noAimAssist, like the relay rings,
   // where you must pick one ring, need the exact ray.)
   _pickInteractable() {
+    // In third person: along the crosshair's line, from beside Voss's head
+    const aimed = this.controls?.beginThirdPerson?.(this._inPlainPlay(), 'aim');
+    try {
+      return this._pickAtCrosshair();
+    } finally {
+      if (aimed) this.controls.endThirdPerson();
+    }
+  }
+
+  // Level 1's third person and first-person arms show only in plain play: puzzles, the keypad and
+  // camera moves are seen from his eyes, with nothing in the way
+  _inPlainPlay() {
+    return this.state === 'PLAYING' && !this.camAnim;
+  }
+
+  _pickAtCrosshair() {
     const level = this.currentLevel;
     const cam = this.camera.instance;
     const targets = level.interactables || [];
@@ -1093,6 +1118,7 @@ export class Game {
   tryInteract(options = {}) {
     // Something in Voss's hands (the cell's brick): click throws it, E drops it
     if (this.currentLevel.handleHeldItem?.(options)) return;
+    if (!options.fromKey) this.controls.reach();      // (a click, with nothing in hand: he reaches out)
     const hit = this._pickInteractable();
     if (!hit) return;
     if (this.currentLevel.canInteract?.(hit.object, hit.distance) === false) return;

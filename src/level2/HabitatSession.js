@@ -1031,7 +1031,7 @@ export class HabitatSession {
         continue;
       }
       if (line.who === 'voss') {
-        await vossSays(ui, line.text, line.clip);
+        await vossSays(ui, line.text, line.clip || id);
         continue;
       }
       // a long silence before she answers: the music drops out and the lights stutter
@@ -1080,7 +1080,7 @@ export class HabitatSession {
   }
 
   // The last drone is down and the pumps restart (end of scene 2.3): a stutter and a deep hit,
-  // the atrium's light comes back, the stair bulkheads sink into the floor, and ARIA denies it
+  // the atrium's light comes back, the stair bulkheads sink into the floor, and Voss notices
   _powerReturns() {
     const g = this.game;
     g.mood?.flicker(0.9);

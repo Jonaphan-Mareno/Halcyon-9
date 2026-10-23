@@ -59,7 +59,6 @@ export class Garden {
     this.freezeHeld = false;         // Q is held down
     this._said = {};
     this._pending = [];              // remarks waiting for a quiet moment, so none cuts another off
-    this._lastCooldownLine = -99;
     this._time = 0;
     this._v = new THREE.Vector3();
     this._w = new THREE.Vector3();
@@ -217,13 +216,7 @@ export class Garden {
   // every frame, quietly, so it freezes the moment one is wet enough and she is ready.
   freeze(quiet = false) {
     if (!this.active) return false;
-    if (this.coldSnap > 0) {
-      if (!quiet && this._time - this._lastCooldownLine > 10) {
-        this._lastCooldownLine = this._time;
-        this.say?.('cooldown');
-      }
-      return false;
-    }
+    if (this.coldSnap > 0) return false;
     const frozen = this.drones.filter((d) => d.freeze());
     if (!frozen.length) {
       if (!quiet) this.toast?.('Nothing is wet enough to freeze. Spray them first: they spark when they are ready.');

@@ -20,7 +20,8 @@ export const CUES = {
 };
 
 const aria = (cue, text, extra = {}) => ({ who: 'aria', cue, text, ...extra });
-// clip: his recording in public/assets/audio/voss/ (none yet: text only)
+// clip: his recording in public/assets/audio/voss/ (by default the line's id: v-acting-up.mp3 and so
+// on; until it is there the line is text only)
 const voss = (text, clip) => ({ who: 'voss', text, clip });
 
 export const LINES = {
@@ -55,14 +56,12 @@ export const LINES = {
   'l2-garden-1': aria('guarded', "Pick up the pipe, Voss. The one on the wall. Aim it, squeeze, and get them wet. I'll lower the temperature so they freeze."),
   'v-anytime': voss('You can do that any time?'),
   'l2-garden-2': aria('guarded', "Only when I'm asked nicely. And only when there's something nearby worth freezing."),
-  'l2-cool': aria('flat', 'Compressors recharging. Give me a few seconds.'),
   'l2-bot-hit-1': aria('watching', "Ooof, that looked like it hurt. The equipment really isn't itself lately."),
   'l2-bot-hit-2': aria('sly', 'Careful. It still remembers how to grip. Just not what for.'),
   'l2-garden-rest': aria('bubbly', "That's two. There are... a few more. Garden maintenance has a lot of staff."),
   'l2-garden-idle': aria('sly', "The pipe's right there on the wall, Voss. I know you can see it. I'm the one with cameras, not you, and even I can see it."),
   'l2-garden-win': aria('relieved', "There. See? Nothing you can't handle."),
   'v-power-back': voss("The lights are back... and the bulkheads on the stairs just opened."),
-  'l2-bulkhead': aria('guarded', "That wasn't me."),
 
   // 2.4 The hatch
   'v-dead-keypad': voss("Dead. There's no power to the keypad."),
@@ -218,13 +217,12 @@ export const TALKS = {
   tease: ['v-tease', 'l2-tease'],
   gardenStart: ['l2-garden-1'],
   firstFreeze: ['v-anytime', 'l2-garden-2'],
-  cooldown: ['l2-cool'],
   hitDirect: ['l2-bot-hit-1'],
   hitGraze: ['l2-bot-hit-2'],
   gardenRest: ['l2-garden-rest'],
   gardenIdle: ['l2-garden-idle'],
   gardenWin: ['l2-garden-win'],
-  bulkhead: ['v-power-back', 'l2-bulkhead'],
+  bulkhead: ['v-power-back'],
   hatchLocked: ['l2-hatch-1', 'v-hatch-how', 'l2-hatch-2'],
   galleryTop: ['l2-gallery-1'],
   sealedDoor: ['v-sealed'],

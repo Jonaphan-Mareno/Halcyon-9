@@ -119,8 +119,8 @@ const STYLE = `
 #hi-gate button { background: transparent; color: #cfe8e6; border: 1px solid rgba(207, 232, 230, 0.5); padding: 0.9rem 2.6rem;
   font: 200 clamp(1rem, 1.6vw, 1.5rem)/1 inherit; letter-spacing: 0.4em; cursor: pointer; }
 #hi-gate button:hover { background: rgba(207, 232, 230, 0.12); }
-#hi-menu { position: absolute; left: 0; right: 0; bottom: 14vh; display: flex; flex-direction: column;
-  align-items: center; gap: 1.1rem; opacity: 0; transition: opacity 0.9s ease; pointer-events: none; }
+#hi-menu { position: absolute; right: max(16px, 8vw); top: 55%; transform: translateY(-50%); display: flex;
+  flex-direction: column; align-items: stretch; gap: 1.1rem; opacity: 0; transition: opacity 0.9s ease; pointer-events: none; }
 #hi-menu.on { opacity: 1; pointer-events: auto; }
 .hi-btn { min-width: 15rem; background: rgba(0, 0, 0, 0.25); color: #eef5f3; border: 1px solid rgba(207, 232, 230, 0.45);
   padding: 0.85rem 2.4rem; font: 200 clamp(0.95rem, 1.4vw, 1.3rem)/1 'Helvetica Neue', 'Segoe UI Light', 'Segoe UI', Arial, sans-serif;

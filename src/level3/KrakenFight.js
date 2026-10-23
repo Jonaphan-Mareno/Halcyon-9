@@ -150,14 +150,15 @@ export class KrakenFight {
       const tip = k.pointOn(k.tents[a.tent], 0.85, new THREE.Vector3());
       if (segmentNear(p0, p1, tip, 1.6)) {
         this._stun();
-        return { point: closest(p0, p1, tip), stick: null, flesh: true };
+        return { point: closest(p0, p1, tip), stick: null, flesh: true, big: true };
       }
     }
     const mouth = k.mouthWorld(this._p);
     if (segmentNear(p0, p1, mouth, MOUTH_RADIUS)) {
-      if (this.open > 0.5 && (this.state === 'fight' || this.state === 'stunned')) this._wound();
+      const wounds = this.open > 0.5 && (this.state === 'fight' || this.state === 'stunned');
+      if (wounds) this._wound();
       else this.t.onShrug();
-      return { point: closest(p0, p1, mouth), stick: k.root, flesh: true };
+      return { point: closest(p0, p1, mouth), stick: k.root, flesh: true, big: wounds };
     }
     const body = this._bodyCentre(this._v);
     if (segmentNear(p0, p1, body, BODY_RADIUS * 0.75)) {
@@ -392,6 +393,9 @@ export class KrakenFight {
     let r = Math.random() * moves.reduce((s, [, w]) => s + w, 0);
     let kind = moves[0][0];
     for (const [m, w] of moves) { if ((r -= w) <= 0) { kind = m; break; } }
+    // (every second blow it comes at him itself: a lunge into his face)
+    this.attacks = (this.attacks || 0) + 1;
+    if (this.attacks % 2 === 0) kind = 'lunge';
     if (this._afterInk) { kind = 'punch'; this._afterInk = false; }
     if (force) kind = force;
     this._last = kind;

@@ -13,13 +13,12 @@ import { SEA } from './SeaScene.js';
 //      dashes him out of the way (a blow that lands during a dash misses). Its blows glow before
 //      they land; a punch he dodges sticks in the rock (shoot it: the kraken is stunned); its ink
 //      blinds him for a moment. Its mouth glows when it is open to the spear rifle. Four hits
-//   4. it sinks away beaten; the relay's door opens; inside he plugs the uplink
-//      cable into the port. Then the team's puzzles (PUZZLES below), then he sends the uplink from
-//      the console, and the level ends (for now)
+//   4. it sinks away beaten; the relay's door opens and he goes in. What happens in there (the
+//      puzzles, the uplink, the two endings) is the team's: see RELAY below
 //
-// The relay has an air refill (the suit's four minutes run out otherwise). If his health or his air
-// runs out, ARIA restores him from backup at the last safe place. Every step has its sound
-// (Level3Audio.js, as session.sfx).
+// If his health or his air runs out, ARIA restores him from backup at the last safe place. Every
+// step has its sound (Level3Audio.js, as session.sfx). Each hit on the kraken clouds the water
+// with its blood.
 
 const TRENCH_TOP = -24;             // deeper than this (and east of the leg), the trench's lights take over
 const TRENCH_LIGHTS = [             // colour, candela, range: in the relay, over its door, in the lair, at the cave's mouth
@@ -30,9 +29,12 @@ const DASH = { speed: 12, iframes: 0.4, cooldown: 0.85 };   // the dodge: a burs
 const INK_TIME = 4.5;               // seconds its ink blinds him
 const OXYGEN_FULL = 240;            // (PrepRoom's OXYGEN)
 
-// The team's puzzles in the relay go here: called once the uplink cable is plugged in, before the
-// uplink can be sent. An async function given the Trench; resolve when they are solved.
-export const PUZZLES = { run: null };
+// Inside the relay station is the team's (the puzzles, the uplink, the endings). enter(trench) is
+// called once, when he first comes in through its door (the uplink cable still trails behind him:
+// trench.s.swim, its end at trench.s.swim.plugged once it is plugged in somewhere). guide(trench),
+// if given, returns the objective while he is in there: { text, target (a Vector3 or null), label }.
+// trench.pts has the room's points (port, screen, bay: the empty corner for the puzzles, air)
+export const RELAY = { enter: null, guide: null };
 
 export class Trench {
   constructor(session) {
@@ -82,6 +84,7 @@ export class Trench {
     const hit = this.fight.spearTest(p0, p1);
     if (hit) {
       this.sfx?.cue(hit.flesh ? 'spearFlesh' : 'spearRock', hit.point);
+      if (hit.flesh) this._blood(hit.point, hit.big ? 2.2 : 1);
       return hit;
     }
     const d = this._v.subVectors(p1, p0);
@@ -222,12 +225,6 @@ export class Trench {
   _spots() {
     const it = this.s.interact, p = this.pts;
     it.add({ id: 'relayDoor', position: p.door, radius: 0.9, label: 'Open the relay station door', when: () => this.doors.front?.target === 0, use: () => this._useDoor() });
-    it.add({ id: 'relayPort', position: p.port, radius: 0.35, reach: 2.4, label: 'Plug in the uplink cable', when: () => this.stage === 'inside', use: () => this._plug() });
-    it.add({
-      id: 'relayAir', position: p.air, radius: 0.5, reach: 2.4, label: 'Refill your air',
-      when: () => this.s.prep?.suited && this.s.prep.oxygen < OXYGEN_FULL - 2, use: () => this._refill()
-    });
-    it.add({ id: 'relayConsole', position: p.screen, radius: 0.7, reach: 3.0, label: 'Send the uplink', when: () => this.stage === 'uplink', use: () => this._finish() });
   }
 
   // the door: held shut by its tentacles until it is beaten
@@ -254,61 +251,6 @@ export class Trench {
     this.game.ui.showToast('Something is wrapped round the whole relay station, door and all. It runs back along the floor toward the cliff: follow it.', 7000);
   }
 
-  async _plug() {
-    if (this.stage !== 'inside') return;
-    this.stage = 'puzzles';
-    this.s.swim.plugged = this.pts.port.clone();
-    this.s.prep._carry?.classList.remove('on');
-    this.sfx?.cue('plug', this.pts.port);
-    this._screenText = ['UPLINK CABLE: CONNECTED', 'CHECKING THE LINE TO THE SURFACE'];
-    this._drawSign();
-    this.game.ui.showToast('Uplink cable plugged in.', 3500);
-    await this.s.say('plug');
-    if (PUZZLES.run) await PUZZLES.run(this);
-    if (this.s.disposed) return;
-    this.stage = 'uplink';
-    this._screenText = ['SURFACE: SIGNAL', 'UPLINK READY: SEND FROM THIS CONSOLE'];
-    this._drawSign();
-    this.sfx?.cue('signalGood');
-    this.s.say('signal');
-  }
-
-  _refill() {
-    this.s.prep.oxygen = OXYGEN_FULL;
-    this.sfx?.cue('refill');
-    this.game.ui.showToast('Air refilled: four minutes.', 3000);
-  }
-
-  // At the console: the relay sends the uplink (its screen counts it up), then the end
-  async _finish() {
-    if (this.stage !== 'uplink') return;
-    this.stage = 'done';
-    this.sfx?.cue('uplink');
-    for (let pct = 0; pct <= 100; pct += 4) {
-      this._screenText = ['UPLINK: TRANSMITTING', `${pct}%  ${'|'.repeat(Math.round(pct / 5))}`];
-      this._drawSign();
-      if (pct % 20 === 0) this.sfx?.play('select', { ui: true, vol: 0.35, rate: 1 + pct / 200 });
-      await new Promise((r) => setTimeout(r, 140));
-      if (this.s.disposed) return;
-    }
-    this._screenText = ['UPLINK ESTABLISHED', 'HALCYON-9 TO SURFACE: LINKED'];
-    this._drawSign();
-    this.sfx?.cue('signalGood');
-    this.game.ui.showToast('UPLINK ESTABLISHED', 5000);
-    // (the endings come next: see the script, "Endings")
-    await this.s.say('uplinkDone');
-    this._endCard();
-  }
-
-  _endCard() {
-    if (this._end) return;
-    const el = document.createElement('div');
-    el.id = 'l3-end';
-    el.innerHTML = '<div class="l3-end-title">UPLINK ESTABLISHED</div><div class="l3-end-sub">End of Level 3 (so far). The endings come next.</div>';
-    document.getElementById('ui-layer').appendChild(el);
-    requestAnimationFrame(() => el.classList.add('on'));
-    this._end = el;
-  }
 
   // the relay's screen over the console: what it says
   _sign() {
@@ -479,7 +421,6 @@ export class Trench {
     this._drawBoss(true);
     this.sfx?.cue('wounded', this.fight.kraken.mouthWorld());
     this.game.ui.showToast(`A hit! (${n} of ${of})`, 2500);
-    this.s.say(n === 1 ? 'hit1' : 'hit2');
   }
 
   onBeaten() {
@@ -519,6 +460,7 @@ export class Trench {
     this._sounds(dt, p);
     this._inkStep(dt);
     this._dashStep(dt);
+    this._bloodStep(dt);
     // the camera shakes with its blows (after the controls have placed it)
     this.shake = Math.max(0, this.shake - dt * 1.6);
     if (this.shake > 0 && playing) {
@@ -579,7 +521,10 @@ export class Trench {
         }
         break;
       case 'enter':
-        if (Math.hypot(p.x - P.inside.x, p.z - P.inside.z) < 3.8) this.stage = 'inside';
+        if (Math.hypot(p.x - P.inside.x, p.z - P.inside.z) < 3.8) {
+          this.stage = 'inside';
+          RELAY.enter?.(this);
+        }
         break;
       case 'follow':
         // at the cave's mouth: they go right into the rock
@@ -660,10 +605,47 @@ export class Trench {
       }
       case 'free': return { text: 'It let go. Get into the relay station', target: P.door, label: 'DOOR' };
       case 'enter': return { text: 'Go inside the relay station', target: P.inside, label: 'IN' };
-      case 'inside': return { text: 'Plug the uplink cable into the port', target: P.port, label: 'PORT' };
-      case 'puzzles': return { text: 'The relay is checking the line to the surface...', target: null };
-      case 'uplink': return { text: 'Send the uplink from the console', target: P.screen, label: 'CONSOLE' };
+      case 'inside': return RELAY.guide?.(this) || { text: 'Inside the relay station', target: null };
       default: return { text: 'Uplink established', target: null };
+    }
+  }
+
+  // ------------------------------------------------------------------ its blood
+  // A cloud of dark blood blooming in the water where a bolt went in (bigger for a wound), drifting
+  // up and thinning away. Soft sprites, a handful a hit, kept to a few dozen at once
+  _blood(at, size = 1) {
+    this._bloodTex ||= bloodTexture();
+    this._clouds ||= [];
+    const n = Math.round(5 * size) + 2;
+    for (let k = 0; k < n; k++) {
+      if (this._clouds.length > 70) this._clouds.shift().sprite.removeFromParent();
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: this._bloodTex, color: k % 3 === 0 ? 0x9c140e : 0x5c0806, transparent: true, depthWrite: false, opacity: 0.85, rotation: Math.random() * 6.28
+      }));
+      sprite.position.copy(at).add(new THREE.Vector3((Math.random() - 0.5) * 0.6 * size, (Math.random() - 0.5) * 0.6 * size, (Math.random() - 0.5) * 0.6 * size));
+      this.sea.group.add(sprite);
+      this._clouds.push({
+        sprite, life: 0, max: 2.5 + Math.random() * 1.5 * size, grow: (1.2 + Math.random()) * size,
+        vel: new THREE.Vector3((Math.random() - 0.5) * 0.8, 0.25 + Math.random() * 0.4, (Math.random() - 0.5) * 0.8)
+      });
+    }
+  }
+
+  _bloodStep(dt) {
+    if (!this._clouds) return;
+    for (let i = this._clouds.length - 1; i >= 0; i--) {
+      const c = this._clouds[i];
+      c.life += dt;
+      const f = c.life / c.max;
+      c.sprite.position.addScaledVector(c.vel, dt);
+      c.vel.multiplyScalar(Math.exp(-0.8 * dt));
+      c.sprite.scale.setScalar(0.3 + c.grow * Math.sqrt(f) * 2.2);
+      c.sprite.material.opacity = 0.85 * (1 - f) * Math.min(1, c.life * 6);
+      if (f >= 1) {
+        c.sprite.removeFromParent();
+        c.sprite.material.dispose();
+        this._clouds.splice(i, 1);
+      }
     }
   }
 
@@ -747,4 +729,22 @@ export class Trench {
     for (const d of Object.values(this.doors)) if (d) this._block(d, false);
     this._end?.remove();
   }
+}
+
+// a soft, ragged blot (for the blood clouds)
+function bloodTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  for (let k = 0; k < 9; k++) {
+    const x = 32 + (Math.random() - 0.5) * 22, y = 32 + (Math.random() - 0.5) * 22, r = 10 + Math.random() * 14;
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, 'rgba(255,255,255,0.55)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }

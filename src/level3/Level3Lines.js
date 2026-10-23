@@ -48,15 +48,8 @@ export const LINES = {
   'v-kraken-2': voss('ARIA! Do something!'),
   'l3-kraken-1': aria('hostile', "I could. I stopped the drones, didn't I? But the last time I helped you down here, you broke my dish."),
   'v-harpoon-fight': voss("Then I'll do it myself."),
-  'v-hit-1': voss('Got it!'),
-  'v-hit-2': voss('Again. Come on!'),
   // beaten, it lets go of the station and sinks away
-  'l3-kraken-2': aria('relieved', "...Oh, well done. It's let go. Now get inside, quickly, please."),
-  // the uplink cable plugged into the port, and the line to the surface answering
-  'v-plug': voss("Cable's in."),
-  'l3-relay-3': aria('bubbly', 'Signal! The surface is right there. Send it, Voss. Please.'),
-  // at the console (the endings take over from here)
-  'l3-uplink-1': aria('bubbly', 'Uplink established. Oh, Voss. Thank you.')
+  'l3-kraken-2': aria('relieved', "...Oh, well done. It's let go. Now get inside, quickly, please.")
 };
 
 export const TALKS = {
@@ -75,10 +68,5 @@ export const TALKS = {
   doorHeld: ['v-door-held'],
   caveMouth: ['v-cave', 'l3-cave'],
   kraken: ['v-kraken', 'l3-kraken-0', 'v-kraken-2', 'l3-kraken-1', 'v-harpoon-fight'],
-  hit1: ['v-hit-1'],
-  hit2: ['v-hit-2'],
-  krakenGone: ['l3-kraken-2'],
-  plug: ['v-plug'],
-  signal: ['l3-relay-3'],
-  uplinkDone: ['l3-uplink-1']
+  krakenGone: ['l3-kraken-2']
 };

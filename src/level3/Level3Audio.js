@@ -163,6 +163,27 @@ export class Level3Audio {
     this.amb = ctx.createGain();
     this.amb.gain.value = 0;
     this.amb.connect(this.world);
+    // his breathing through the regulator, inside the helmet: a ringing, metallic air (a resonant
+    // peak, and a short comb echo, like a breath through a steel tube)
+    this.breathIn = ctx.createGain();
+    const peak = ctx.createBiquadFilter();
+    peak.type = 'peaking';
+    peak.frequency.value = 1350;
+    peak.Q.value = 3.5;
+    peak.gain.value = 10;
+    const comb = ctx.createDelay(0.05);
+    comb.delayTime.value = 0.0085;
+    const feedback = ctx.createGain();
+    feedback.gain.value = 0.58;
+    const ring = ctx.createGain();
+    ring.gain.value = 0.55;
+    this.breathIn.connect(peak);
+    peak.connect(this.helmet);
+    peak.connect(comb);
+    comb.connect(feedback);
+    feedback.connect(comb);
+    comb.connect(ring);
+    ring.connect(this.helmet);
     // an echo for the hull and the cave: a convolver on a made-up decaying impulse
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = impulse(ctx, 2.2, 2.6);
@@ -310,6 +331,13 @@ export class Level3Audio {
     if (playing) this._scatter(dt, zone, p);
     this._swimSounds(outside);
     this._seaMusic(outside);
+    if (prep?.breathing && prep.suited && !outside) {
+      this._lockBreathT = (this._lockBreathT ?? 1) - dt;
+      if (this._lockBreathT <= 0) {
+        this._lockBreathT = 3.8 + Math.random() * 0.8;
+        this.breath(0);
+      }
+    }
     this._lowAir(dt, prep);
     this._music(dt);
   }
@@ -391,9 +419,15 @@ export class Level3Audio {
   // out burbling away through the regulator, then the next breath in, air hissing through the
   // demand valve. Quicker and louder when he is working hard (exert 0..1)
   breath(exert = 0) {
-    this.play('bubbles-loop', { ui: true, vol: 0.2 + 0.08 * exert, rate: rnd(0.7, 0.9), dur: 1.3, attack: 0.08, lp: 3000 });
-    this.play(Math.random() < 0.5 ? 'bubble-1' : 'bubble-2', { ui: true, vol: 0.35, rate: rnd(0.55, 0.8), lp: 2500 });
-    this.play('air-hiss', { ui: true, vol: 0.07 + 0.05 * exert, rate: 0.5 + 0.12 * exert, delay: 1.55 - 0.55 * exert, attack: 0.3, dur: 1.15 - 0.3 * exert, lp: 2200 });
+    const out = this.breathIn;
+    // out: a low rush of air through the valve, and the bubbles burbling away
+    this.play('air-hiss', { out, vol: 0.13 + 0.05 * exert, rate: 0.4, attack: 0.15, dur: 1.0 - 0.2 * exert, lp: 1500 });
+    this.play('bubbles-loop', { ui: true, vol: 0.24 + 0.08 * exert, rate: rnd(0.7, 0.9), dur: 1.3, attack: 0.1, delay: 0.15, lp: 2600 });
+    this.play(Math.random() < 0.5 ? 'bubble-1' : 'bubble-2', { ui: true, vol: 0.35, rate: rnd(0.55, 0.8), delay: 0.2, lp: 2500 });
+    // in: the demand valve clicks open and the air hisses in, ringing in the helmet
+    const inAt = 1.7 - 0.6 * exert;
+    this.play('click', { out, vol: 0.12, rate: 1.9, delay: inAt });
+    this.play('air-hiss', { out, vol: 0.2 + 0.08 * exert, rate: 0.62 + 0.1 * exert, delay: inAt + 0.03, attack: 0.3, dur: 1.25 - 0.3 * exert, lp: 3800 });
   }
 
   // low air: a beep every second under a quarter

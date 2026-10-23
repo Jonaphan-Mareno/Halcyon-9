@@ -149,9 +149,13 @@ The bed is authored directly in the atrium `.blend`. In the viewport it looks co
 | `Blender/scripts/readd_roboarm_rigs.py` | Rig restore logic; skips rooms already wired and preserves manual posing. |
 | `Blender/scripts/verify_l2_glb.py` | Post-export validator: skins, animations, `COLOR_0`, colliders, and textured props. |
 | `Blender/scripts/export_bedroom_placements.py` | Generates `Blender/bedroom1.json` and `bedroom2.json` (transforms, dimensions, hierarchy). |
-| `src/level2/HabitatSession.js` | Loads the GLB, colliders, doors, toon materials, panel lights, shell metal cladding, and interactions. |
+| `src/level2/HabitatSession.js` | Loads the GLB, colliders, doors, toon materials, panel lights, shell metal cladding, and interactions. Preloads Robot model. |
 | `src/level2/ShellMetal.js` | Full-room metal cladding module (Poly Haven Metal Plate 02) with world-space box-projected UVs. |
 | `src/level2/Interact.js` | Raycast-based interaction targeting system. |
+| `src/level2/Garden.js` | Garden fight: spawns drones and robots, water hose, freeze mechanic, robot warning toast. |
+| `src/entities/Drone.js` | Base drone class: state machine, movement, combat interface. Subclassed by Robot. |
+| `src/entities/Robot.js` | Robot subclass of Drone: loads Robot.glb, A6 head-lamp danger light, ice block, fallback visual. |
+| `src/level2/Drone.js` | Procedural garden drone (self-contained, unchanged). |
 | `src/ui/UIManager.js` | Manages `#interact-prompt` (`E   <label>`), toasts, objective waypoints, and dialogue boxes. |
 | `CREDITS.md` | Attribution for textures and CC0 assets. |
 
@@ -164,3 +168,75 @@ The bed is authored directly in the atrium `.blend`. In the viewport it looks co
 3. **Physics Raycast Occlusion**: `Interact.js` casts a ray from the player's eye to `spot.position`. If `spot.position` lies inside a mesh or static collider, the ray hits the obstacle and fails the `_clear` test. Nudge interaction targets slightly off the wall into the room.
 4. **glTF Texture Drops**: Always verify exported GLBs with `verify_l2_glb.py`. Generated coordinates, mix shaders, and texture-in-normal nodes are dropped silently by standard glTF exporters.
 5. **Always Save Before Exporting**: The exporter runs on the on-disk `.blend` file. Never use Blender's manual GUI Export dialog; run `export_l2_atrium_with_rigs.py`.
+
+---
+
+## Robot Class Extension (Drones + Robots in the Atrium)
+
+### Summary
+
+Extended the drone system by creating a `Robot` class that inherits from a new base `Drone` class. Robots use the `Robot.glb` model from `public/assets/models` and spawn alongside the existing procedural drones during the garden fight (wave 2 onward). The robot's head lamp (node `A6`, mesh `Circle.008` inside Robot.glb) flashes red only when the robot is about to attack (telegraph state), otherwise it keeps its authored color.
+
+### Changes Made
+
+1. **Base Drone class (`src/entities/Drone.js`)**
+   - Refactored from a stub into a full base class with the shared state machine: `drop`, `circle`, `telegraph`, `dive`, `recover`, `frozen`, `dead`.
+   - Provides the movement logic (`_hold`, `_lookAt`, `_twitch`), combat interface (`attack`, `soak`, `freeze`), and wet/dry visual effects.
+   - Subclasses override `_buildVisual()` to provide their own mesh representation.
+   - The existing `src/level2/Drone.js` (procedural garden drone) remains unchanged and self-contained.
+
+2. **Robot class (`src/entities/Robot.js`)**
+   - Extends `Drone` from `src/entities/Drone.js`.
+   - Loads `public/assets/models/Robot.glb` asynchronously; the model is loaded once and shared (cloned per instance).
+   - Auto-scales the model to drone-hover height and centres it on the group origin.
+   - Finds the A6 head lamp (mesh `Circle.008`) and uses it as the attack indicator: the lamp flashes red during the telegraph (about to dive), otherwise keeps its authored color. Darkens when frozen or removed.
+   - Collects any rotating parts (`rotor`, `propeller`, `blade`, `fan`) as spinning blades.
+   - Adds an ice block mesh for the frozen state.
+   - Supports animation clips from the GLB via `AnimationMixer`.
+   - Falls back to a simple box robot if the GLB fails to load.
+   - `Robot.preload()` static method preloads the model during level init so the first spawn is instant.
+
+3. **Garden integration (`src/level2/Garden.js`)**
+   - Imports `Robot` from `../entities/Robot.js`.
+   - Added `ROBOT_CHANCE = 0.4` constant (40% chance a spawn is a robot from wave 1 onward).
+   - Modified `_spawn()` to sometimes create a `Robot` instead of a `Drone`.
+   - Added `_activateDangerIndicator()` method: shows a one-time `WARNING: HOSTILE UNITS DETECTED` toast when the first robot spawns. The red light itself lives on the robot (see Robot.js), not in the atrium.
+
+4. **HabitatSession integration (`src/level2/HabitatSession.js`)**
+   - Imports `Robot` from `../entities/Robot.js`.
+   - Calls `Robot.preload()` during the level load phase (parallel with other model loads).
+
+### Architecture
+
+```
+src/entities/Drone.js   (base class: state machine, movement, combat)
+       ^
+       |
+       +--- src/entities/Robot.js   (Robot.glb model, animation, sensor eye)
+       |
+       +--- src/level2/Drone.js     (procedural garden drone, unchanged)
+```
+
+Both `Robot` and the level2 `Drone` share the same behavioral interface (`attack`, `soak`, `freeze`, `remove`, `alive`, `position`, `update(ctx)`), so the Garden's update loop, water jet, freeze, and shatter logic work identically for both.
+
+### Files
+
+| File | Role |
+|---|---|
+| `src/entities/Drone.js` | Base drone class: state machine, movement, combat interface. |
+| `src/entities/Robot.js` | Robot subclass: loads Robot.glb, A6 head-lamp danger light, ice block, fallback visual. |
+| `src/level2/Garden.js` | Garden fight: spawns both drones and robots, robot warning toast. |
+| `src/level2/HabitatSession.js` | Level 2 session: preloads Robot model. |
+| `public/assets/models/Robot.glb` | The robot 3D model used by the Robot class. |
+
+### Notes
+
+- The first wave (2 drones) is always procedural drones so the player learns the mechanic.
+- From wave 2 (10 spawns), exactly half are robots (alternating: drone, robot, drone, ...).
+- The `A6` lamp (mesh `Circle.008`) is a node INSIDE Robot.glb, not an atrium object: it flashes red only during the telegraph (about to dive), otherwise keeps its authored material color. The lamp darkens when the robot freezes or is removed. The wet look skips it so spraying never greys it out.
+- Robot.glb parts are named A1..A9 (+NurbsPath); the model is ~3.3 m tall as authored, scaled to 0.45 m in game.
+- The model is centred with its feet at the group origin; the half-height offset must not be divided by the model scale (that bug floated the robots ~1.6 m above their hover height).
+- If `Robot.glb` fails to load, a fallback box robot is used so gameplay is not blocked.
+- Hover height tightened to 1.8–2.2 m and range to 3.5–5.0 m so drones/robots feel close to the player.
+- Hit detection requires the drone to be within 1.2 m vertically of the player, preventing hits from directly overhead.
+- Ice block is sized dynamically from the robot's bounding box with 0.35 m padding and parented to the robot group at the box centre, so it always wraps the whole robot.

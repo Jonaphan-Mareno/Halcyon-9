@@ -1,5 +1,21 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
+import { Player } from '../entities/Player.js';
+
+// Level 1 is built bigger than the physics levels: its eyes are at eyeHeight (2.6) where Voss's
+// are at 1.62 m, so his body and the third-person camera are scaled up by this much
+const LEVEL1_SCALE = 2.6 / 1.62;
+// The third-person camera (in Voss's metres, like PlayerController's): behind and over his right shoulder
+const THIRD_DISTANCE = 3.4;
+const THIRD_SHOULDER = 0.45;
+const THIRD_LIFT = 0.15;
+// Level 1's own shader lights the rooms; his body (three.js materials) gets the same lights copied
+// onto three.js ones each frame. The shader's falloff is I / (1 + d + d^2 / 2), three's I / d^2,
+// and three's diffuse is divided by pi: these bring them to about the same brightness
+const BODY_LIGHT_GAIN = 2 * Math.PI;
+const BODY_AMBIENT_GAIN = 1.0;
+const BODY_LIGHTS = 9;             // Level 1's MAX_LIGHTS
+const HIDDEN_LAYER = 31;           // the room's exported lights go here, out of the camera's sight
 
 export class Controls {
   constructor(camera, domElement, currentLevel) {
@@ -41,6 +57,25 @@ export class Controls {
     this._rightDir = new THREE.Vector3();
     this._forwardDir = new THREE.Vector3();
 
+    // V switches between first and third person. The camera stays at Voss's eyes for all of the
+    // game's logic (reach, triggers, puzzles and the keypad all read it, and some save it to come
+    // back to); for drawing the frame, and for what is under the crosshair, beginThirdPerson()
+    // moves it behind him and endThirdPerson() puts it straight back.
+    this.view = 'first';
+    this.character = null;           // Voss: his body (third person) and his arms (first person)
+    this.body = new THREE.Group();
+    this.body.visible = false;
+    this._eye = new THREE.Vector3();
+    this._lastEye = null;
+    this._facing = 0;
+    this._speed = 0;
+    this._displaced = false;
+    this._camDistance = THIRD_DISTANCE * LEVEL1_SCALE;
+    this._camDir = new THREE.Vector3();
+    this._pivot = new THREE.Vector3();
+    if (import.meta.env.DEV) window.__controls = this; // for poking at from the dev console
+    this._loadBody();
+
     document.addEventListener('keydown', (e) => this.onKeyDown(e));
     document.addEventListener('keyup', (e) => this.onKeyUp(e));
   }
@@ -81,7 +116,195 @@ export class Controls {
       case 'ArrowLeft': case 'KeyA': this.moveLeft = true; break;
       case 'ArrowDown': case 'KeyS': this.moveBackward = true; break;
       case 'ArrowRight': case 'KeyD': this.moveRight = true; break;
+      case 'KeyV':
+        if (!event.repeat && this.instance.enabled) this.setView(this.view === 'third' ? 'first' : 'third');
+        break;
     }
+  }
+
+  setView(view) {
+    if (this._disposed) return;
+    this.view = view;
+    if (!this.character) this._loadBody();
+    if (this.character.ready) this.character.setMode(view);
+  }
+
+  // The first-person arms show in plain play only (not over a puzzle, the keypad or a camera move)
+  showArms(allowed) {
+    const vm = this.character?.viewModel;
+    if (vm) vm.visible = !!allowed && this.view === 'first' && this.character.ready;
+  }
+
+  // A click with nothing in hand: the right arm reaches out
+  reach() {
+    this.character?.reach();
+  }
+
+  _loadBody() {
+    const scene = this.level?.scene;
+    if (!scene) return;
+    this.character = new Player(scene);
+    this.character.scale *= LEVEL1_SCALE;
+    scene.add(this.body);
+    this._bodyLights = Array.from({ length: BODY_LIGHTS }, () => new THREE.PointLight(0xffffff, 0, 0, 2));
+    this._bodyHemi = new THREE.HemisphereLight(0xffffff, 0xffffff, BODY_AMBIENT_GAIN);
+    scene.add(this._bodyHemi);
+    for (const l of this._bodyLights) scene.add(l);
+    this.character.load().then(() => {
+      if (this._disposed) return;
+      this.character.setMode(this.view);
+      this.body.add(this.character.body);
+      this._armsOnTop(this.character.viewModel);
+    }).catch((e) => console.warn('Level 1: Voss failed to load; staying in first person.', e));
+  }
+
+  // The first-person arms reach further than the camera keeps from a wall, so they are drawn after
+  // everything else (glass included: they go in the transparent list, last), over a cleared depth
+  // buffer: they never sink into a wall or a door. (Their own copies of the materials: the body's
+  // stay as they are.)
+  _armsOnTop(viewModel) {
+    let cleared = -1;
+    const clearOnce = (renderer) => {
+      if (renderer.info.render.frame === cleared) return;
+      cleared = renderer.info.render.frame;
+      renderer.state.buffers.depth.setMask(true);   // (glass drawn just before leaves it off: no clear)
+      renderer.clearDepth();
+    };
+    viewModel.traverse((o) => {
+      if (!o.isMesh) return;
+      o.material = o.material.clone();
+      o.material.transparent = true;
+      o.material.blending = THREE.NoBlending;   // (drawn as solid as before: the texture's alpha is no see-through)
+      o.renderOrder = 1000;
+      o.onBeforeRender = clearOnce;
+    });
+  }
+
+  // Each frame while he can move (after update): his body stands under the eyes, turns the way he
+  // walks and walks as fast as he goes
+  updateBody(delta) {
+    if (!this.character?.ready || delta <= 0) return;
+    const eye = this.camera.position;
+    if (!this._lastEye) this._lastEye = eye.clone();
+    const dx = eye.x - this._lastEye.x, dz = eye.z - this._lastEye.z;
+    this._lastEye.copy(eye);
+    const step = Math.hypot(dx, dz);
+    const speed = step > 2 ? 0 : step / delta;     // (a teleport is not a walk)
+    this._speed += (speed - this._speed) * (1 - Math.exp(-12 * delta));
+    if (speed > 0.3 && step <= 2) {
+      let d = Math.atan2(-dx, -dz) - this._facing;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      this._facing += d * (1 - Math.exp(-12 * delta));
+    }
+    this._copyLevelLights();
+    this.body.position.set(eye.x, eye.y - this.eyeHeight, eye.z);
+    this.body.rotation.y = this._facing;
+    this.character.update(delta, {
+      grounded: true, speed: this._speed, verticalSpeed: 0, camera: this.camera, bodyYaw: this._facing
+    });
+  }
+
+  // The lights Level 1's shader is using this frame (set by its update), onto his body's lights.
+  // The room's exported three.js lights are kept off the camera's layer: they are only markers for
+  // the shader (their strengths are the export's watts), and would burn his body white.
+  _copyLevelLights() {
+    const level = this.level;
+    if (level.room && this._lightsHiddenFor !== level.room) {
+      this._lightsHiddenFor = level.room;
+      level.room.traverse((o) => { if (o.isLight) o.layers.set(HIDDEN_LAYER); });
+    }
+    const count = level._shared?.numLights.value ?? 0;
+    for (let i = 0; i < this._bodyLights.length; i++) {
+      const light = this._bodyLights[i];
+      const cone = level._lightCones?.[i];
+      // (the torch is a spot at his eyes, pointing away from him: left out. Unused lights are put
+      // out rather than hidden: a change in the number of lights would recompile his materials)
+      if (!(i < count && cone && cone.x < -1.5)) { light.intensity = 0; continue; }
+      light.position.copy(level._lightWorldPositions[i]);
+      light.color.copy(level._lightWorldColors[i]);
+      light.intensity = level._lightWorldIntensities[i] * BODY_LIGHT_GAIN;
+    }
+    if (level._hemiSky) {
+      this._bodyHemi.color.copy(level._hemiSky.value);
+      this._bodyHemi.groundColor.copy(level._hemiGround.value);
+    }
+  }
+
+  // Where Voss's eyes are, even while the camera is behind him
+  get eyePosition() {
+    return this._displaced ? this._eye : this.camera.position;
+  }
+
+  // Third person, until endThirdPerson(): the camera goes behind Voss ('render'), or onto the line
+  // through the crosshair but level with him ('aim': picking then hits what the crosshair shows, and
+  // reach is still measured from him). allowed: the game is in plain play (no puzzle, no camera move).
+  // Returns whether the camera was moved.
+  beginThirdPerson(allowed, mode = 'render') {
+    if (!allowed || this.view !== 'third' || !this.character?.ready || this._displaced) return false;
+    const cam = this.camera;
+    const k = LEVEL1_SCALE;
+    this._eye.copy(cam.position);
+    cam.updateMatrixWorld();
+    cam.getWorldDirection(this._camDir);
+    this._rightDir.setFromMatrixColumn(cam.matrixWorld, 0).setY(0).normalize();
+    const room = this.level.room;
+
+    // over the shoulder, not through a wall beside him
+    let shoulder = THIRD_SHOULDER * k;
+    if (room) {
+      this._raycaster.set(this._eye, this._rightDir);
+      this._raycaster.far = shoulder + 0.3 * k;
+      const hit = this._raycaster.intersectObject(room, true)[0];
+      if (hit) shoulder = Math.max(0, hit.distance - 0.3 * k);
+    }
+    this._pivot.copy(this._eye).addScaledVector(this._rightDir, shoulder);
+    this._pivot.y += THIRD_LIFT * k;
+
+    if (mode === 'render') {
+      // back from there, in at once in front of a wall and easing back out
+      const want = THIRD_DISTANCE * k;
+      let allowedDist = want;
+      if (room) {
+        this._raycaster.set(this._pivot, this._forwardDir.copy(this._camDir).negate());
+        this._raycaster.far = want + 0.3 * k;
+        const hit = this._raycaster.intersectObject(room, true)[0];
+        if (hit) allowedDist = Math.max(0.5 * k, hit.distance - 0.3 * k);
+      }
+      const now = performance.now();
+      const dt = this._lastPlace ? Math.min((now - this._lastPlace) / 1000, 0.1) : 0;
+      this._lastPlace = now;
+      this._camDistance = allowedDist < this._camDistance
+        ? allowedDist
+        : this._camDistance + (allowedDist - this._camDistance) * (1 - Math.exp(-6 * dt));
+      this._pivot.addScaledVector(this._camDir, -this._camDistance);
+      this.body.visible = true;
+    }
+    cam.position.copy(this._pivot);
+    cam.updateMatrixWorld();
+    this._displaced = true;
+    return true;
+  }
+
+  endThirdPerson() {
+    if (!this._displaced) return;
+    this.camera.position.copy(this._eye);
+    this.camera.updateMatrixWorld();
+    this.body.visible = false;
+    this._displaced = false;
+  }
+
+  // Leaving level 1: his body goes with it
+  disposeBody() {
+    this._disposed = true;
+    this.endThirdPerson();
+    this.body.removeFromParent();
+    for (const l of this._bodyLights || []) l.removeFromParent();
+    this._bodyHemi?.removeFromParent();
+    this.character?.viewModel.removeFromParent();
+    this.character?.viewModel.traverse((o) => o.geometry?.dispose?.());
+    this.body.traverse((o) => o.geometry?.dispose?.());
+    this.character = null;
+    this.view = 'first';
   }
 
   onKeyUp(event) {

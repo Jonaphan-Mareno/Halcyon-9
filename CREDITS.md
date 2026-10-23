@@ -69,6 +69,17 @@ Required credit lines (CC BY 4.0, http://creativecommons.org/licenses/by/4.0/):
 - *"Cabbage" by Meerschaum Digital (https://sketchfab.com/meerschaumdigital), licensed under CC-BY-4.0. Modified (decimated, merged).*
 - *"Carrot Collection" by Adam.White (https://sketchfab.com/Adam.White), licensed under CC-BY-4.0. Modified (one carrot kept, cut, decimated, merged).*
 
+Dr. Kessler (`public/assets/models/kessler.glb`) is built from these models by
+`Blender/scripts/build_kessler_from_female.py` (the sources are `Blender/assets/female_scientist.glb` and `Blender/assets/angelica_head.glb`):
+
+| Model | Author | Used for | Link |
+|---|---|---|---|
+| Female scientist | photon (that one larry) | Dr. Kessler's body, hands and glasses | https://sketchfab.com/3d-models/female-scientist-c34c0fb5c79d41a18436933f937b283c |
+| Angelica - Female Head PBR Model with Animation | Sell Asset Store | Dr. Kessler's head, face, eyes and hair | https://sketchfab.com/3d-models/angelica-female-head-pbr-model-with-animation-bada072816b74daeb860b8e0725c254d |
+
+- *"Female scientist" by photon (that one larry) (https://sketchfab.com/Professor_E12), licensed under CC-BY-4.0. Modified (rigged to Voss's skeleton, clothes repainted, head and hair replaced).*
+- *"Angelica - Female Head PBR Model with Animation" by Sell Asset Store (https://sketchfab.com/emraanalis), licensed under CC-BY-4.0. Modified (decimated, neck refitted, given expressions, hair, brows and eyes recoloured, eyelashes and eye highlights removed).*
+
 The kraken (Level 3). Downloaded by hand (glTF) into `Blender/assets/kraken/` (not in git: download it
 from the link to rebuild) and taken apart by `Blender/scripts/build_l3_kraken.py` into its body, one
 arm and one long tentacle, its textures packed into one atlas; the game repeats the tentacles (ten

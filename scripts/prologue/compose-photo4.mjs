@@ -23,5 +23,5 @@ const photo = await sharp(Buffer.from(campusBackdrop))
   .composite([{ input: figures }])
   .png().toBuffer();
 
-writeFileSync(OUT, await polaroid(photo, 'Dr. Voss'));
+writeFileSync(OUT, await polaroid(photo, 'My Dr. Voss!'));
 console.log('wrote', OUT);

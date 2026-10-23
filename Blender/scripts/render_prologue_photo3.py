@@ -4,7 +4,7 @@ his project, LIFE IN THE DEEP: a trifold board with a blue 1st place rosette, an
 with a glowing jellyfish in it. His mother (still young: jet black hair, smooth skin, the teal
 cardigan, the pendant) stands at his side, beaming, her hand on his shoulder. A school hall
 behind them, its SCIENCE FAIR banner. Renders the whole frame; scripts/prologue/compose-photo3.mjs
-grades it and puts it in the Polaroid, captioned "Top of the class again". The cast and the
+grades it and puts it in the Polaroid, captioned "He's top of the class again". The cast and the
 helpers are in prologue_common.py.
 
 Run (from the repo root):

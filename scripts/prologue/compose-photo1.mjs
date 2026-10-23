@@ -1,6 +1,6 @@
-// Prologue photo 1 (our little Voss): the Blender render (Blender/scripts/render_prologue_photo1.py)
+// Prologue photo 1 (my little Voss): the Blender render (Blender/scripts/render_prologue_photo1.py)
 // graded warm and sunny, a little overexposed like an old summer snapshot, in the Polaroid frame,
-// captioned "Our little Voss".
+// captioned "My little Voss".
 // Run: node scripts/prologue/compose-photo1.mjs
 //   -> docs/reference-art/prologue-photo1-3d.png
 import sharp from 'sharp';
@@ -21,5 +21,5 @@ const photo = await sharp(RENDER)
   .sharpen({ sigma: 0.6 })
   .png().toBuffer();
 
-writeFileSync(OUT, await polaroid(photo, 'Our little Voss'));
+writeFileSync(OUT, await polaroid(photo, 'My little Voss'));
 console.log('wrote', OUT);

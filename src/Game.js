@@ -1177,8 +1177,8 @@ export class Game {
 
       return;
     }
-    // Space or Enter skips whatever ARIA is saying, from almost anywhere
-    if ((event.code === 'Space' || event.code === 'Enter') && this.ui.isAriaLine() &&
+    // Enter skips whatever ARIA is saying, from almost anywhere (as in Levels 2 and 3; Space is jump)
+    if (event.code === 'Enter' && this.ui.isAriaLine() &&
         (this.state === 'PLAYING' || this.state === 'PUZZLE' || this.state === 'INVENTORY')) {
       event.preventDefault();
       this.currentLevel.ariaManager.skip();

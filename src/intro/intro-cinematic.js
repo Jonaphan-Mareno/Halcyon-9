@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { settings } from '../core/Settings.js';
 import { CREDITS_HTML } from './credits.js';
+import { preloadPrologue, playPrologue } from '../story/PrologueSequence.js';
 
 // HALCYON-9's opening cinematic.
 //
@@ -13,7 +14,9 @@ import { CREDITS_HTML } from './credits.js';
 //   3. near the end the title holds (the video plays out and stays on its last frame) with two
 //      buttons under it: BEGIN, and CREDITS (CREDITS.md, on a panel over the title; Esc or Close
 //      takes it away). Begin (or Enter) fades the picture, the titles and the sound to black.
-//   4. a short black hold
+//   4. the prologue (src/story/PrologueSequence.js): six Polaroids of Voss and his mother, then
+//      their last day over black. The game is built behind it. Enter skips it.
+//      Then a short black hold
 //   5. the wake-up: the game (built during the black, so nothing heavy runs while the video plays)
 //      is seen through Voss's eyes
 //      opening, blinking, opening again, hazy and sharpening. This is a fragment shader added as
@@ -21,7 +24,7 @@ import { CREDITS_HTML } from './credits.js';
 //      again when it is done.
 //   6. a beat later ARIA's first line is cued
 //
-// Space skips to step 3 (the buttons). It runs once per page load.
+// Enter skips to step 3 (the buttons), and skips the prologue (Enter skips in every level). It runs once per page load.
 //
 // Use (see main.js):
 //   startIntro({
@@ -61,7 +64,7 @@ export const INTRO_CONFIG = {
   FADE_OUT_BEFORE_END: 1.5,
   FADE_OUT: 1.5,              // after Begin, the picture, titles and sound fade together over this long
   BLACK_HOLD: 0.6,            // then black, before the eyes open (longer while the game is still loading)
-  SKIP_HINT_DELAY: 1.0,       // "Press Space to skip" (to the buttons) shows after this long
+  SKIP_HINT_DELAY: 1.0,       // "Press Enter to skip" (to the buttons) shows after this long
 
   GAME_READY_TIMEOUT: 20,     // wait this long (in black) for Level 1 to load before waking up anyway
   WARMUP_MAX: 3.0,            // then, still in black, let the game draw until its frames come smoothly (at most this long)
@@ -93,7 +96,8 @@ export const INTRO_CONFIG = {
     [5.2, 1.25, 0.30],        // wide open
     [6.2, 1.25, 0.00]         // sharp
   ],
-  ARIA_DELAY: 1.0             // ARIA's line comes this long after the second opening is complete
+  ARIA_DELAY: 1.0,            // ARIA's line comes this long after the second opening is complete
+  PROLOGUE: true              // the Polaroids and the last day, between Begin and the wake-up
 };
 
 let started = false;          // the cinematic runs once per page load
@@ -299,7 +303,7 @@ export function startIntro(options = {}) {
   const skipHint = document.createElement('div');
   skipHint.id = 'hi-skip';
   skipHint.className = 'hi-hint';
-  skipHint.textContent = 'Press Space to skip';
+  skipHint.textContent = 'Press Enter to skip';
   const soundHint = document.createElement('div');
   soundHint.id = 'hi-sound';
   soundHint.className = 'hi-hint';
@@ -330,6 +334,7 @@ export function startIntro(options = {}) {
   let eyePass = null;
   let composer = null;
   let unlocking = false;
+  let prologue = null;
 
   const volume = () => settings.get('music');
   function requestSkip() {
@@ -345,7 +350,13 @@ export function startIntro(options = {}) {
   creditsBtn.addEventListener('click', () => openCredits(true));
   closeBtn.addEventListener('click', () => openCredits(false));
   const onKey = (e) => {
-    if (e.code === 'Space' && state.phase !== 'menu') {
+    const enter = e.code === 'Enter' || e.code === 'NumpadEnter';
+    if (e.repeat && enter) return;            // (a held Enter must not skip and then begin as well)
+    if (enter && state.phase === 'prologue') {
+      e.preventDefault();
+      prologue?.skip();
+      skipHint.classList.remove('on');
+    } else if (enter && state.phase !== 'menu') {
       e.preventDefault();
       requestSkip();
     }
@@ -451,6 +462,7 @@ export function startIntro(options = {}) {
     for (const url of cfg.PREFETCH) {
       try { fetch(url, { priority: 'low' }).then((r) => r.blob()).catch(() => {}); } catch (e) { /* only a head start */ }
     }
+    if (cfg.PROLOGUE) preloadPrologue();
     video.style.transition = `opacity ${cfg.VIDEO_FADE_IN}s ease`;
     requestAnimationFrame(() => { video.style.opacity = '1'; });
     later(() => { if (state.phase === 'playing') skipHint.classList.add('on'); }, cfg.SKIP_HINT_DELAY * 1000);
@@ -491,7 +503,7 @@ export function startIntro(options = {}) {
     stopDrive();
 
     // ---- the title holds, with BEGIN and CREDITS under it (the video plays out and stays on its
-    // last frame). If Space got here early, the titles come up at once ----
+    // last frame). If Enter got here early, the titles come up at once ----
     state.phase = 'menu';
     skipHint.classList.remove('on');
     if (state.skip) {
@@ -523,11 +535,28 @@ export function startIntro(options = {}) {
     titles.style.display = 'none';
     soundHint.classList.remove('on');
 
-    // ---- black: the game is built now (at least BLACK_HOLD long, longer if it needs it) ----
-    const gameReady = options.whenGameReady
-      ? Promise.race([Promise.resolve().then(() => options.whenGameReady()).catch(() => {}), wait(cfg.GAME_READY_TIMEOUT * 1000)])
-      : Promise.resolve();
-    await Promise.all([wait(cfg.BLACK_HOLD * 1000), gameReady]);
+    // ---- black: the game is built now (at least BLACK_HOLD long, longer if it needs it). With the
+    // prologue it is built when the prologue goes to black for the last day, so the stall is hidden
+    // in the silence and not in a falling photo ----
+    let gameReady = null;
+    const buildGame = () => {
+      if (!gameReady) {
+        gameReady = options.whenGameReady
+          ? Promise.race([Promise.resolve().then(() => options.whenGameReady()).catch(() => {}), wait(cfg.GAME_READY_TIMEOUT * 1000)])
+          : Promise.resolve();
+      }
+      return gameReady;
+    };
+    if (cfg.PROLOGUE) {
+      state.phase = 'prologue';
+      prologue = playPrologue(root, { before: menu, onDialogue: buildGame });
+      skipHint.classList.add('on');
+      await prologue.done;
+      prologue = null;
+      skipHint.classList.remove('on');
+      state.phase = 'black';
+    }
+    await Promise.all([wait(cfg.BLACK_HOLD * 1000), buildGame()]);
 
     // ---- the wake-up: the waking-eyes pass goes on before the black cover comes off ----
     composer = options.getComposer?.() || null;

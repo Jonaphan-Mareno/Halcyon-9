@@ -642,8 +642,9 @@ bm.to_mesh(floor.data)
 bm.free()
 
 # The cave: rings across x (half width, half height), floor flat at F, rock noise on the walls
-CAVE = [(-4, 10.5, 9.5), (-2, 8.5, 8.0), (0, 7.4, 7.0), (2, 7.0, 6.6), (4, 7.2, 6.6), (7, 9.5, 7.5), (11, 13.0, 9.0),
-        (16, 15.0, 10.0), (22, 15.5, 10.0), (28, 14.0, 9.5), (33, 10.0, 8.0), (36, 6.0, 5.5), (38, 2.5, 2.5), (39, 0.3, 0.3)]
+# (the lair is a wide, high hall: room to fight the kraken in, to dodge and to be chased)
+CAVE = [(-4, 10.5, 9.5), (-2, 8.5, 8.0), (0, 7.4, 7.0), (2, 7.0, 6.6), (4, 7.4, 6.8), (8, 12.0, 9.0), (13, 18.0, 12.0),
+        (20, 22.0, 14.0), (28, 23.0, 14.5), (36, 21.0, 14.0), (43, 15.0, 11.0), (48, 8.0, 7.0), (51, 3.0, 3.0), (52, 0.3, 0.3)]
 
 def cave_wh(dx):
     for (d0, w0, h0), (d1, w1, h1) in zip(CAVE, CAVE[1:]):
@@ -689,7 +690,7 @@ bm.to_mesh(cave_me)
 # (a few glowing patches of something growing on its walls, picked from its faces)
 moss_at = []
 random.seed(31)
-for f in random.sample(list(bm.faces), 60):
+for f in random.sample(list(bm.faces), 140):
     c = f.calc_center_median()
     if c.x - MX > 6 and c.z > F + 1.5:
         moss_at.append((c, f.normal.copy()))
@@ -699,12 +700,12 @@ cave_me.materials.append(kit.MATS['l3_rock'])
 kit.VIS.objects.link(cave)
 smooth_shade(cave)
 glowc = A('L3_CaveGlow')
-for (c, n) in moss_at[:22]:
+for (c, n) in moss_at[:44]:
     ball(glowc, 'l3_glowmoss', tuple(c + n * 0.15), random.uniform(0.25, 0.6), sub=1, scale=(1.0, 1.0, 0.45))
 # bones on the lair's floor: a great ribcage, half sunk, and scattered pieces
 bones = A('L3_Bones')
 for r in range(7):
-    x = MX + 17 + r * 1.6
+    x = MX + 30 + r * 1.6
     span = 4.2 - abs(r - 3) * 0.45
     prev = None
     for k in range(9):
@@ -713,9 +714,9 @@ for r in range(7):
         if prev is not None:
             tube(bones, 'l3_bone', tuple(prev), tuple(p), 0.16 - 0.04 * abs(math.cos(a)), 6)
         prev = p
-tube(bones, 'l3_bone', (MX + 16, CY - 3, F - 0.1), (MX + 28, CY - 3, F + 0.1), 0.28, 8)     # its spine
+tube(bones, 'l3_bone', (MX + 29, CY - 3, F - 0.1), (MX + 41, CY - 3, F + 0.1), 0.28, 8)     # its spine
 for k in range(14):
-    x, y = MX + random.uniform(9, 32), CY + random.uniform(-9, 9)
+    x, y = MX + random.uniform(9, 44), CY + random.uniform(-14, 14)
     a = random.uniform(0, math.pi)
     L = random.uniform(0.6, 1.8)
     tube(bones, 'l3_bone', (x, y, F + 0.05), (x + L * math.cos(a), y + L * math.sin(a), F + 0.15), random.uniform(0.05, 0.12), 6)
@@ -840,11 +841,17 @@ empty('PT_TrunkSocket', (RX + RR + 0.3, CY + 1.6, RF + 0.62))
 empty('PT_CaveMouth', (MX - 3.0, CY, F + 3.0))
 empty('PT_CaveInside', (MX + 9.0, CY, F + 3.0))
 empty('PT_KrakenLurk', (MX + 6.5, CY, F + 0.6))
-empty('PT_KrakenLair', (MX + 26.0, CY, F + 0.8))
+empty('PT_KrakenLair', (MX + 38.0, CY, F + 0.8))
+# boulders on the lair's floor (the kraken tears them up and throws them: the game picks these spots)
+for k in range(10):
+    a = k / 10 * 2 * math.pi + 0.3
+    bx, by = MX + 24 + 11 * math.cos(a), CY + 13 * math.sin(a)
+    rock_lump('TERRAIN_Boulder', (bx, by, F - 0.4), random.uniform(0.8, 1.5), random.uniform(0.8, 1.4), seg=10)
+    empty(f'PT_LairRock_{k}', (bx, by, F + 0.6))
 empty('PT_Respawn', (MX - 5.0, CY + 4.0, F + 2.0))
 empty('TRENCH_LIGHT_0', (RX, CY, RF + 3.2))            # in the relay
 empty('TRENCH_LIGHT_1', (RX - RR - 2.0, CY, RF + 3.6)) # over its door, outside
-empty('TRENCH_LIGHT_2', (MX + 19.0, CY, F + 8.0))      # in the lair
+empty('TRENCH_LIGHT_2', (MX + 24.0, CY, F + 11.0))     # in the lair
 empty('TRENCH_LIGHT_3', (MX - 1.0, CY, F + 6.0))       # at the cave's mouth
 
 

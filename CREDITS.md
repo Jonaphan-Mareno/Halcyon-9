@@ -100,6 +100,7 @@ CC0 needs no credit, but the authors are named here (some ask for it).
 | 80 CC0 creature SFX | rubberduck | the kraken's screams, growls, hiss and snapping jaws (pitched down) | https://opengameart.org/content/80-cc0-creature-sfx |
 | Sinister Boss Appears (music) | cynicmusic (cynicmusic.com, pixelsphere.org) | the kraken fight's base track (`level3-kraken.ogg`) | https://opengameart.org/content/sinister-boss-appears |
 | Dramatic Boss Encounter (music) | cynicmusic | the fight's rising drum layer (`level3-kraken-intense.ogg`) | https://opengameart.org/content/dramatic-boss-encounter |
+| Aquaria (music) | cynicmusic | the quiet music out in the sea (`level3-sea.ogg`) | https://opengameart.org/content/aquaria |
 
 ## Generated video
 

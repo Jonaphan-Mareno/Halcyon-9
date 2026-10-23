@@ -57,6 +57,8 @@ export class Kraken {
     this.jawTarget = -0.2;
     this.jawRate = 10;
     this.avoid = [];                    // [{ centre (world), radius, top }]: upright cylinders its tentacles keep out of
+    this.trail = new THREE.Vector3();   // swimming: the way its arms stream back (its own space, scaled 0..1 by how far)
+    this.roll = 0;                      // radians: leaning into a turn
     this.uniforms = { uTime: { value: 0 }, uJaw: { value: 0 }, uMouthGlow: { value: 0 } };
     this._v = new THREE.Vector3();
     this._w = new THREE.Vector3();
@@ -304,7 +306,7 @@ export class Kraken {
     const br = Math.sin(t * 1.4);
     this.body.scale.set(1 + 0.025 * br, 1 + 0.04 * Math.sin(t * 1.4 + 0.5), 1 + 0.03 * br);
     this.root.rotation.x = 0.06 * Math.sin(t * 0.7) + (this.pitch || 0);
-    this.root.rotation.z = 0.05 * Math.sin(t * 0.53 + 1.0);
+    this.root.rotation.z = 0.05 * Math.sin(t * 0.53 + 1.0) + this.roll;
     this.root.updateMatrixWorld(true);
     // the jaw, eased (snaps shut fast)
     this.jaw += (this.jawTarget - this.jaw) * (1 - Math.exp(-this.jawRate * dt));
@@ -317,7 +319,7 @@ export class Kraken {
     }));
     for (const tent of this.tents) {
       // (a path is laid in its own space each frame: the body moves)
-      tent.grip += ((tent.path ? 1 : 0) - tent.grip) * (dt > 0 ? 1 - Math.exp(-(tent.path ? 3 : 1.2) * dt) : 1);
+      tent.grip += ((tent.path ? 1 : 0) - tent.grip) * (dt > 0 ? 1 - Math.exp(-(tent.path ? 3 : (tent.releaseRate || 1.2)) * dt) : 1);
       if (tent.path) tent.pathLocal = tent.path.map((w, i) => this.toLocal(w, tent.pathLocal?.[i] || new THREE.Vector3()));
       this._pose(tent, dt);
     }
@@ -335,6 +337,9 @@ export class Kraken {
     const rest = tent.rest;
     rest[0].copy(tent.root);
     const d = this._d.copy(tent.out);
+    // (swimming, the arms not reaching for anything stream back behind it)
+    const trail = this.trail.length() * (1 - Math.min(1, tent.reach * 2));
+    if (trail > 0.01) d.lerp(this._v.copy(this.trail).normalize(), Math.min(0.85, trail)).normalize();
     const speed = WAVE.speed[tent.kind];
     for (let j = 1; j <= LINKS; j++) {
       const s = j / LINKS;
@@ -374,7 +379,7 @@ export class Kraken {
         R[j].addScaledVector(sideA, Math.sin(w - s * 7.0) * wobble * env).addScaledVector(sideB, Math.sin(w * 0.8 - s * 6.0 + 1.3) * wobble * env * 0.8);
       }
       for (let j = 0; j <= LINKS; j++) rest[j].lerp(R[j], tent.reach);
-      rate = 10;
+      rate = tent.snap || 10;          // (a strike snaps to it faster)
     }
     // laid along its path (wrapped round something): the path resampled into its links, from its
     // root; the free stretch before the wrap stirs, the grip squeezes

@@ -17,7 +17,7 @@ import { dotTexture } from './SeaScene.js';
 
 const DECK = { minX: -36.4, maxX: -28.6, minZ: -25.5, maxZ: -19.5, y: 1.5 };   // the platform (world metres)
 const HULL_X = -28.6;
-const CABLE_MAX = 100;              // metres of cable on the reel (down to the relay at the trench's foot, and into the cave)
+const CABLE_MAX = 120;              // metres of cable on the reel (down to the relay at the trench's foot, and round the kraken's lair)
 const ROPE_N = 56;                  // points along the rope
 const BUBBLES = 260;
 
@@ -216,8 +216,10 @@ export class Swim {
       // breathing: a handful of bubbles from the helmet every few seconds
       this._nextBreath -= dt;
       if (this._nextBreath <= 0) {
-        this._nextBreath = 3.2 + Math.random() * 1.6;
-        this.s.sfx?.breath();
+        // (quicker when he is working hard: boosting, or fighting the kraken)
+        const exert = this.s.trench?.stage === 'fight' || c.keys.sprint ? 1 : 0;
+        this._nextBreath = (exert ? 2.3 : 3.8) + Math.random() * 0.8;
+        this.s.sfx?.breath(exert);
         const n = 6 + Math.floor(Math.random() * 5);
         for (let k = 0; k < n; k++) {
           this._spawn(p.x + this._fwd.x * 0.15 + (Math.random() - 0.5) * 0.15, p.y + 1.85 + Math.random() * 0.1, p.z + this._fwd.z * 0.15 + (Math.random() - 0.5) * 0.15,

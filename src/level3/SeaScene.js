@@ -31,12 +31,13 @@ import { SeaLife } from './SeaLife.js';
 // so the number of lights, and so the shaders, never change.
 
 export const SEA = {
-  FOG: 0x0a2530,              // the water's colour in the distance (the skybox's horizon)
-  FOG_DENSITY: 0.019,         // how far you can see: the canyon floor (30 m down), the station's whole height
-  SKY_TOP: 0x2a6476,          // straight up: the faint glow of the surface, far above
-  SKY_DEEP: 0x010407,         // straight down: the abyss
-  HEMI: [0x3a7284, 0x030608, 0.75],   // soft light from above, none from below
-  ENV: 0.12,                  // reflections on the metal: dimmer than on the deck
+  FOG: 0x141d1c,              // the water's colour in the distance: murky, grey-green (the skybox's horizon)
+  FOG_DENSITY: 0.03,          // how far you can see by the platform (about 30 m)...
+  FOG_DEEP: 0.048,            // ... and in the trench (about 20 m): murkier the deeper he goes
+  SKY_TOP: 0x26322f,          // straight up: the faint grey of the surface, far above
+  SKY_DEEP: 0x030505,         // straight down: the abyss
+  HEMI: [0x55665f, 0x040605, 0.3],    // a little grey light from above, none from below: the helmet lamp does the rest
+  ENV: 0.07,                  // reflections on the metal: dim
   SNOW: 2200,                 // specks of marine snow round the camera
   SNOW_BOX: 34,               // ... in a box this many metres across
   SMOKE_PER_VENT: 34,
@@ -45,6 +46,7 @@ export const SEA = {
 };
 
 const MODEL = './assets/models/l3-outside.glb';
+const INK = new THREE.Color(0x010203);
 
 // The atrium behind the saucer's windows (interior mapping, see _atriumGlass): the photo, the real
 // atrium's size (Level 2: 17.5 m across to its wall, its ceiling 12.5 m up), where the photo was taken
@@ -73,6 +75,7 @@ export class SeaScene {
     this.group.name = 'Sea';
     this.time = 0;
     this.active = false;
+    this.ink = 0;                     // 0..1: the kraken's ink clouding the water (Trench)
     this.points = {};
     this.lights = [];
     this.ready = this._load().catch((e) => console.error('The outside of Level 3 failed to load.', e));
@@ -176,14 +179,24 @@ export class SeaScene {
     }
   }
 
-  // player: where the swimmer is (or null), stir: how hard he is moving (0..1)
-  update(dt, camera, player = null, stir = 0) {
+  // player: where the swimmer is (or null), stir: how hard he is moving (0..1), lamp: his helmet
+  // lamp is on (the specks in its beam light up)
+  update(dt, camera, player = null, stir = 0, lamp = false) {
     if (!this.group.visible) return;
     this.time += dt;
+    // the water: murkier the deeper he goes, black where the kraken's ink is
+    if (this.active && player) {
+      const deep = THREE.MathUtils.clamp((-player.y - 4) / 34, 0, 1);
+      const fog = this.scene.fog;
+      fog.density = THREE.MathUtils.lerp(SEA.FOG_DENSITY, SEA.FOG_DEEP, deep) + 0.1 * this.ink;
+      fog.color.setHex(SEA.FOG).lerp(INK, this.ink * 0.9);
+    }
     const su = this.snowMat?.userData.uniforms;
     if (su) {
       if (player) su.uPlayer.value.set(player.x, player.y + 1.0, player.z);
       su.uStir.value += ((player ? stir : 0) - su.uStir.value) * (1 - Math.exp(-3 * dt));
+      camera.getWorldDirection(su.uLampDir.value);
+      su.uLampOn.value += ((lamp ? 1 : 0) - su.uLampOn.value) * (1 - Math.exp(-4 * dt));
     }
     if (this.swayUniforms) this.swayUniforms.uTime.value = this.time;
     this.life?.update(dt, player, this.scene.fog);
@@ -321,7 +334,8 @@ export class SeaScene {
     });
     const uniforms = {
       uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uBox: { value: box },
-      uPlayer: { value: new THREE.Vector3(0, -999, 0) }, uStir: { value: 0 }
+      uPlayer: { value: new THREE.Vector3(0, -999, 0) }, uStir: { value: 0 },
+      uLampDir: { value: new THREE.Vector3(0, 0, -1) }, uLampOn: { value: 0 }
     };
     mat.userData.uniforms = uniforms;
     mat.onBeforeCompile = (shader) => {
@@ -334,7 +348,10 @@ export class SeaScene {
           uniform float uBox;
           uniform vec3 uPlayer;
           uniform float uStir;
-          varying float vGlow;`)
+          uniform vec3 uLampDir;
+          uniform float uLampOn;
+          varying float vGlow;
+          varying float vLit;`)
         // each speck drifts and sinks slowly; the box of them wraps round the camera
         .replace('#include <begin_vertex>', `
           vec3 transformed = position + vec3(sin(uTime * 0.11 + position.y * 0.7) * 0.4, -uTime * 0.09,
@@ -345,10 +362,16 @@ export class SeaScene {
           float alive = step(0.66, fract(aScale * 7.31));
           vGlow = alive * uStir * smoothstep(2.8, 0.7, distance(transformed, uPlayer))
                 * (0.6 + 0.4 * sin(uTime * 7.0 + position.x * 31.0));
-          gl_PointSize = size * aScale * (1.0 + vGlow * 1.5);`);
+          gl_PointSize = size * aScale * (1.0 + vGlow * 1.5);
+          // and every speck in the helmet lamp's beam catches its light
+          vec3 kTo = transformed - uCam;
+          float kD = length(kTo);
+          vLit = uLampOn * smoothstep(0.9, 0.975, dot(kTo / max(kD, 0.001), uLampDir)) * smoothstep(16.0, 1.5, kD);`);
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying float vGlow;')
+        .replace('#include <common>', '#include <common>\nvarying float vGlow;\nvarying float vLit;')
         .replace('#include <color_fragment>', `#include <color_fragment>
+          diffuseColor.rgb *= 0.35 + 2.2 * vLit;          // (dim in the murk, bright in the beam)
+          diffuseColor.a *= 0.55 + 0.45 * vLit;
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.35, 0.85, 1.0) * 2.4, vGlow);
           diffuseColor.a = min(1.0, diffuseColor.a + vGlow);`);
     };

@@ -35,8 +35,8 @@ const THIRD_PERSON_DISTANCE = 4.2;
 
 // Swimming (Level 3, outside, in the dive suit): the suit's thruster pack pushes him where he looks;
 // he drifts on when he lets go, and sinks slowly (the suit is heavy)
-const SWIM_SPEED = 2.6;
-const SWIM_BOOST = 4.6;       // Shift
+const SWIM_SPEED = 3.8;
+const SWIM_BOOST = 6.4;       // Shift
 const SWIM_SINK = 0.25;       // m/s, drifting down when nothing is pushing
 
 export class PlayerController {
@@ -371,7 +371,7 @@ export class PlayerController {
     if (moving) this._wish.normalize();
     this.thrusting = moving;
     const speed = (k.sprint ? SWIM_BOOST : SWIM_SPEED) * this.speedScale;
-    const ease = 1 - Math.exp(-(moving ? 1.6 : 0.8) * dt);
+    const ease = 1 - Math.exp(-(moving ? 2.6 : 0.9) * dt);
     this.velocity.x += (this._wish.x * speed - this.velocity.x) * ease;
     this.velocity.z += (this._wish.z * speed - this.velocity.z) * ease;
     this.velocity.y += ((moving ? this._wish.y * speed : -SWIM_SINK) - this.velocity.y) * ease;

@@ -157,3 +157,33 @@
 #l3-end.on { opacity: 1; }
 .l3-end-title { font-size: 2.2rem; letter-spacing: 0.6rem; color: #7fe8ff; }
 .l3-end-sub { margin-top: 1rem; font-size: 0.9rem; letter-spacing: 0.15rem; color: #9fc6d8; }
+
+/* the kraken's boss bar (Trench.js): its name and a segment for each hit it can take */
+#l3-boss {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 11;
+  display: none;
+  text-align: center;
+  font-family: "Courier New", monospace;
+  pointer-events: none;
+}
+#l3-boss.on { display: block; }
+#l3-boss .b-name { font-size: 0.8rem; letter-spacing: 0.5rem; color: #ffb38a; text-shadow: 0 0 8px rgba(255, 90, 40, 0.6); }
+#l3-boss .b-bar { display: flex; gap: 6px; margin-top: 6px; }
+#l3-boss .b-bar div { width: 84px; height: 9px; background: rgba(120, 30, 20, 0.35); border: 1px solid rgba(255, 120, 80, 0.5); }
+#l3-boss .b-bar div.on { background: linear-gradient(#ff6a3a, #c2321a); box-shadow: 0 0 8px rgba(255, 80, 40, 0.6); }
+#l3-boss.hit .b-bar { animation: boss-hit 0.5s ease; }
+@keyframes boss-hit { 0%, 100% { transform: none; filter: none; } 30% { transform: translateX(-4px); filter: brightness(2.2); } 60% { transform: translateX(4px); } }
+
+/* its ink: the screen closing in black */
+#l3-ink {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 60% 55% at 50% 50%, rgba(2, 4, 6, 0.35) 30%, rgba(1, 2, 3, 0.95) 85%);
+}

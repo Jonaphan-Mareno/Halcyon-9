@@ -13,6 +13,7 @@ loops are seamless). Replace either file with your own track of the same name:
   level3-kraken.ogg          the fight's sinister base (muffled as he follows the line into the
                              cave, opening up when it attacks)
   level3-kraken-intense.ogg  the drums layered on top, rising as the fight gets worse
+  level3-sea.ogg             out in the sea, quietly, whenever the fight's music is not playing
 
 They loop, cross-fade when the game changes, dip while ARIA speaks, and M mutes them.
 Any file that is missing is just silent. The player is src/audio/Soundtrack.js.

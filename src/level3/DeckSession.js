@@ -27,6 +27,7 @@ import { VisorAria } from './VisorAria.js';
 import { Harpoon } from './Harpoon.js';
 import { Trench } from './Trench.js';
 import { Level3Audio } from './Level3Audio.js';
+import { Headlamp } from './Headlamp.js';
 import '../ui/level3.css';
 import { LINES, TALKS } from './Level3Lines.js';
 import { disposeScene } from '../core/disposeScene.js';
@@ -131,6 +132,23 @@ export class DeckSession {
     this.composer.addPass(new RenderPass(g.scene, g.camera.instance));
     this.bloom = new UnrealBloomPass(size.clone().multiplyScalar(0.5), 0.12, 0.35, 1.0);
     this.composer.addPass(this.bloom);
+    // out in the sea the colour drains away toward a murky grey-green (and the darks deepen)
+    this.grade = new ShaderPass({
+      uniforms: { tDiffuse: { value: null }, uAmount: { value: 0 } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float uAmount;
+        varying vec2 vUv;
+        void main() {
+          vec4 c = texture2D(tDiffuse, vUv);
+          float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+          vec3 murk = mix(c.rgb, vec3(l) * vec3(0.9, 1.0, 0.96), 0.6);
+          murk = pow(max(murk, 0.0), vec3(1.12));
+          gl_FragColor = vec4(mix(c.rgb, murk, uAmount), c.a);
+        }`
+    });
+    this.composer.addPass(this.grade);
     this.composer.addPass(new OutputPass());
     this.fxaa = new ShaderPass(FXAAShader);
     this.composer.addPass(this.fxaa);
@@ -226,6 +244,8 @@ export class DeckSession {
     await this.sea.ready;
     // the level's sound: creaks, drips, the sea, the kraken, the fight's music (Level3Audio.js)
     this.sfx = new Level3Audio(this);
+    // the helmet lamp: out in the murk nearly the only light (Headlamp.js)
+    this.headlamp = new Headlamp(this);
     // the harpoon gun (taken from its rack in the prep room; slung on his back, drawn for the kraken)
     this.harpoon = new Harpoon(this);
     // through the gate: the stairs, the EVA prep room, the suit, the cable and the water lock
@@ -414,7 +434,11 @@ export class DeckSession {
     // (the plankton stirs round him as he swims)
     const outside = this.prep?.zone === 'sea';
     const stir = this.controls.swimming ? Math.min(1, this.controls.velocity.length() / 4.6) : 0;
-    this.sea?.update(dt, g.camera.instance, outside ? p : null, stir);
+    const suited = !!this.prep?.suited;
+    this.sea?.update(dt, g.camera.instance, outside ? p : null, stir, suited);
+    // (the lamp's beam shows in the murk: out in the sea and in the flooded lock)
+    this.headlamp?.update(dt, suited, outside ? 1 : this.prep?._fogMode === 'lock' ? 0.6 : 0);
+    if (this.grade) this.grade.uniforms.uAmount.value += ((outside ? 1 : 0) - this.grade.uniforms.uAmount.value) * (1 - Math.exp(-2 * dt));
     this._holding(dt, playing);
 
     this.hud.setVisible(playing);
@@ -575,6 +599,7 @@ export class DeckSession {
     this.trench?.dispose();
     this.harpoon?.dispose();
     this.sfx?.dispose();
+    this.headlamp?.dispose();
     this.visorAria?.dispose();
     this.prep?.dispose();
     this.sea?.dispose();

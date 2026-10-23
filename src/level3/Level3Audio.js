@@ -26,20 +26,29 @@ import { AudioManager } from '../audio/AudioManager.js';
 // music dips while ARIA speaks and under the kraken's roars.
 
 const DIR = './assets/audio/sfx/l3/';
-const MUSIC = { base: './assets/audio/music/level3-kraken.ogg', intense: './assets/audio/music/level3-kraken-intense.ogg' };
+const MUSIC = {
+  base: './assets/audio/music/level3-kraken.ogg', intense: './assets/audio/music/level3-kraken-intense.ogg',
+  sea: './assets/audio/music/level3-sea.ogg'          // out in the sea, quietly, whenever the fight's music is not playing
+};
 const FILES = [
   'deck-ambience', 'bubbles-loop', 'bubbles-soft', 'bubble-1', 'bubble-2', 'creak-1', 'creak-2', 'creak-3', 'creak-4',
   'groan-1', 'groan-2', 'drip-1', 'drip-2', 'drip-3', 'clank-1', 'clank-2', 'door-creak-1', 'door-creak-2', 'door-shut',
   'hatch-open', 'hatch-shut', 'latch', 'click', 'belt', 'cloth-1', 'cloth-2', 'cloth-3', 'seal', 'air-hiss', 'pickup',
   'confirm', 'error', 'tick', 'select', 'machine-hum', 'console', 'thruster', 'water-pour', 'whoosh', 'whoosh-2', 'slam',
   'hit-flesh', 'punch', 'rock-hit', 'harpoon', 'kraken-roar', 'kraken-scream-1', 'kraken-scream-2', 'kraken-growl-1',
-  'kraken-growl-2', 'kraken-growl-3', 'kraken-roar-short', 'kraken-chomp', 'kraken-hiss'
+  'kraken-growl-2', 'kraken-growl-3', 'kraken-roar-short', 'kraken-chomp', 'kraken-hiss',
+  'shing-1', 'shing-2', 'ratchet-1', 'ratchet-2', 'slide', 'clang', 'rock-smash', 'rock-smash-2', 'ink',
+  'snarl-1', 'snarl-2', 'snarl-3', 'snarl-4', 'roar-b', 'roar-c', 'heart', 'dash'
 ];
 
 // What each moment sounds like: layers of [file, options]. Options: vol, rate (pitch), delay (s),
 // ui (heard in the helmet: not through the water), wet (echo send), rand (pitch wobble)
 const CUES = {
-  grab: [['pickup', { ui: true, vol: 0.55 }], ['belt', { vol: 0.9, delay: 0.05 }]],
+  // picking up kit: heavy, metal, a game's weapon pickup (the harpoon: shing, slide, ratchet, latch)
+  gunGrab: [['shing-1', { ui: true, vol: 0.9 }], ['slide', { ui: true, vol: 0.7, delay: 0.1, rate: 0.9 }], ['ratchet-1', { ui: true, vol: 0.9, delay: 0.32 }],
+    ['latch', { ui: true, vol: 0.7, delay: 0.55, rate: 0.9 }]],
+  grab: [['belt', { ui: true, vol: 0.9 }], ['latch', { ui: true, vol: 0.8, delay: 0.12 }], ['ratchet-2', { ui: true, vol: 0.5, delay: 0.28, rate: 0.9 }]],
+  draw: [['shing-2', { ui: true, vol: 0.9 }], ['ratchet-1', { ui: true, vol: 0.8, delay: 0.25, rate: 1.05 }]],
   suitUp: [['cloth-1', { ui: true, vol: 0.9 }], ['cloth-2', { ui: true, vol: 0.9, delay: 0.35 }], ['cloth-3', { ui: true, delay: 0.7 }],
     ['latch', { ui: true, delay: 0.95, vol: 0.9 }], ['click', { ui: true, delay: 1.15 }], ['seal', { ui: true, delay: 1.3, vol: 0.55, rate: 0.8 }],
     ['air-hiss', { ui: true, delay: 1.6, vol: 0.45, rate: 0.8 }], ['confirm', { ui: true, delay: 2.2, vol: 0.5 }]],
@@ -60,13 +69,24 @@ const CUES = {
     ['confirm', { ui: true, vol: 0.7, delay: 2.4 }]],
   refill: [['air-hiss', { ui: true, vol: 0.7 }], ['confirm', { ui: true, vol: 0.5, delay: 1.0 }]],
   harpoon: [['harpoon', { vol: 1, rate: 0.85, ui: true, rand: 0.05 }], ['click', { ui: true, vol: 0.6 }]],
-  reload: [['latch', { ui: true, vol: 0.35, rate: 1.3 }]],
+  reload: [['ratchet-2', { ui: true, vol: 0.5, rate: 1.1 }]],
+  dash: [['dash', { ui: true, vol: 0.9, rate: 0.8 }], ['bubbles-loop', { ui: true, vol: 0.35, rate: 1.3 }]],
+  dodge: [['whoosh-2', { ui: true, vol: 0.6, rate: 0.7 }]],
   spearFlesh: [['hit-flesh', { vol: 1.2, rate: 0.8, rand: 0.1 }]],
   spearRock: [['rock-hit', { vol: 0.8, rand: 0.1 }]],
   hurt: [['punch', { ui: true, vol: 1, rand: 0.08 }], ['hit-flesh', { ui: true, vol: 0.7, rate: 0.6 }]],
   lowAir: [['tick', { ui: true, vol: 0.5, rate: 0.8 }]],
   // the kraken
-  krakenRoar: [['kraken-roar', { rate: 0.82, vol: 1.6, wet: 0.6 }], ['kraken-growl-1', { rate: 0.45, vol: 1.1, delay: 0.1, wet: 0.5 }]],
+  krakenRoar: [['kraken-roar', { rate: 0.82, vol: 1.8, wet: 0.6 }], ['kraken-growl-1', { rate: 0.45, vol: 1.2, delay: 0.1, wet: 0.5 }],
+    ['snarl-3', { rate: 0.5, vol: 1.2, delay: 0.3, wet: 0.5 }], ['roar-b', { rate: 0.42, vol: 1.3, delay: 0.6, wet: 0.6 }]],
+  snarl: [['snarl-1', { rate: 0.5, vol: 1.3, wet: 0.5, rand: 0.08 }]],
+  punchWhoosh: [['whoosh', { rate: 0.6, vol: 1.3 }], ['dash', { rate: 0.5, vol: 0.8 }], ['snarl-2', { rate: 0.55, vol: 1.0, wet: 0.4 }]],
+  stuck: [['rock-smash', { rate: 0.8, vol: 1.3, wet: 0.5 }], ['clang', { rate: 0.45, vol: 0.4 }]],
+  stun: [['kraken-scream-2', { rate: 0.6, vol: 2.0, wet: 0.6 }], ['roar-c', { rate: 0.45, vol: 1.3, delay: 0.2, wet: 0.6 }]],
+  rockGrab: [['rock-hit', { rate: 0.6, vol: 1.1, wet: 0.4 }], ['snarl-4', { rate: 0.5, vol: 1.1, wet: 0.4 }]],
+  rockThrow: [['whoosh', { rate: 0.4, vol: 1.4 }], ['roar-b', { rate: 0.5, vol: 1.1, wet: 0.5 }]],
+  rockSmash: [['rock-smash', { vol: 1.6, wet: 0.5 }], ['rock-smash-2', { rate: 0.7, vol: 1.2, delay: 0.05 }], ['slam', { vol: 0.8, rate: 1.2 }]],
+  ink: [['ink', { rate: 0.5, vol: 1.6, wet: 0.5 }], ['bubbles-loop', { vol: 0.8, rate: 0.6 }], ['kraken-hiss', { rate: 0.45, vol: 1.0, wet: 0.6 }]],
   krakenGrowl: [['kraken-growl-2', { rate: 0.5, vol: 1.1, wet: 0.5, rand: 0.06 }]],
   krakenHiss: [['kraken-hiss', { rate: 0.5, vol: 0.9, wet: 0.6, rand: 0.08 }]],
   windup: [['kraken-growl-3', { rate: 0.55, vol: 1, wet: 0.4, rand: 0.08 }]],
@@ -97,7 +117,7 @@ const SCATTER = {
   ]
 };
 
-const MUSIC_VOLUME = 0.55;
+const MUSIC_VOLUME = 0.75;
 
 export class Level3Audio {
   constructor(session) {
@@ -162,12 +182,13 @@ export class Level3Audio {
       }
     };
     await Promise.all(FILES.map(async (name) => { this.buffers[name] = await get(DIR + name + '.ogg'); }));
-    [this.musicBase, this.musicIntense] = await Promise.all([get(MUSIC.base), get(MUSIC.intense)]);
+    [this.musicBase, this.musicIntense, this.musicSea] = await Promise.all([get(MUSIC.base), get(MUSIC.intense), get(MUSIC.sea)]);
   }
 
   // ------------------------------------------------------------------ playing
   // play a file once: at (world position, or null: in his head); returns its source
-  play(name, { vol = 1, rate = 1, delay = 0, ui = false, wet = 0, rand = 0, at = null, loop = false, out = null } = {}) {
+  // (attack, dur: fade in over attack and out by dur seconds; lp: muffled above that many hertz)
+  play(name, { vol = 1, rate = 1, delay = 0, ui = false, wet = 0, rand = 0, at = null, loop = false, out = null, attack = 0, dur = 0, lp = 0 } = {}) {
     const buf = this.buffers[name];
     if (!this.ctx || !buf) return null;
     const ctx = this.ctx;
@@ -177,8 +198,25 @@ export class Level3Audio {
     src.playbackRate.value = rate * (1 + (Math.random() * 2 - 1) * rand);
     const g = ctx.createGain();
     g.gain.value = vol;
-    src.connect(g);
+    let head = src;
+    if (lp) {
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = lp;
+      src.connect(f);
+      head = f;
+    }
+    head.connect(g);
     src.__g = g;                         // (so a loop can be faded)
+    const t0 = ctx.currentTime + delay;
+    if (attack || dur) {
+      g.gain.setValueAtTime(attack ? 0 : vol, t0);
+      if (attack) g.gain.linearRampToValueAtTime(vol, t0 + attack);
+      if (dur) {
+        g.gain.setValueAtTime(vol, t0 + Math.max(attack, dur * 0.6));
+        g.gain.linearRampToValueAtTime(0, t0 + dur);
+      }
+    }
     let node = g;
     if (at) {
       const p = ctx.createPanner();
@@ -200,7 +238,8 @@ export class Level3Audio {
       node.connect(w);
       w.connect(this.reverb);
     }
-    src.start(ctx.currentTime + delay);
+    src.start(t0);
+    if (dur) src.stop(t0 + dur + 0.05);
     return src;
   }
 
@@ -263,6 +302,7 @@ export class Level3Audio {
     this._ambience(zone, outside, p);
     if (playing) this._scatter(dt, zone, p);
     this._swimSounds(outside);
+    this._seaMusic(outside);
     this._lowAir(dt, prep);
     this._music(dt);
   }
@@ -297,17 +337,56 @@ export class Level3Audio {
     });
   }
 
-  // the thrusters while he pushes through the water; a breath of bubbles is played by Swim
+  // the thrusters while he pushes through the water, and the water rushing past him, louder the
+  // faster he goes (a breath of bubbles is played by Swim)
   _swimSounds(outside) {
     const c = this.s.controls;
     const on = outside && c.swimming && c.thrusting;
-    if (on && !this.loops.thrust) this.startLoop('thrust', 'thruster', { vol: 0.28, rate: 0.55, ui: true });
+    if (on && !this.loops.thrust) this.startLoop('thrust', 'thruster', { vol: 0.22, rate: 0.55, ui: true, lp: 1400 });
     else if (!on && this.loops.thrust) this.stopLoop('thrust', 0.5);
+    if (outside && c.swimming) {
+      if (!this.loops.swish) this.startLoop('swish', 'bubbles-soft', { vol: 0, rate: 1.25, ui: true, lp: 1800 });
+      const g = this.loops.swish?.src.__g;
+      if (g) g.gain.setTargetAtTime(Math.min(0.4, c.velocity.length() / 6.5 * 0.4), this.ctx.currentTime, 0.25);
+    } else if (this.loops.swish) this.stopLoop('swish', 0.6);
   }
 
-  breath() {
-    this.play(Math.random() < 0.5 ? 'bubble-1' : 'bubble-2', { ui: true, vol: 0.5, rate: rnd(0.7, 1.0) });
-    this.play('bubbles-loop', { ui: true, vol: 0.18, rate: rnd(0.8, 1.1) });
+  // out in the sea, the sea's own music (quiet, mysterious) whenever the fight's is not playing
+  _seaMusic(outside) {
+    if (!this.musicSea) return;
+    const want = outside && !this.musicBusy && this.fight.mode !== 'over';
+    if (want && !this._seaSrc) {
+      const ctx = this.ctx;
+      this._seaGain = ctx.createGain();
+      this._seaGain.gain.value = 0;
+      this._seaGain.connect(this.music);
+      this._seaSrc = ctx.createBufferSource();
+      this._seaSrc.buffer = this.musicSea;
+      this._seaSrc.loop = true;
+      this._seaSrc.connect(this._seaGain);
+      this._seaSrc.start();
+    }
+    if (this._seaGain) this._seaGain.gain.setTargetAtTime(want ? 0.42 : 0, this.ctx.currentTime, want ? 2.5 : 1.2);
+  }
+
+  // his heart pounding when he is hurt (0..1: how badly): a double thump, quicker the worse it is
+  heartbeat(hurt, dt) {
+    if (hurt < 0.45) return;
+    this._heartT = (this._heartT ?? 0) - dt;
+    if (this._heartT > 0) return;
+    this._heartT = 0.95 - 0.4 * (hurt - 0.45) / 0.55;
+    const v = 0.5 + 0.6 * (hurt - 0.45) / 0.55;
+    this.play('heart', { ui: true, vol: v, rate: 0.45 });
+    this.play('heart', { ui: true, vol: v * 0.7, rate: 0.42, delay: 0.17 });
+  }
+
+  // His breathing in the helmet (Swim calls this as he breathes out, with the bubbles): the breath
+  // out burbling away through the regulator, then the next breath in, air hissing through the
+  // demand valve. Quicker and louder when he is working hard (exert 0..1)
+  breath(exert = 0) {
+    this.play('bubbles-loop', { ui: true, vol: 0.2 + 0.08 * exert, rate: rnd(0.7, 0.9), dur: 1.3, attack: 0.08, lp: 3000 });
+    this.play(Math.random() < 0.5 ? 'bubble-1' : 'bubble-2', { ui: true, vol: 0.35, rate: rnd(0.55, 0.8), lp: 2500 });
+    this.play('air-hiss', { ui: true, vol: 0.07 + 0.05 * exert, rate: 0.5 + 0.12 * exert, delay: 1.55 - 0.55 * exert, attack: 0.3, dur: 1.15 - 0.3 * exert, lp: 2200 });
   }
 
   // low air: a beep every second under a quarter
@@ -404,7 +483,7 @@ export class Level3Audio {
 
   dispose() {
     for (const key of Object.keys(this.loops)) this.stopLoop(key, 0.2);
-    for (const s of this._musicSrc || []) { try { s.stop(); } catch { /* stopped */ } }
+    for (const s of [...(this._musicSrc || []), this._seaSrc]) { try { s?.stop(); } catch { /* stopped */ } }
     try { this.comp?.disconnect(); } catch { /* gone */ }
   }
 }

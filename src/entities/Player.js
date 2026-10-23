@@ -52,7 +52,7 @@ const GLB_RUN_PHASE = 0.0;
 // In the water (Level 3): the stroke plays while he thrusts along at least this fast (m/s, flat),
 // otherwise he treads water. At SWIM_CLIP_SPEED the stroke plays at its own pace.
 const SWIM_MIN_SPEED = 0.6;
-const SWIM_CLIP_SPEED = 2.6;           // PlayerController's SWIM_SPEED
+const SWIM_CLIP_SPEED = 3.8;           // PlayerController's SWIM_SPEED
 // The stroke lies him flat with his hips low; lifted (model units) so he floats round the middle
 // of the capsule rather than along its bottom
 const SWIM_LIFT = 0.15;

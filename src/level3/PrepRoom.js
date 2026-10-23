@@ -181,10 +181,7 @@ export class PrepRoom {
     if (player?.bodyRoot) dressInSuit(player.bodyRoot, { mutate: true });
     if (player?.viewModel) dressInSuit(player.viewModel, { mutate: true, parts: false });   // (his first-person arms: gloves, orange sleeves)
     if (this.harpoon) this.s.harpoon.sling(player?.bodyRoot, attachAtBind);
-    const lamp = this.game.camera.flashlight;
-    lamp.intensity = 14;
-    lamp.angle = Math.PI / 7;
-    lamp.penumbra = 0.6;
+    // (the helmet lamp comes on: Headlamp.js)
     this._visor.classList.add('on');
     this._oxy.classList.add('on');
     this._drawScreen();
@@ -218,7 +215,7 @@ export class PrepRoom {
   _takeHarpoon() {
     if (this.harpoon) return;
     this.harpoon = true;
-    this.s.sfx?.cue('grab');
+    this.s.sfx?.cue('gunGrab');
     if (this.rackGun) this.rackGun.visible = false;
     this.s.harpoon.taken = true;
     if (this.suited) this.s.harpoon.sling(this.s.controls.character?.bodyRoot, attachAtBind);
@@ -476,8 +473,10 @@ export class PrepRoom {
   _underwater() {
     const cam = this.game.camera.instance.position;
     const open = this.lock === 'outer' || this.lock === 'open';
-    const mode = cam.x < LOCK.minX ? (open ? 'sea' : 'air')
-      : this._inLock(cam, 0.05) && cam.y < this.lockWater.level ? 'lock' : 'air';
+    const inLock = this._inLock(cam, 0.05);
+    const mode = this.zone === 'sea' && open && !inLock ? 'sea'
+      : cam.x < LOCK.minX ? (open ? 'sea' : 'air')
+        : inLock && cam.y < this.lockWater.level ? 'lock' : 'air';
     if (mode === this._fogMode) return;
     this._fogMode = mode;
     this.s.sea?.setActive(mode === 'sea');

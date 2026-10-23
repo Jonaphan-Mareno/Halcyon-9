@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { KrakenFight } from './KrakenFight.js';
+import { KrakenFight, WOUNDS as WOUNDS_TOTAL } from './KrakenFight.js';
 import { SEA } from './SeaScene.js';
 
 // The bottom of the trench (Level 3): the uplink relay station, the kraken's cave and the fight.
@@ -8,10 +8,12 @@ import { SEA } from './SeaScene.js';
 //   1. down from the platform to the relay station at the foot of the cliff (the cable reaches)
 //   2. the kraken's tentacles are wrapped round the whole lower half of the relay, its door too:
 //      it will not open. They run back along the floor to a cave in the cliff
-//   3. he follows them into the cave, and in its lair the kraken comes at him (KrakenFight.js),
-//      still holding on to the station. Its tentacles glow before they strike (Shift to dash
-//      clear); after each blow its mouth glows: harpoon it (left click). Three hits
-//   4. it lets go of the station and sinks away; the relay's door opens; inside he plugs the uplink
+//   3. he follows them into the cave. In its lair the kraken roars, tears its tentacles off the
+//      station and comes for him: the final fight (KrakenFight.js), with a boss bar. A tap of Shift
+//      dashes him out of the way (a blow that lands during a dash misses). Its blows glow before
+//      they land; a punch he dodges sticks in the rock (shoot it: the kraken is stunned); its ink
+//      blinds him for a moment. Its mouth glows when it is open to the harpoon. Four hits
+//   4. it sinks away beaten; the relay's door opens; inside he plugs the uplink
 //      cable into the port. Then the team's puzzles (PUZZLES below), then he sends the uplink from
 //      the console, and the level ends (for now)
 //
@@ -24,6 +26,8 @@ const TRENCH_LIGHTS = [             // colour, candela, range: in the relay, ove
   [0xcfe8ff, 7, 9], [0xffb070, 6, 13], [0x3fffd0, 18, 30], [0x2fbfa0, 7, 16]
 ];
 const WRAP_R = 6.0;                 // how far out round the relay its tentacles lie (its wall is at 5)
+const DASH = { speed: 12, iframes: 0.4, cooldown: 0.85 };   // the dodge: a burst through the water
+const INK_TIME = 4.5;               // seconds its ink blinds him
 const OXYGEN_FULL = 240;            // (PrepRoom's OXYGEN)
 
 // The team's puzzles in the relay go here: called once the uplink cable is plugged in, before the
@@ -45,6 +49,8 @@ export class Trench {
       lurk: at('PT_KrakenLurk'), lair: at('PT_KrakenLair'), respawn: at('PT_Respawn')
     };
     this.lightAt = [0, 1, 2, 3].map((i) => at('TRENCH_LIGHT_' + i));
+    this.rockSpots = [];
+    for (let i = 0; i < 16; i++) { const r = at('PT_LairRock_' + i); if (r) this.rockSpots.push(r); }
     this.caveFloor = this.pts.lurk.y - 0.6;
     this.stage = 'descend';
     this.time = 0;
@@ -58,6 +64,12 @@ export class Trench {
     this.wrapPaths = this._wraps();
     this._spots();
     this._sign();
+    this._bossBar();
+    this._dash = { cool: 0, iframes: 0 };
+    this._onKey = (e) => {
+      if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && !e.repeat) this._tryDash();
+    };
+    window.addEventListener('keydown', this._onKey);
     this.fight = new KrakenFight(this);
     this.ready = this.fight.ready;
     if (session.harpoon) session.harpoon.hitTest = (p0, p1) => this._spear(p0, p1);
@@ -69,7 +81,7 @@ export class Trench {
   _spear(p0, p1) {
     const hit = this.fight.spearTest(p0, p1);
     if (hit) {
-      this.sfx?.cue(hit.stick ? 'spearFlesh' : 'spearRock', hit.point);
+      this.sfx?.cue(hit.flesh ? 'spearFlesh' : 'spearRock', hit.point);
       return hit;
     }
     const d = this._v.subVectors(p1, p0);
@@ -215,13 +227,14 @@ export class Trench {
 
   // the door: held shut by its tentacles until it is beaten
   _useDoor() {
-    if (this.fight.holding) {
+    if (!this.fight.free) {
       this.sfx?.cue('doorStuck', this.pts.door);
       this.shake = Math.max(this.shake, 0.3);
       if (this.stage === 'descend' || this.stage === 'front') {
         this.stage = 'follow';
         this.checkpoint = this.pts.respawn.clone();
         this.s.harpoon?.draw(true);
+        this.sfx?.cue('draw');
         this.game.ui.showToast("It won't open. Those are tentacles, wrapped round the whole station, and they run back along the floor into a cave. Follow them.", 8000);
         this.s.say('doorHeld');
       } else {
@@ -329,8 +342,72 @@ export class Trench {
     this.game.mood?.flicker?.(0.6);
     this.s.harpoon?.draw(true);
     this.sfx?.cue('krakenRoar', this.fight.kraken.mouthWorld());
+    this.sfx?.cue('draw');
     this.s.say('kraken').then(() => this.game.ariaAnger?.(8));
-    this.game.ui.showToast('Its tentacles glow before they strike: Shift to dash clear. When its mouth glows, harpoon it (left click).', 8000);
+    this._showBoss(true);
+    this.game.ui.showToast('It tore its tentacles off the station. TAP SHIFT to dash out of the way. Dodge its punch and shoot the arm while it is stuck; harpoon its mouth when it glows.', 9000);
+  }
+
+  // a punch he dodged, driven into the rock
+  onStuck(at) {
+    this.sfx?.cue('stuck', at);
+    if (!this._stuckTold) {
+      this._stuckTold = true;
+      this.game.ui.showToast('Its arm is stuck in the rock: SHOOT IT!', 3000);
+    }
+  }
+
+  onStunned() {
+    this.sfx?.cue('stun', this.fight.kraken.mouthWorld());
+    this.game.ui.showToast('It is stunned, its mouth hanging open: harpoon it!', 3000);
+  }
+
+  onRockGrab(at) {
+    this.sfx?.cue('rockGrab', at);
+  }
+
+  onThrow(at) {
+    this.sfx?.cue('rockThrow', at);
+    if (!this._throwTold) {
+      this._throwTold = true;
+      this.game.ui.showToast('Boulder! Dash out of the way!', 2500);
+    }
+  }
+
+  onRockSmash(at) {
+    this.sfx?.cue('rockSmash', at);
+  }
+
+  // its ink: the water round him goes black for a while (denser, darker fog; a dark cloud; the
+  // screen's edges close in)
+  onInk(at) {
+    this.sfx?.cue('ink', at);
+    this._inkT = INK_TIME;
+    if (!this._inkEl) {
+      this._inkEl = document.createElement('div');
+      this._inkEl.id = 'l3-ink';
+      document.getElementById('ui-layer').appendChild(this._inkEl);
+    }
+    if (!this._inkTold) {
+      this._inkTold = true;
+      this.game.ui.showToast('Ink! It is coming at you out of the dark: keep moving.', 3000);
+    }
+  }
+
+  _inkStep(dt) {
+    this._inkT = Math.max(0, (this._inkT || 0) - dt);
+    const k = Math.min(1, this._inkT / 1.0) * (this._inkT > INK_TIME - 0.6 ? (INK_TIME - this._inkT) / 0.6 : 1);
+    this.sea.ink = k;                 // (SeaScene darkens its water with it)
+    if (this._inkEl) this._inkEl.style.opacity = (k * 0.85).toFixed(3);
+  }
+
+  // it slips away into the murk; then it comes back at him out of the dark
+  onStalk() {
+    this.sfx?.cue('krakenHiss', this.fight.kraken.mouthWorld());
+  }
+
+  onAmbush() {
+    this.sfx?.cue('snarl', this.fight.kraken.mouthWorld());
   }
 
   onWindup(kind) {
@@ -338,7 +415,7 @@ export class Trench {
   }
 
   onStrike(kind, at) {
-    this.sfx?.cue('whoosh', at);
+    this.sfx?.cue(kind === 'punch' ? 'punchWhoosh' : kind === 'yank' ? 'stuck' : 'whoosh', at);
   }
 
   onSlam(at) {
@@ -367,6 +444,11 @@ export class Trench {
 
   onHitPlayer(damage, from) {
     if (this._restoring) return;
+    // (in the middle of a dash it misses him)
+    if (this._dash.iframes > 0) {
+      this._dodged();
+      return false;
+    }
     const c = this.s.controls;
     this.s.hud.flash();
     this.sfx?.cue('hurt');
@@ -375,6 +457,7 @@ export class Trench {
     const away = this._v.set(c.position.x - from.x, 0.4, c.position.z - from.z).normalize();
     c.velocity.addScaledVector(away, 9);
     if (this.s.player.damage(damage)) this._restore('BACKUP RESTORED', 'RESTORED: CYCLE 9');
+    return true;
   }
 
   onShrug() {
@@ -386,6 +469,7 @@ export class Trench {
 
   onWounded(n, of) {
     this.shake = 1.2;
+    this._drawBoss(true);
     this.sfx?.cue('wounded', this.fight.kraken.mouthWorld());
     this.game.ui.showToast(`A hit! (${n} of ${of})`, 2500);
     this.s.say(n === 1 ? 'hit1' : 'hit2');
@@ -393,6 +477,8 @@ export class Trench {
 
   onBeaten() {
     this.shake = 2;
+    this._drawBoss(true);
+    setTimeout(() => this._showBoss(false), 2500);
     this.stage = 'free';
     this.s.harpoon?.draw(false);
     this.sfx?.cue('beaten', this.fight.kraken.mouthWorld());
@@ -424,6 +510,8 @@ export class Trench {
     this._lights(p);
     this._air(playing);
     this._sounds(dt, p);
+    this._inkStep(dt);
+    this._dashStep(dt);
     // the camera shakes with its blows (after the controls have placed it)
     this.shake = Math.max(0, this.shake - dt * 1.6);
     if (this.shake > 0 && playing) {
@@ -439,6 +527,15 @@ export class Trench {
     const sfx = this.sfx;
     if (!sfx) return;
     const F = this.fight;
+    // in the fight it snarls between its blows, and when he is badly hurt his heart pounds
+    if (F.state === 'fight' && !F.attack) {
+      this._snarlT = (this._snarlT ?? 1.5) - dt;
+      if (this._snarlT <= 0) {
+        this._snarlT = 1.8 + Math.random() * 2.2;
+        sfx.cue('snarl', F.kraken.mouthWorld());
+      }
+    }
+    sfx.heartbeat(this.stage === 'fight' ? 1 - this.s.player.integrity / 100 : 0, dt);
     // while it lurks, now and then a growl or a hiss from the dark, if he is near; its grip on the
     // station creaks the hull
     if (F.state === 'lurk' || F.state === 'wait') {
@@ -540,9 +637,13 @@ export class Trench {
       case 'descend': return { text: 'Swim down to the relay station at the bottom of the trench', target: P.front, label: 'RELAY' };
       case 'front': return { text: 'Open the relay station door', target: P.door, label: 'DOOR' };
       case 'follow': return { text: 'Tentacles hold the station shut. Follow them back to what they belong to', target: this._followTarget(p), label: this.inCave(p) ? '???' : 'CAVE' };
-      case 'fight':
-        if (this._mouthOpen) return { text: 'NOW: harpoon its glowing mouth (left click)', target: this.fight.kraken.mouthWorld(this._v), label: 'MOUTH' };
-        return { text: 'Make it let go of the station: dodge the glowing tentacles (Shift), harpoon its mouth when it glows', target: null };
+      case 'fight': {
+        const F = this.fight, tip = F.stuckTip(this._v);
+        if (tip) return { text: 'Its arm is stuck in the rock: SHOOT IT (left click)', target: tip, label: 'ARM' };
+        if (F.state === 'stunned') return { text: "It's stunned: harpoon its mouth NOW", target: F.kraken.mouthWorld(this._v), label: 'MOUTH' };
+        if (this._mouthOpen) return { text: 'NOW: harpoon its glowing mouth (left click)', target: F.kraken.mouthWorld(this._v), label: 'MOUTH' };
+        return { text: 'Beat the kraken: TAP SHIFT to dash from its blows, shoot a stuck arm, harpoon its mouth when it glows', target: null };
+      }
       case 'free': return { text: 'It let go. Get into the relay station', target: P.door, label: 'DOOR' };
       case 'enter': return { text: 'Go inside the relay station', target: P.inside, label: 'IN' };
       case 'inside': return { text: 'Plug the uplink cable into the port', target: P.port, label: 'PORT' };
@@ -552,7 +653,82 @@ export class Trench {
     }
   }
 
+  // ------------------------------------------------------------------ the dodge
+  // A tap of Shift out in the water: a burst the way he is pushing (or back, away from it), and
+  // for a moment blows pass through him
+  _tryDash() {
+    const c = this.s.controls;
+    if (!c.swimming || this._dash.cool > 0 || this.game.state !== 'PLAYING' || this.stage === 'descend') return;
+    const cam = this.game.camera.instance, k = c.keys;
+    const fwd = cam.getWorldDirection(new THREE.Vector3());
+    const right = new THREE.Vector3(Math.cos(cam.rotation.y), 0, -Math.sin(cam.rotation.y));
+    const dir = new THREE.Vector3();
+    if (k.forward) dir.add(fwd);
+    if (k.back) dir.sub(fwd);
+    if (k.right) dir.add(right);
+    if (k.left) dir.sub(right);
+    if (k.jumpHeld) dir.y += 1;
+    if (k.crouch) dir.y -= 1;
+    if (dir.lengthSq() < 0.01) dir.copy(fwd).negate();
+    dir.normalize();
+    c.velocity.addScaledVector(dir, DASH.speed);
+    this._dash.cool = DASH.cooldown;
+    this._dash.iframes = DASH.iframes;
+    this._fovKick = 1;
+    this.sfx?.cue('dash');
+  }
+
+  _dashStep(dt) {
+    this._dash.cool = Math.max(0, this._dash.cool - dt);
+    this._dash.iframes = Math.max(0, this._dash.iframes - dt);
+    // (the view widens for a moment as he shoots off)
+    const cam = this.game.camera.instance;
+    this._fovBase ??= cam.fov;
+    this._fovKick = Math.max(0, (this._fovKick || 0) - dt * 3);
+    const want = this._fovBase + this._fovKick * 7;
+    if (Math.abs(cam.fov - want) > 0.01) {
+      cam.fov = want;
+      cam.updateProjectionMatrix();
+    }
+  }
+
+  _dodged() {
+    this._dodgeT = performance.now();
+    this.sfx?.cue('dodge');
+    this.game.ui.showToast('DODGED', 900);
+  }
+
+  // ------------------------------------------------------------------ the boss bar
+  _bossBar() {
+    const el = document.createElement('div');
+    el.id = 'l3-boss';
+    el.innerHTML = '<div class="b-name">THE KRAKEN</div><div class="b-bar"></div>';
+    document.getElementById('ui-layer').appendChild(el);
+    this._bossEl = el;
+    this._drawBoss(false);
+  }
+
+  _showBoss(on) {
+    this._bossEl?.classList.toggle('on', on);
+  }
+
+  _drawBoss(flash) {
+    const bar = this._bossEl?.querySelector('.b-bar');
+    if (!bar) return;
+    const of = WOUNDS_TOTAL, left = of - (this.fight?.wounds || 0);
+    bar.innerHTML = Array.from({ length: of }, (_, i) => `<div class="${i < left ? 'on' : ''}"></div>`).join('');
+    if (flash) {
+      this._bossEl.classList.remove('hit');
+      void this._bossEl.offsetWidth;
+      this._bossEl.classList.add('hit');
+    }
+  }
+
   dispose() {
+    window.removeEventListener('keydown', this._onKey);
+    this._bossEl?.remove();
+    this._inkEl?.remove();
+    this.sea.ink = 0;
     this.fight?.dispose();
     for (const d of Object.values(this.doors)) if (d) this._block(d, false);
     this._end?.remove();

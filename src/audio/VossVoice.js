@@ -70,8 +70,9 @@ export const vossVoice = new VossVoice();
 // Show a Voss line (text) and play its recording, if there is one. With a recording the line moves on
 // a beat after the voice ends; without one a timed line moves on after a reading time, and an
 // untimed one waits for a click. Either way a click or the skip key moves it on at once.
-export async function vossSays(ui, text, clip, { timed = true, readMs = Math.max(2200, text.length * 60) } = {}) {
-  const shown = ui.showVossLine(text, { timed });
+// thought: shown as a thought bubble (what he reads or thinks, not says aloud).
+export async function vossSays(ui, text, clip, { timed = true, readMs = Math.max(2200, text.length * 60), thought = false } = {}) {
+  const shown = ui.showVossLine(text, { timed, thought });
   const played = vossVoice.play(clip);
   const wait = played.then(async (ok) => {
     if (ok) return sleep(350);

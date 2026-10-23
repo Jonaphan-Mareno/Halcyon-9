@@ -488,11 +488,18 @@ export class HabitatSession {
     // things Voss can use (E): the hall's optional clues, scene 2.2
     this.interact = new Interact(this.game.camera.instance, this.physics);
     const clues = buildHallClues(scene, atrium);
-    if (clues.board) this.interact.add({ id: 'board', position: clues.board, radius: 0.9, label: 'Look at the photo board', use: () => this.say('chore') });
-    if (clues.frame) this.interact.add({ id: 'frame', position: clues.frame, radius: 0.2, label: 'Look at the photo', use: () => this.say('photo') });
-    if (clues.ration) this.interact.add({ id: 'ration', position: clues.ration, radius: 0.2, label: 'Look at the tray', use: () => this.say('ration') });
     const pods = at('PT_PodDoor', 0);
-    if (pods) this.interact.add({ id: 'pods', position: pods, radius: 1.2, label: 'Read the sign on the pod door', use: () => this.say('pods') });
+    this._looked = new Set();
+    // (each with where its diamond floats: over the board's top edge, over the pod door's sign)
+    this._hallClues = [
+      ['board', clues.board, 0.9, 'Look at the photo board', 'chore', clues.boardTop],
+      ['frame', clues.frame, 0.2, 'Look at the photo', 'photo'],
+      ['ration', clues.ration, 0.2, 'Look at the tray', 'ration'],
+      ['pods', pods, 1.2, 'Read the sign on the pod door', 'pods', pods?.clone().add(new THREE.Vector3(0, 0.35, 0))]
+    ].filter(([, p]) => p);
+    for (const [id, position, radius, label, talk] of this._hallClues) {
+      this.interact.add({ id, position, radius, label, use: () => { this._looked.add(id); this.say(talk); } });
+    }
     // FuseBox interaction (Bedroom 2)
     const fuseBoxObj = atrium.getObjectByName('FuseBox00001') || atrium.getObjectByName('FuseBox00.001') || atrium.getObjectByName('COL_Kess_FuseBox00');
     if (fuseBoxObj) {
@@ -976,7 +983,7 @@ export class HabitatSession {
     this.reader.update(dt);
     this._idleLines(dt, playing, p);
     for (const k of this._markers || []) {
-      const show = !k.done() && k.m.position.distanceToSquared(p) < 100;
+      const show = !k.done() && k.m.position.distanceToSquared(p) < k.range2;
       k.m.visible = show;
       if (show) {
         k.m.rotation.y += dt * 1.6;
@@ -1031,7 +1038,7 @@ export class HabitatSession {
         continue;
       }
       if (line.who === 'voss') {
-        await vossSays(ui, line.text, line.clip || id);
+        await vossSays(ui, line.text, line.thought ? null : line.clip || id, { thought: line.thought });
         continue;
       }
       // a long silence before she answers: the music drops out and the lights stutter
@@ -1080,7 +1087,7 @@ export class HabitatSession {
   }
 
   // The last drone is down and the pumps restart (end of scene 2.3): a stutter and a deep hit,
-  // the atrium's light comes back, the stair bulkheads sink into the floor, and Voss notices
+  // the atrium's light comes back and the stair bulkheads sink into the floor
   _powerReturns() {
     const g = this.game;
     g.mood?.flicker(0.9);
@@ -1090,7 +1097,6 @@ export class HabitatSession {
       this.gates?.setKeypadPowered(true);
       g.ui.showToast('POWER RESTORED. THE STAIR BULKHEADS ARE OPEN.', 5000);
     }, 700);
-    setTimeout(() => this.say('bulkhead'), 2600);
   }
 
   // ---------------------------------------------------------
@@ -1104,7 +1110,6 @@ export class HabitatSession {
     const add = (id, position, radius, label, use, when) => this.interact.add({ id, position, radius, label, use, when, reach: 2.2 });
     add('bunkLogA', spots.bunkLogA, 0.25, 'Play the crew log', () => r.read('bunkLogA'));
     add('bunkLogB', spots.bunkLogB, 0.25, 'Play the crew log', () => r.read('bunkLogB'));
-    if (spots.myBunk) add('myBunk', spots.myBunk, 0.3, 'Read the name plate', () => this.say('myBunk'));
     add('corkboard', spots.corkboard, 0.55, 'Look at the corkboard', () => r.read('rota', () => this.say('corkboard')));
     add('personalLog', spots.personalLog, 0.3,
       () => (this.story.has('logWatched') ? 'Watch the memories again' : "Watch Voss's personal logs"),
@@ -1132,13 +1137,15 @@ export class HabitatSession {
     this._markers = [
       [spots.bunkLogA, seen('bunkLogA')], [spots.bunkLogB, seen('bunkLogB')], [spots.corkboard, seen('rota')],
       [spots.personalLog, () => this.story.has('logWatched')],
-      [t.labTerminal, () => this.story.has('labDone')], [spots.kesslerLog, seen('kesslerLog')], [spots.codeCard, seen('codeCard')]
-    ].filter(([p]) => p).map(([p, done], i) => {
+      [t.labTerminal, () => this.story.has('labDone')], [spots.kesslerLog, seen('kesslerLog')], [spots.codeCard, seen('codeCard')],
+      // and the hall's optional clues, until he has looked at each (seen from further off: the hall is big)
+      ...this._hallClues.map(([id, p, , , , over]) => [over || p, () => this._looked.has(id), 16])
+    ].filter(([p]) => p).map(([p, done, range = 10], i) => {
       const m = new THREE.Mesh(this._markerGeo ??= new THREE.OctahedronGeometry(0.085), this._markerMat ??= new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 1.5, 1.8) }));
       m.position.copy(p).add(new THREE.Vector3(0, 0.32, 0));
       m.scale.set(1, 1.5, 1);
       scene.add(m);
-      return { m, y: m.position.y, done, phase: i };
+      return { m, y: m.position.y, done, phase: i, range2: range * range };
     });
   }
 
@@ -1255,7 +1262,7 @@ export class HabitatSession {
   // The hatch keypad: dead until the pumps restart, then it wants Kessler's code
   _useHatch() {
     if (!this.story.has('gardenCleared')) {
-      this.say(['v-dead-keypad']);
+      this.game.ui.showToast('The keypad is dead. There is no power to it yet.', 3000);
       return;
     }
     this.game.state = 'KEYPAD';

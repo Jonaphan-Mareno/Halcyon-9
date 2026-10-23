@@ -520,7 +520,7 @@ export class DeckSession {
       const line = LINES[id];
       if (!line) continue;
       if (line.who === 'voss') {
-        await vossSays(ui, line.text, line.clip);
+        await vossSays(ui, line.text, line.clip || id);   // (his recording: public/assets/audio/voss/<id>.mp3)
         continue;
       }
       const cue = CUES[line.cue] || CUES.guarded;

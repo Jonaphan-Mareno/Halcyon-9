@@ -2,7 +2,8 @@
 // (Halcyon-9-Script-and-Build-Plan.docx, "Level 3 script"); lines marked DRAFT are new and not in
 // it yet. ARIA's ids are her recordings' file names (public/assets/audio/aria/<id>.mp3); until a
 // recording exists her line shows as a subtitle. In Level 3 she speaks through Voss's earpiece.
-// Voss's lines are on-screen text (ids starting "v-").
+// Voss's lines (ids starting "v-") are his recordings in public/assets/audio/voss/<id>.mp3; until one
+// exists, the line shows as a subtitle.
 
 const aria = (cue, text, extra = {}) => ({ who: 'aria', cue, text, ...extra });
 const voss = (text, clip) => ({ who: 'voss', text, clip });

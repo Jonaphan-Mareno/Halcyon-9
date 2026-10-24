@@ -25,6 +25,7 @@ import { Level2Story } from './Level2Story.js';
 import { projectWaypoint } from '../ui/waypoint.js';
 import { Interact } from './Interact.js';
 import { LINES, TALKS, CUES } from './Level2Lines.js';
+import { VisorAria } from '../level3/VisorAria.js';
 import { buildHallClues } from './HallClues.js';
 import { Gates } from './Gates.js';
 import { KeypadUI } from '../ui/KeypadUI.js';
@@ -138,6 +139,10 @@ export class HabitatSession {
     this.controls = new PlayerController(camera, document.body, game.scene);
     game.controls = this.controls;
     this.controls.camDist = 3.8;
+    // ARIA keeps Voss in first person until she explains the damaged lighting and visor.
+    this.controls.viewLocked = true;
+    this._visorOn = false;
+    this.controls.onViewChange = () => { this._visorOn = true; };
 
     const root = document.getElementById('ui-layer');
     // Voss's health (integrity), the same as in Level 1, on the same HUD
@@ -317,6 +322,7 @@ export class HabitatSession {
       // a video log's live head, drawn into the reader's screen before the frame covers it
       this.reader?.liveHead?.render(webgl);
       this.composer.render();
+      this.visorAria?.render(webgl);
     };
     window.addEventListener('resize', () => {
       if (this.disposed) return;
@@ -798,6 +804,8 @@ export class HabitatSession {
   // controls on screen. The doors stay shut until she has finished (Enter skips her lines).
   async _arrive() {
     await this.say('arrival');
+    await this.say('visor');
+    this.controls.viewLocked = false;
     this._fightHelpOn = true;
     await this.say('briefing');
     this._arrivalDone = true;
@@ -843,6 +851,7 @@ export class HabitatSession {
     this.game.scene.add(screens);
     this._ariaScreens = screens;
     this.aria = new AriaManager(this.game.scene);
+    this.visorAria = new VisorAria(this);
     this.aria.collectMonitors(screens);
     for (const m of this.aria.monitors) m.material = this.aria.ariaMaterial;
     this.aria.playIdle();
@@ -1082,6 +1091,7 @@ export class HabitatSession {
     // ARIA idles on every screen (not AriaManager.update, which shows her on the nearest one only)
     this.aria.ariaMaterial.uniforms.uTime.value += dt;
     if (this.aria.useHead) this.aria.head.update(dt);
+    this.visorAria?.update(dt, this._visorOn && playing);
     g.reticle.classList.toggle('visible', this.controls.view === 'first' && g.state !== 'READING');
     if (playing && !this.story.has('leftLift') && p.z < LIFT_FRONT_Z) this.story.set('leftLift');
     this._guide(playing);
@@ -1516,6 +1526,7 @@ export class HabitatSession {
     this.controls.instance.unlock?.();
     this.controls.instance.dispose?.();
     this.sea?.dispose?.();
+    this.visorAria?.dispose?.();
     this.aria?.dispose?.();
     try { this.garden?.audio?.ctx?.close(); } catch (e) { /* already closed */ }
     for (const el of [this.codeNote, this.fpsEl, this.keypad?.root, this.flashback?.el]) el?.remove();

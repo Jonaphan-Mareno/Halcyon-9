@@ -45,7 +45,7 @@ const P = {
 };
 
 export class Controls {
-  constructor(camera, domElement, currentLevel) {
+  constructor(camera, domElement, currentLevel, { viewLocked = false } = {}) {
     this.instance = new PointerLockControls(camera, domElement);
     this.camera = camera;
     this.level = currentLevel;
@@ -112,6 +112,7 @@ export class Controls {
     // back to); for drawing the frame, and for what is under the crosshair, beginThirdPerson()
     // moves it behind him and endThirdPerson() puts it straight back.
     this.view = 'first';
+    this.viewLocked = viewLocked;
     this.character = null;           // Voss: his body (third person) and his arms (first person)
     this.body = new THREE.Group();
     this.body.visible = false;
@@ -175,13 +176,13 @@ export class Controls {
         this.keys.jumpHeld = true;
         break;
       case 'KeyV':
-        if (!event.repeat && this.instance.enabled) this.setView(this.view === 'third' ? 'first' : 'third');
+        if (!event.repeat && this.instance.enabled && !this.viewLocked) this.setView(this.view === 'third' ? 'first' : 'third');
         break;
     }
   }
 
   setView(view) {
-    if (this._disposed) return;
+    if (this._disposed || (this.viewLocked && view !== 'first')) return;
     this.view = view;
     if (!this.character) this._loadBody();
     if (this.character.ready) this.character.setMode(view);

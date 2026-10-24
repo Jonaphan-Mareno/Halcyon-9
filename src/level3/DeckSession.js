@@ -27,7 +27,7 @@ import { SeaScene } from './SeaScene.js';
 import { Swim } from './Swim.js';
 import { VisorAria } from './VisorAria.js';
 import { Harpoon } from './Harpoon.js';
-import { Trench } from './Trench.js';
+import { Trench, RELAY } from './Trench.js';
 import { WOUNDS } from './KrakenFight.js';
 import { dressInSuit, attachAtBind } from './DiveSuit.js';
 import { Level3Audio } from './Level3Audio.js';
@@ -273,7 +273,7 @@ export class DeckSession {
     await this.trench.ready;
     this.visorAria = new VisorAria(this);
     // the way down from the garden's hatch: ridden first, then taken down (Chute.js)
-    // (?nochute skips the ride; ?relay skips the whole level up to the relay station's door)
+    // (?nochute skips the ride; ?relay skips the whole level and starts inside the relay)
     const params = new URLSearchParams(window.location.search);
     this._skipRelay = params.has('relay');
     if (!params.has('nochute') && !this._skipRelay) this.chute = new Chute(this);
@@ -426,12 +426,11 @@ export class DeckSession {
     if (!this.disposed) this.say('landing');
   }
 
-  // ?level=3&relay: skip the chute, the deck, the prep room and the sea; land already suited,
-  // cable in hand, in front of the relay station's door, with the kraken already beaten
+  // ?level=3&relay: skip the chute, the deck, the prep room and the sea; start suited, with the
+  // cable in hand, inside the relay station, and the kraken already beaten
   _skipToRelay() {
     const prep = this.prep, trench = this.trench;
-    const front = trench?.pts?.front;
-    if (!prep || !trench || !front) return this._arrive();
+    if (!prep || !trench || !trench.pts?.inside) return this._arrive();
     // the prep room, as if he had done it all (no sounds, no dialogue, no waits)
     prep.suited = true;
     prep.cable = true;
@@ -459,27 +458,33 @@ export class DeckSession {
     fight.wounds = WOUNDS;
     fight.state = 'gone';
     fight.kraken.root.visible = false;
-    trench.stage = 'free';
-    trench.checkpoint = trench.pts.respawn.clone();
+    trench.stage = 'inside';
+    trench._open('front');
     trench._showBoss(false);
-    // hide the deck; walk the prep room's zone through to 'sea' so its lights and the sea show
+    // Hide the deck and activate the sea environment: this spawn is far beyond the outer hatch,
+    // so the position-based zone transition would not fire from the relay's coordinates.
     if (this.deck) this.deck.visible = false;
-    prep.zone = 'prep';
-    prep._zone(front);
+    prep._setZone('sea');
     // hand the game state over before teleporting so that _swim()'s first frame gets canMove=true
     // (?relay is instant: the wake-up blink may not have run yet)
     if (this.game.state === 'WAKING' || this.game.state === 'INIT') this.game.state = 'PLAYING';
-    // spawn at the post-kraken respawn point (PT_Respawn) — this is already used as the checkpoint
-    // once the kraken is beaten, so it is guaranteed to be clear of the relay's collision mesh.
-    // The old lerp(front, 0.3) put Voss only 30% of the way from the door toward PT_RelayFront,
-    // which dropped him right into the relay station's collider and left him unable to move.
-    const spawn = trench.pts.respawn ? trench.pts.respawn.clone().add(new THREE.Vector3(0, 0.2, 0)) : front.clone();
+    // PT_RelayInside is the Blender screenshot location, already converted by the GLB loader to
+    // Three.js axes (10.729, -41.708, -22.5).
+    const spawn = trench.pts.inside.clone().add(new THREE.Vector3(0, 0.3, 0));
+    this._relayStart = spawn.clone();
+    this._relayStartPending = true;
+    trench.checkpoint.copy(spawn);
     // the uplink cable is already run in and plugged at the relay's port, so its tether no longer
     // holds him back (Swim._limit returns early once the end is plugged)
     if (this.swim) this.swim.plugged = (trench.pts.port || spawn).clone();
     this.controls.teleport(spawn);
+    const toDoor = trench.pts.door.clone().sub(spawn);
+    const yaw = Math.atan2(-toDoor.x, -toDoor.z);
+    this.controls.camera.rotation.set(0, yaw, 0);
+    this.controls.facing = yaw;
     this.controls.setSwimming(true);
-    this.game.ui.showToast('Skipped to the relay station. The kraken is beaten; its door is free.', 6000);
+    RELAY.enter?.(trench);
+    this.game.ui.showToast('Skipped inside the relay station. The kraken is beaten.', 6000);
   }
 
   update(delta) {
@@ -491,6 +496,20 @@ export class DeckSession {
     }
     const dt = Math.min(delta, 0.05);
     const playing = g.state === 'PLAYING';
+    // Apply the relay teleport again on the first live frame, after the physics world and all
+    // colliders are mounted. This keeps the camera/body together when the shortcut runs during load.
+    if (this._relayStartPending) {
+      this.controls.teleport(this._relayStart);
+      this.controls.camera.position.set(
+        this._relayStart.x,
+        this._relayStart.y + this.controls.eye,
+        this._relayStart.z
+      );
+      this.controls.camera.updateMatrixWorld(true);
+      this.physics.world.propagateModifiedBodyPositionsToColliders();
+      if (this.physics.world.updateSceneQueries) this.physics.world.updateSceneQueries();
+      this._relayStartPending = false;
+    }
     this.time += dt;
     deckUniforms.uTime.value = this.time;
     this._warmTextures();

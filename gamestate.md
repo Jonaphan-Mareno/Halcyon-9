@@ -40,7 +40,7 @@ npm run extract-lift     # extract lift.glb from the control room model
 | `?level=2` | Straight into Level 2 (the habitat atrium) |
 | `?level=3` | Straight into Level 3 (starts with the chute) |
 | `?level=3&nochute` | Level 3 without the chute (lands in the pump room) |
-| `?level=3&relay` | Level 3 at the relay station's door: suited, cable in hand, kraken already beaten |
+| `?level=3&relay` | Start inside the relay station at the Blender test location: suited, cable in hand, kraken beaten |
 | `?debug` (with `?level=2`) | `]` sets the next story flag, `[` plays the next dialogue exchange |
 | `?level=hose`, `?level=reactor` | Old test rooms (coolant hose; old cargo atrium) |
 

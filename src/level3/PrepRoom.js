@@ -370,6 +370,11 @@ export class PrepRoom {
     else if (z === 'prep' && p.x > DOWN_THERE) z = 'deck';
     else if (z === 'prep' && p.x < OUT_HERE && this.s.sea) z = 'sea';
     else if (z === 'sea' && p.x > IN_THERE && p.y > 0.5 && p.z > LOCK.minZ - 0.6 && p.z < LOCK.maxZ + 0.6) z = 'prep';
+    this._setZone(z);
+  }
+
+  // Also used by the relay test start, which begins far beyond the outer-hatch boundary.
+  _setZone(z) {
     if (z === this.zone) return;
     this.zone = z;
     const sea = this.s.sea;

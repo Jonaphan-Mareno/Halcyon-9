@@ -1,7 +1,7 @@
 # Halcyon-9 — Game State
 
-Snapshot of the repository and game on branch **`main`**.
-Updated 2026-10-23 (the first version, 2026-10-14, described `level1-restyle`).
+Snapshot of the repository and game on branch **`level3-puzzle2`**.
+Updated 2026-10-24 (the first version, 2026-10-14, described `level1-restyle`).
 
 ---
 
@@ -9,11 +9,10 @@ Updated 2026-10-23 (the first version, 2026-10-14, described `level1-restyle`).
 
 | Item | Value |
 |---|---|
-| Branch | `main` (in sync with `origin/main`) |
-| HEAD | `56f6905` — "Level 2: drop ARIA's 'asked nicely' and 'that's two' lines (and their audio). The chute is bare steel now…" |
-| Source size | ~33,400 lines of JS across `src/` (was ~16,200 on 14 Oct) |
-| Merged since the last snapshot | `level1-restyle`, `level2-gameplay`, `level-3-drowned-deck`, `bedroom-branch`, `cut-scenes`, `drones` |
-| Not merged (on purpose) | `music` (superseded by `src/audio/Soundtrack.js`), `control-room` and `interactables` (September; `RingPuzzle` is already in main) |
+| Branch | `level3-puzzle2` (in sync with `origin/level3-puzzle2`) |
+| HEAD | `ec2d666` — "added camera restrictions + afew dialog lines" |
+| Source size | ~35,300 lines of JS across `src/` (was ~16,200 on 14 Oct) |
+| Recent changes | Level 1 first-person camera lock; Level 2 visor and camera guidance |
 
 ### Engine / stack
 - Vanilla JavaScript (ES Modules), no framework.
@@ -73,6 +72,8 @@ cell → wall panel → talk to ARIA → torch → generator circuit (`CircuitPu
 
 Since the last snapshot: the opening cinematic; Voss's recorded voice (`src/audio/VossVoice.js`);
 the lift keypad's code is `441009`, with a maintenance-tag hint after a wrong code (Sivunile).
+Level 1 is locked to first-person view: V does not switch to third person, and the controller
+rejects requests to set third person.
 
 Known open item (still there): **the lift is not gated on finishing Level 1** —
 `Game.onKeypadSubmit` does not check `relaySolved`.
@@ -80,7 +81,10 @@ Known open item (still there): **the lift is not gated on finishing Level 1** �
 ### Level 2 — habitat atrium — PLAYABLE, complete flow
 `src/level2/HabitatSession.js` with `Level2Story.js` (story flags and objectives) and
 `Level2Lines.js` (every line, and which exchanges play when). The flow:
-1. **The lift** — ARIA welcomes Voss and briefs the drone fight; the doors open after.
+1. **The lift** — ARIA welcomes Voss, explains the station lights cannot be repaired, and tells him
+   to use his special glasses (V) to switch views. The visor corner shows ARIA after the first view
+   switch, using the Level 3 `VisorAria` overlay; the third-person view is framed as the overhead
+   drone's camera feed. ARIA then briefs the drone fight; the doors open after.
 2. **The hall** — optional clues with floating diamonds over them (photo board, framed photo,
    ration tray, the escape pod sign as a thought bubble).
 3. **The garden fight** (`Garden.js`, `Drone.js`) — take the water pipe off the wall, spray the

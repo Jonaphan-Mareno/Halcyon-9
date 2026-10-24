@@ -449,8 +449,8 @@ export class Gates {
     this._capCollider = null;
     this._cues = [
       [0.15, 'ratchet-1', 0.9, 0.8], [0.55, 'ratchet-2', 0.9, 0.85], [0.95, 'ratchet-1', 0.9, 0.75],
-      [1.3, 'latch', 1, 0.7], [1.5, 'air-hiss', 0.9, 0.8], [1.55, 'hatch-open', 0.8, 0.7],
-      [1.8, 'door-creak-1', 0.7, 0.75], [LID.bang, 'metal-bang-2', 1, 0.95], [LID.bang + 0.02, 'clank-1', 0.6, 0.7]
+      [1.3, 'hatch-unlock', 1, 1], [1.5, 'air-hiss', 0.9, 0.8], [1.52, 'hatch-unlock', 0.7, 0.75],
+      [1.8, 'door-creak-1', 0.7, 0.75], [LID.bang, 'hatch-thud', 1, 1], [LID.bang + 0.02, 'metal-bang-2', 0.45, 0.8]
     ];
   }
 

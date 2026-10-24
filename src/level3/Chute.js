@@ -374,10 +374,19 @@ export class Chute {
     this.help.innerHTML = `
       <div class="fh-title">THE CHUTE</div>
       <div class="fh-row"><span class="fh-key">A / D</span><span>Steer round what is in the way</span></div>
-      <div class="fh-row"><span class="fh-key">SPACE</span><span>Duck under the shutters</span></div>
+      <div class="fh-row"><span class="fh-key">SPACE / SHIFT</span><span>Duck under the shutters</span></div>
       <div class="fh-tip">Red lamps on the walls: something is just ahead.</div>`;
     document.getElementById('ui-layer').appendChild(this.help);
     requestAnimationFrame(() => this.help.classList.add('visible'));
+    // and big in the middle of the screen as the ride starts, blinking for a few seconds, so no one
+    // misses how to steer
+    this.banner = document.createElement('div');
+    this.banner.id = 'chute-banner';
+    this.banner.innerHTML = `
+      <div class="cb-row"><span class="cb-key">A</span><span class="cb-key">D</span><span>STEER LEFT AND RIGHT</span></div>
+      <div class="cb-row"><span class="cb-key wide">SPACE</span><span class="cb-or">or</span><span class="cb-key wide">SHIFT</span><span>DUCK</span></div>`;
+    document.getElementById('ui-layer').appendChild(this.banner);
+    this._bannerT = 0;
     this.s.sfx?.startLoop('chute', 'chute-slide', { ui: true, vol: 0.55, rate: 0.8 });
     this.s.say?.('chute');           // ARIA: what is in the way, and what to do about it
     this._joint = 0;
@@ -387,10 +396,23 @@ export class Chute {
   update(dt, playing) {
     if (!this.active) return;
     this.uniforms.uTime.value += dt;
+    // the controls in the middle of the screen: on after the title has faded, blinking, gone after
+    // four seconds
+    if (this.banner && playing) {
+      this._bannerT += dt;
+      const t = this._bannerT;
+      this.banner.classList.toggle('on', t > 0.7 && t < 4.7);
+      this.banner.classList.toggle('dim', t > 0.7 && t < 3.7 && Math.floor((t - 0.7) / 0.5) % 2 === 1);
+      if (t > 5.5) {
+        this.banner.remove();
+        this.banner = null;
+      }
+    }
     const k = this.keys;
     if (playing) {
       const steer = ((k.has('KeyD') || k.has('ArrowRight')) ? 1 : 0) - ((k.has('KeyA') || k.has('ArrowLeft')) ? 1 : 0);
-      const ducking = k.has('Space') || k.has('KeyC') || k.has('KeyS') || k.has('ArrowDown') || k.has('ControlLeft');
+      const ducking = k.has('Space') || k.has('ShiftLeft') || k.has('ShiftRight') || k.has('KeyC') || k.has('KeyS') ||
+        k.has('ArrowDown') || k.has('ControlLeft');
       this.duck += ((ducking ? 1 : 0) - this.duck) * (1 - Math.exp(-14 * dt));
       // the bends throw him toward their outside; gravity pulls him back down to the bottom
       const speed = THREE.MathUtils.lerp(SPEED[0], SPEED[1], THREE.MathUtils.smoothstep(this.dist, 0, 60)) * (1 - 0.35 * this.slow);
@@ -468,7 +490,7 @@ export class Chute {
       ui.setPrompt(null);
       return;
     }
-    if (next.kind === 'gate') ui.setPrompt('SPACE   Duck!');
+    if (next.kind === 'gate') ui.setPrompt('SPACE / SHIFT   Duck!');
     else if (next.hint || this.hinted < HINTS) {
       if (!next.hint) {
         next.hint = true;
@@ -524,6 +546,7 @@ export class Chute {
     const ui = this.game.ui;
     ui.setPrompt(null);
     this.help?.remove();
+    this.banner?.remove();
     this.s.sfx?.stopLoop('chute', 0.6);
     this.s.sfx?.play('whoosh-2', { ui: true, vol: 0.8, rate: 0.8 });
     const splash = document.createElement('div');
@@ -550,6 +573,7 @@ export class Chute {
   dispose() {
     this.active = false;
     this.help?.remove();
+    this.banner?.remove();
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
     document.removeEventListener('mousemove', this._onMouse);

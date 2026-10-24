@@ -76,6 +76,18 @@ export class Physics {
     return hit ? hit.timeOfImpact : null;
   }
 
+  // The same, with the way the surface faces where it is hit: { distance, normal: {x, y, z} } or null
+  castRayNormal(origin, direction, maxDist) {
+    this._ray.origin.x = origin.x;
+    this._ray.origin.y = origin.y;
+    this._ray.origin.z = origin.z;
+    this._ray.dir.x = direction.x;
+    this._ray.dir.y = direction.y;
+    this._ray.dir.z = direction.z;
+    const hit = this.world.castRayAndGetNormal(this._ray, maxDist, true, RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC);
+    return hit ? { distance: hit.timeOfImpact, normal: { x: hit.normal.x, y: hit.normal.y, z: hit.normal.z } } : null;
+  }
+
   step(delta) {
     this.world.timestep = delta;
     this.world.step();

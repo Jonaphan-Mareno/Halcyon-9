@@ -48,9 +48,6 @@ export const LINES = {
   // the kraken rises in its lair
   'v-kraken': voss("Those aren't pipes..."),
   'l3-kraken-0': aria('hesitant', "Oh no. Voss... it's a kraken!"),
-  'v-kraken-2': voss('ARIA! Do something!'),
-  'l3-kraken-1': aria('hostile', "I could. I stopped the drones, didn't I? But the last time I helped you down here, you broke my dish."),
-  'v-harpoon-fight': voss("Then I'll do it myself."),
   // beaten, it lets go of the station and sinks away
   'l3-kraken-2': aria('relieved', "...Oh, well done. It's let go. Now get inside, quickly, please.")
 };
@@ -72,6 +69,6 @@ export const TALKS = {
   relay: ['v-relay-2', 'l3-cave'],
   doorHeld: ['v-door-held'],
   caveMouth: ['v-cave', 'l3-cave'],
-  kraken: ['v-kraken', 'l3-kraken-0', 'v-kraken-2', 'l3-kraken-1', 'v-harpoon-fight'],
+  kraken: ['v-kraken', 'l3-kraken-0'],
   krakenGone: ['l3-kraken-2']
 };

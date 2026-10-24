@@ -456,7 +456,12 @@ export class DeckSession {
       (lockLevel !== null && this.prep?._inLock(p) ? this.prep.lockWater : this.water).ring(p.x, p.z, 0.8);
       this._stepRing = 0.45;
     }
-    // the splash as he lands from the shaft
+    // the splash as he drops into the water from the chute, and the rings as he lands
+    if (this._falling && !this._splashed && p.y < WATER_LEVEL) {
+      this._splashed = true;
+      this.sfx?.play('deck-splash', { ui: true, vol: 1.3 });
+      this.water.ring(p.x, p.z, 2);
+    }
     if (this._falling && this.controls.grounded) {
       this._falling = false;
       this.water.ring(p.x, p.z, 3);

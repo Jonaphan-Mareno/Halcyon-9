@@ -69,6 +69,17 @@ Required credit lines (CC BY 4.0, http://creativecommons.org/licenses/by/4.0/):
 - *"Cabbage" by Meerschaum Digital (https://sketchfab.com/meerschaumdigital), licensed under CC-BY-4.0. Modified (decimated, merged).*
 - *"Carrot Collection" by Adam.White (https://sketchfab.com/Adam.White), licensed under CC-BY-4.0. Modified (one carrot kept, cut, decimated, merged).*
 
+Dr. Kessler (`public/assets/models/kessler.glb`) is built from these models by
+`Blender/scripts/build_kessler_from_female.py` (the sources are `Blender/assets/female_scientist.glb` and `Blender/assets/angelica_head.glb`):
+
+| Model | Author | Used for | Link |
+|---|---|---|---|
+| Female scientist | photon (that one larry) | Dr. Kessler's body, hands and glasses | https://sketchfab.com/3d-models/female-scientist-c34c0fb5c79d41a18436933f937b283c |
+| Angelica - Female Head PBR Model with Animation | Sell Asset Store | Dr. Kessler's head, face, eyes and hair | https://sketchfab.com/3d-models/angelica-female-head-pbr-model-with-animation-bada072816b74daeb860b8e0725c254d |
+
+- *"Female scientist" by photon (that one larry) (https://sketchfab.com/Professor_E12), licensed under CC-BY-4.0. Modified (rigged to Voss's skeleton, clothes repainted, head and hair replaced).*
+- *"Angelica - Female Head PBR Model with Animation" by Sell Asset Store (https://sketchfab.com/emraanalis), licensed under CC-BY-4.0. Modified (decimated, neck refitted, given expressions, hair, brows and eyes recoloured, eyelashes and eye highlights removed).*
+
 The kraken (Level 3). Downloaded by hand (glTF) into `Blender/assets/kraken/` (not in git: download it
 from the link to rebuild) and taken apart by `Blender/scripts/build_l3_kraken.py` into its body, one
 arm and one long tentacle, its textures packed into one atlas; the game repeats the tentacles (ten
@@ -91,13 +102,15 @@ CC0 needs no credit, but the authors are named here (some ask for it).
 |---|---|---|---|
 | RPG Audio | Kenney (kenney.nl) | creaks, doors, cloth (the suit), latches, clicks | https://kenney.nl/assets/rpg-audio |
 | Sci-fi Sounds | Kenney | hatches, the prep room's machine hum, the thrusters, the suit's seal, the slam, console beeps, the chute's low rumble, the weight under the metal bangs | https://kenney.nl/assets/sci-fi-sounds |
-| Impact Sounds | Kenney | pipe knocks, hits, the spear striking flesh and rock, the chute's joints clacking past, the heavy metal bangs (the chute, the hatch) | https://kenney.nl/assets/impact-sounds |
+| Impact Sounds | Kenney | pipe knocks, hits, the spear striking flesh and rock, the chute's joints clacking past, the heavy metal bangs (the chute, the hatch), the hatch's thud and the dogs letting go | https://kenney.nl/assets/impact-sounds |
 | Interface Sounds | Kenney | the pickup chime, confirm/error beeps, the low-air tick | https://kenney.nl/assets/interface-sounds |
 | Tinysized SFX | Vehicle (Jan Schupke, vehiclemusic.eu) | floor creak, metal groans, water drops, the lock filling, air hiss, the harpoon, whooshes, the chute's metal grinding (knife and fork scrapes, slowed down) | https://opengameart.org/content/fantasy-sound-effects-tinysized-sfx |
 | Loopable Dungeon Ambience | JaggedStone | the deck's rumble and drips (and, slowed, the deep sea's) | https://opengameart.org/content/loopable-dungeon-ambience |
 | Bubble sound effects | Brian MacIntosh (BMacZero) | bubbles: his breath, the lock, the sea | https://opengameart.org/content/bubble-sound-effects |
 | CC0 Deep Monster Roar | trazzz123 | the kraken's roar | https://opengameart.org/content/cc0-deep-monster-roar |
-| 80 CC0 creature SFX | rubberduck | the kraken's screams, growls, hiss and snapping jaws (pitched down), and its shrieks and siren scream (the screams layered high and low, stretched and roughened) | https://opengameart.org/content/80-cc0-creature-sfx |
+| 80 CC0 creature SFX | rubberduck | the kraken's screams, growls, hiss and snapping jaws (pitched down), its shrieks and siren scream (the screams layered high and low, stretched and roughened), and the chorus of shrill voices screaming at once | https://opengameart.org/content/80-cc0-creature-sfx |
+| 40 CC0 water / splash / slime SFX | rubberduck | the splash as Voss drops into the deck's water after the chute | https://opengameart.org/content/40-cc0-water-splash-slime-sfx |
+| Gunshot sounds | Tabasco (Vincent Sevedge) | the rifle's shots: an SKS and a Mosin-Nagant recorded at a range, cleaned of their background noise and layered (the page says CC0, the files' own note CC-BY 3.0: credited here either way) | https://opengameart.org/content/gunshot-sounds |
 | Sinister Boss Appears (music) | cynicmusic (cynicmusic.com, pixelsphere.org) | the kraken fight's base track (`level3-kraken.ogg`) | https://opengameart.org/content/sinister-boss-appears |
 | Dramatic Boss Encounter (music) | cynicmusic | the fight's rising drum layer (`level3-kraken-intense.ogg`) | https://opengameart.org/content/dramatic-boss-encounter |
 | Aquaria (music) | cynicmusic | the quiet music out in the sea (`level3-sea.ogg`) | https://opengameart.org/content/aquaria |

@@ -40,7 +40,8 @@ const FILES = [
   'shing-1', 'shing-2', 'ratchet-1', 'ratchet-2', 'slide', 'clang', 'rock-smash', 'rock-smash-2', 'ink',
   'snarl-1', 'snarl-2', 'snarl-3', 'snarl-4', 'roar-b', 'roar-c', 'heart', 'dash',
   'chute-slide', 'chute-joint-1', 'chute-joint-2', 'metal-bang-1', 'metal-bang-2', 'metal-bang-3',
-  'kraken-shriek-1', 'kraken-shriek-2', 'kraken-shriek-3', 'kraken-siren', 'kraken-death'
+  'kraken-shriek-1', 'kraken-shriek-2', 'kraken-shriek-3', 'kraken-siren', 'kraken-death',
+  'rifle-shot-1', 'rifle-shot-2', 'rifle-shot-3', 'deck-splash', 'kraken-chorus', 'kraken-chorus-short'
 ];
 
 // What each moment sounds like: layers of [file, options]. Options: vol, rate (pitch), delay (s),
@@ -72,33 +73,38 @@ const CUES = {
   refill: [['air-hiss', { ui: true, vol: 0.7 }], ['confirm', { ui: true, vol: 0.5, delay: 1.0 }]],
   harpoon: [['harpoon', { vol: 1, rate: 0.85, ui: true, rand: 0.05 }], ['click', { ui: true, vol: 0.6 }]],
   reload: [['ratchet-2', { ui: true, vol: 0.5, rate: 1.1 }]],
-  // the spear rifle: a heavy gas-charged shot (a thump, the hiss, the action cycling), the
+  // the rifle: a real rifle's crack and boom (one of three, a little different each shot), the
   // magazine out, a fresh one in and the charging handle racked, and the click of an empty gun
-  rifleShot: [['harpoon', { ui: true, vol: 0.85, rate: 1.15, rand: 0.06, dur: 0.35 }], ['slam', { ui: true, vol: 0.5, rate: 2.0, rand: 0.05 }],
-    ['click', { ui: true, vol: 0.55, rate: 1.25, delay: 0.06 }], ['bubbles-loop', { ui: true, vol: 0.18, rate: 1.6, dur: 0.4 }]],
+  rifleShot1: [['rifle-shot-1', { ui: true, vol: 1.0, rand: 0.03 }], ['bubbles-loop', { ui: true, vol: 0.1, rate: 1.6, dur: 0.3 }]],
+  rifleShot2: [['rifle-shot-2', { ui: true, vol: 1.0, rand: 0.03 }], ['bubbles-loop', { ui: true, vol: 0.1, rate: 1.6, dur: 0.3 }]],
+  rifleShot3: [['rifle-shot-3', { ui: true, vol: 1.0, rand: 0.03 }], ['bubbles-loop', { ui: true, vol: 0.1, rate: 1.6, dur: 0.3 }]],
   rifleOut: [['slide', { ui: true, vol: 0.8, rate: 0.85 }], ['click', { ui: true, vol: 0.6, delay: 0.15 }]],
   rifleIn: [['latch', { ui: true, vol: 0.9 }], ['ratchet-1', { ui: true, vol: 0.9, delay: 0.35 }], ['shing-2', { ui: true, vol: 0.5, delay: 0.5, rate: 1.2 }]],
   rifleEmpty: [['click', { ui: true, vol: 0.7, rate: 1.6 }]],
   dash: [['dash', { ui: true, vol: 0.9, rate: 0.8 }], ['bubbles-loop', { ui: true, vol: 0.35, rate: 1.3 }]],
   dodge: [['whoosh-2', { ui: true, vol: 0.6, rate: 0.7 }]],
   spearFlesh: [['hit-flesh', { vol: 1.2, rate: 0.8, rand: 0.1 }]],
-  spearRock: [['rock-hit', { vol: 0.8, rand: 0.1 }]],
+  spearRock: [['rock-hit', { vol: 0.5, rand: 0.15 }]],
   hurt: [['punch', { ui: true, vol: 1, rand: 0.08 }], ['hit-flesh', { ui: true, vol: 0.7, rate: 0.6 }]],
   lowAir: [['tick', { ui: true, vol: 0.5, rate: 0.8 }]],
   // the kraken (its screams are heard twice: out in the water where it is, muffled and echoing,
   // and clear and shrill in his helmet, so they cut through)
   krakenRoar: [['kraken-roar', { rate: 0.82, vol: 1.8, wet: 0.6 }], ['kraken-growl-1', { rate: 0.45, vol: 1.2, delay: 0.1, wet: 0.5 }],
     ['snarl-3', { rate: 0.5, vol: 1.2, delay: 0.3, wet: 0.5 }], ['roar-b', { rate: 0.42, vol: 1.3, delay: 0.6, wet: 0.6 }],
-    ['kraken-siren', { ui: true, vol: 1.1, delay: 0.4 }]],
+    ['kraken-siren', { ui: true, vol: 1.1, delay: 0.4 }], ['kraken-chorus', { ui: true, vol: 1.2, delay: 0.5 }]],
   // a spear in it: a demonic screech (one of three)
-  shriek1: [['kraken-shriek-1', { vol: 1.6, wet: 0.4, rand: 0.06 }], ['kraken-shriek-1', { ui: true, vol: 0.8, rand: 0.06 }]],
-  shriek2: [['kraken-shriek-2', { vol: 1.6, wet: 0.4, rand: 0.06 }], ['kraken-shriek-2', { ui: true, vol: 0.8, rand: 0.06 }]],
-  shriek3: [['kraken-shriek-3', { vol: 1.6, wet: 0.4, rand: 0.06 }], ['kraken-shriek-3', { ui: true, vol: 0.8, rand: 0.06 }]],
+  // (with many shrill voices screaming on top of it, as if from inside it)
+  shriek1: [['kraken-shriek-1', { vol: 1.6, wet: 0.4, rand: 0.06 }], ['kraken-shriek-1', { ui: true, vol: 0.8, rand: 0.06 }],
+    ['kraken-chorus-short', { ui: true, vol: 0.9, rand: 0.08 }]],
+  shriek2: [['kraken-shriek-2', { vol: 1.6, wet: 0.4, rand: 0.06 }], ['kraken-shriek-2', { ui: true, vol: 0.8, rand: 0.06 }],
+    ['kraken-chorus-short', { ui: true, vol: 0.9, rand: 0.08 }]],
+  shriek3: [['kraken-shriek-3', { vol: 1.6, wet: 0.4, rand: 0.06 }], ['kraken-shriek-3', { ui: true, vol: 0.8, rand: 0.06 }],
+    ['kraken-chorus-short', { ui: true, vol: 0.9, rand: 0.08 }]],
   snarl: [['snarl-1', { rate: 0.5, vol: 1.3, wet: 0.5, rand: 0.08 }]],
   punchWhoosh: [['whoosh', { rate: 0.6, vol: 1.3 }], ['dash', { rate: 0.5, vol: 0.8 }], ['snarl-2', { rate: 0.55, vol: 1.0, wet: 0.4 }]],
   stuck: [['rock-smash', { rate: 0.8, vol: 1.3, wet: 0.5 }], ['clang', { rate: 0.45, vol: 0.4 }]],
   stun: [['kraken-scream-2', { rate: 0.6, vol: 2.0, wet: 0.6 }], ['roar-c', { rate: 0.45, vol: 1.3, delay: 0.2, wet: 0.6 }],
-    ['kraken-shriek-2', { ui: true, vol: 1.0 }]],
+    ['kraken-shriek-2', { ui: true, vol: 1.0 }], ['kraken-chorus-short', { ui: true, vol: 1.0, rate: 0.9 }]],
   rockGrab: [['rock-hit', { rate: 0.6, vol: 1.1, wet: 0.4 }], ['snarl-4', { rate: 0.5, vol: 1.1, wet: 0.4 }]],
   rockThrow: [['whoosh', { rate: 0.4, vol: 1.4 }], ['roar-b', { rate: 0.5, vol: 1.1, wet: 0.5 }]],
   rockSmash: [['rock-smash', { vol: 1.6, wet: 0.5 }], ['rock-smash-2', { rate: 0.7, vol: 1.2, delay: 0.05 }], ['slam', { vol: 0.8, rate: 1.2 }]],
@@ -112,10 +118,12 @@ const CUES = {
     ['kraken-growl-1', { rate: 0.4, vol: 0.9, delay: 0.15, wet: 0.5 }]],
   // it comes right at his face: the siren scream, loud and close
   lungeRoar: [['kraken-siren', { ui: true, vol: 1.6 }], ['kraken-siren', { vol: 2.0, wet: 0.3 }], ['kraken-roar-short', { rate: 0.5, vol: 1.8, wet: 0.3 }],
-    ['whoosh', { rate: 0.35, vol: 1.2 }]],
+    ['kraken-chorus', { ui: true, vol: 1.7 }], ['whoosh', { rate: 0.35, vol: 1.2 }]],
   chomp: [['kraken-chomp', { rate: 0.5, vol: 1.6, rand: 0.1 }], ['kraken-shriek-3', { ui: true, vol: 0.9, rand: 0.08 }], ['clank-2', { rate: 0.45, vol: 0.4 }]],
-  wounded: [['kraken-siren', { ui: true, vol: 1.4, rand: 0.05 }], ['kraken-siren', { vol: 1.8, wet: 0.6, rand: 0.05 }], ['hit-flesh', { rate: 0.6, vol: 1.2 }]],
-  beaten: [['kraken-death', { ui: true, vol: 1.3 }], ['kraken-death', { vol: 1.8, wet: 0.8 }], ['kraken-roar', { rate: 0.6, vol: 1.4, delay: 0.8, wet: 0.8 }]]
+  wounded: [['kraken-siren', { ui: true, vol: 1.4, rand: 0.05 }], ['kraken-siren', { vol: 1.8, wet: 0.6, rand: 0.05 }], ['hit-flesh', { rate: 0.6, vol: 1.2 }],
+    ['kraken-chorus', { ui: true, vol: 1.5, rand: 0.04 }]],
+  beaten: [['kraken-death', { ui: true, vol: 1.3 }], ['kraken-death', { vol: 1.8, wet: 0.8 }], ['kraken-roar', { rate: 0.6, vol: 1.4, delay: 0.8, wet: 0.8 }],
+    ['kraken-chorus', { ui: true, vol: 1.3, rate: 0.8 }]]
 };
 
 // the deck's random sounds: which, how often (seconds between, min and max), how far off (metres)

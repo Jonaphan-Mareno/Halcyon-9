@@ -268,6 +268,10 @@ export class HabitatSession {
       this.loadingEl.classList.remove('visible');
       this._readyWorld(held);
       game.ui.showToast('WASD to move, Space to jump, E to use things, V to switch camera.', 7000);
+      // ?flashback in the address (with ?level=2): Kessler's flashback plays as soon as the level is
+      // in, for testing it (?flashback=2d: the drawn one)
+      const fb = new URLSearchParams(window.location.search).get('flashback');
+      if (fb !== null) this._testFlashback(fb === '2d');
     }).catch((e) => console.error('Level 2 atrium failed to load.', e));
   }
 
@@ -1031,6 +1035,8 @@ export class HabitatSession {
         dt, feet: p, head: this._head, playing, player: this.controls.character,
         canWake: this._arrivalDone && this.story.has('leftLift') && !this.story.has('gardenCleared')
       });
+      // while he holds the nozzle (it points where the camera looks) his body turns that way too
+      this.controls.aimFacing = this.garden.holding;
       this.garden.updateTease(dt);
       // a drone glimpsed far across the hall the first time he walks into it (scene 2.2)
       if (playing && !this._teased && this.story.has('leftLift') && !this.story.has('dronesWoken') && p.z < 9) {
@@ -1239,6 +1245,26 @@ export class HabitatSession {
     await sleep(700);
     await this.say('kessler');
     this.story.set('codeFound');
+  }
+
+  // The flashback alone, straight away (?flashback in the address): the 3D one, or the drawn one
+  // when asked for (flat) or when Kessler's model fails to load
+  async _testFlashback(flat) {
+    if (!flat) {
+      await this.controls.character.whenReady;
+      this.flashback3d.player = this.controls.character;
+      await this.flashback3d.preload();
+    }
+    const g = this.game;
+    g.state = 'FLASHBACK';
+    if (!flat && this.flashback3d.ready) {
+      document.body.classList.add('fb3d');
+      await this.flashback3d.play();
+      document.body.classList.remove('fb3d');
+    } else {
+      await this.flashback.play();
+    }
+    g.state = 'PLAYING';
   }
 
   // The personal logs have played through, as one run of memories ending on Cycle 8 ("take the

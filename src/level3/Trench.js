@@ -12,7 +12,7 @@ import { SEA } from './SeaScene.js';
 //      station and comes for him: the final fight (KrakenFight.js), with a boss bar. A tap of Shift
 //      dashes him out of the way (a blow that lands during a dash misses). Its blows glow before
 //      they land; a punch he dodges sticks in the rock (shoot it: the kraken is stunned); its ink
-//      blinds him for a moment. Its mouth glows when it is open to the spear rifle. Four hits
+//      blinds him for a moment. Its mouth glows when it is open to the rifle. Four hits
 //   4. it sinks away beaten; the relay's door opens and he goes in. What happens in there (the
 //      puzzles, the uplink, the two endings) is the team's: see RELAY below
 //
@@ -79,7 +79,8 @@ export class Trench {
 
   get sfx() { return this.s.sfx; }
 
-  // what a spear rifle's bolt meets between p0 and p1: the kraken, or rock
+  // what a rifle's bullet meets between p0 and p1: the kraken, or rock (with the way the rock
+  // faces there, for the bullet hole)
   _spear(p0, p1) {
     const hit = this.fight.spearTest(p0, p1);
     if (hit) {
@@ -99,11 +100,11 @@ export class Trench {
     const L = d.length();
     if (L < 1e-4) return null;
     d.divideScalar(L);
-    const t = this.s.physics.castRay(p0, d, L);
-    if (t === null) return null;
-    const point = p0.clone().addScaledVector(d, t);
+    const ray = this.s.physics.castRayNormal(p0, d, L);
+    if (!ray) return null;
+    const point = p0.clone().addScaledVector(d, ray.distance);
     this.sfx?.cue('spearRock', point);
-    return { point, stick: null };
+    return { point, stick: null, normal: new THREE.Vector3(ray.normal.x, ray.normal.y, ray.normal.z) };
   }
 
   // ------------------------------------------------------------------ the doors
@@ -300,7 +301,7 @@ export class Trench {
     this.s.harpoon?.draw(true);
     this.sfx?.cue('krakenRoar', this.fight.kraken.mouthWorld());
     this.sfx?.cue('draw');
-    this.s.say('kraken').then(() => this.game.ariaAnger?.(8));
+    this.s.say('kraken');
     this._showBoss(true);
     this.game.ui.showToast('It tore its tentacles off the station. TAP SHIFT to dash out of the way. Dodge its punch and shoot the arm while it is stuck; shoot its mouth when it glows (hold left click; R reloads).', 9000);
   }

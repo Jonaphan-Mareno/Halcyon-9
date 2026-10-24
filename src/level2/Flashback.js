@@ -1,3 +1,5 @@
+import { audioSrc } from '../audio/AudioCache.js';
+
 // The flashback in Dr. Kessler's room (scene 2.8, step 3): a wordless memory, the first time the
 // player sees faces. Kessler stands at the shutdown console. Voss argues with her, protective of
 // the work, while ARIA pleads from a speaker (her words indistinct: only her pulsing light). Kessler
@@ -20,7 +22,7 @@ const AUDIO = './assets/audio/logs/flashback.mp3';
 const C = {
   wall: '#10222e', wall2: '#0a1620', floor: '#0b1218', console: '#172a3a', trim: '#f07a14',
   cyan: '#4fe3ff', coat: '#dfe8ee', coatShade: '#aebcc6', skin: '#d9ae92', skinShade: '#b98c72',
-  kessHair: '#c8a96a', earpiece: '#eef3f6', vossHair: '#3a2a20', vossCoat: '#cfdbe3', pants: '#1c2733', red: '#ff3b30'
+  kessHair: '#a3341a', shades: '#14181d', vossHair: '#3a2a20', vossCoat: '#cfdbe3', pants: '#1c2733', red: '#ff3b30'
 };
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -53,7 +55,7 @@ export class Flashback {
     this.t = 0;
     this.el.classList.add('on');
     this.hint.style.opacity = 0;
-    this.audio = new Audio(AUDIO);
+    this.audio = new Audio(audioSrc(AUDIO));
     this.audio.addEventListener('error', () => { this.audio = null; });
     this.audio.play().catch(() => { this.audio = null; });
     return new Promise((resolve) => {
@@ -105,14 +107,14 @@ export class Flashback {
     this._aria(g, t, aria, 1 + toKess * 0.6 + (t > 12 ? 1 : 0));
 
     this._person(g, 175, FLOOR, 1.05, {
-      dir: 1, coat: C.coat, shade: C.coatShade, hair: C.kessHair, bun: true,
+      dir: 1, coat: C.coat, shade: C.coatShade, hair: C.kessHair, long: true, shades: true,
       armF: lerp(-0.2, -1.5, reach), armB: -0.15,
       talk: t > 6 && t < 12 ? Math.abs(Math.sin(t * 7)) * 0.7 : 0.1,
       brow: lerp(0.1, 0.5, toKess) - (t > 12 ? 0.8 : 0), look: t > 11.5 ? 1 : 0, t,
       lean: lerp(0, 0.04, reach), watch: leave > 0.1
     });
     this._person(g, vx, FLOOR, 1.05, {
-      dir: faceLeft ? -1 : 1, coat: C.vossCoat, shade: '#a9b9c4', hair: C.vossHair, bun: false,
+      dir: faceLeft ? -1 : 1, coat: C.vossCoat, shade: '#a9b9c4', hair: C.vossHair, long: false, shades: false,
       armF: faceLeft ? Math.sin(t * 5) * 0.5 * argue - 1.0 * argue - 0.9 * toKess : lerp(0.1, -1.6, door),
       armB: faceLeft ? Math.sin(t * 4 + 1) * 0.5 * argue - 0.7 * argue : 0.2,
       talk: argue * Math.abs(Math.sin(t * 8)) * 0.8, brow: 0.6 * argue, look: 0, t,
@@ -255,7 +257,7 @@ export class Flashback {
     g.fill();
     g.fillStyle = p.shade;
     g.fillRect(-1, -122, 2, 78);                         // the front seam
-    if (p.bun) {
+    if (p.long) {
       g.fillStyle = C.cyan;                               // Kessler: a badge on a lanyard
       g.fillRect(6, -118, 2, 20);
       g.fillRect(3, -99, 8, 10);
@@ -304,10 +306,10 @@ export class Flashback {
     g.beginPath();
     g.arc(-1, -2, 16, 0, Math.PI * 2);
     g.fill();
-    if (p.bun) {
-      // Kessler: blond, swept back off the forehead, short at the back
+    if (p.long) {
+      // Kessler: red, long and loose, falling down her back
       g.beginPath();
-      g.ellipse(-10, -8, 9, 7, -0.3, 0, Math.PI * 2);
+      g.ellipse(-8, 16, 11, 27, 0.12, 0, Math.PI * 2);
       g.fill();
     }
     // face
@@ -319,17 +321,18 @@ export class Flashback {
     g.beginPath();
     g.ellipse(0, -9, 16, 8, 0, Math.PI, Math.PI * 2);   // the hairline
     g.fill();
-    if (p.bun) {
-      // her white earpiece, hooked over the ear
-      g.strokeStyle = C.earpiece;
-      g.lineWidth = 1.6;
-      g.beginPath();
-      g.arc(-4, -2, 4, Math.PI * 1.1, Math.PI * 1.9);
-      g.stroke();
-    }
-    // eyes (looking ahead, or round at the door)
+    // eyes (looking ahead, or round at the door); Kessler's behind her dark glasses
     const gaze = p.look ? 3 : 1;
-    for (const ex of [5, 15]) {
+    if (p.shades) {
+      g.fillStyle = C.shades;
+      g.fillRect(-1, -2.5, 20, 1.2);                     // the bridge and the arm back to her ear
+      for (const ex of [5, 15]) {
+        g.beginPath();
+        g.ellipse(ex - 1, 0, 4.4, 3, 0, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+    for (const ex of p.shades ? [] : [5, 15]) {
       g.fillStyle = '#f4f7f8';
       g.beginPath();
       g.ellipse(ex - 1, 0, 3.6, 3, 0, 0, Math.PI * 2);

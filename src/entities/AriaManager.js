@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { AriaHead } from './AriaHead.js';
 import { settings } from '../core/Settings.js';
+import { audioSrc } from '../audio/AudioCache.js';
 
 const ARIA_VIDEO_PATH = './assets/textures/aria_components/';
 const ARIA_AUDIO_PATH = './assets/audio/aria/';
@@ -281,7 +282,7 @@ export class AriaManager {
 
     return new Promise((resolve) => {
       let finished = false;
-      const audio = new Audio(ARIA_AUDIO_PATH + clipName + '.mp3');
+      const audio = new Audio(audioSrc(ARIA_AUDIO_PATH + clipName + '.mp3'));   // (fetched ahead: AudioCache)
       audio.volume = settings.get('voice');
       // what pause() needs to hold and resume her line
       const cur = this._cur = { audio, timer: null, due: 0, left: 0, wasPlaying: false };

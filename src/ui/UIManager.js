@@ -139,7 +139,7 @@ export class UIManager {
   // ---------------------------------------------------------
 
   // Voss speaks in text. Types out, then waits for the player to advance
-  // (click / Space / Enter / E). Clicking while typing shows the full line.
+  // (click / Enter / E; Space too, as he cannot move then). Clicking while typing shows the full line.
   // timed: the caller moves on by itself after a reading time, so no "continue" hint is shown
   // (level 2's thoughts, which play while Voss keeps walking)
   showVossLine(text, { timed = false, thought = false } = {}) {
@@ -154,7 +154,7 @@ export class UIManager {
   }
 
   // ARIA's line, shown as a subtitle for as long as she is speaking
-  showAriaLine(text, hint = 'Space: skip') {
+  showAriaLine(text, hint = 'Enter: skip') {
     this._advanceResolver = null;
     this._stopTyping();
     this._setSpeaker('ARIA', 'aria');
@@ -163,7 +163,7 @@ export class UIManager {
     this.hintEl.textContent = hint;
   }
 
-  // Is ARIA's subtitle on screen? (Space or a click then skips her line)
+  // Is ARIA's subtitle on screen? (Enter or a click then skips her line)
   isAriaLine() {
     return this.dialogue.classList.contains('visible') && this.dialogue.classList.contains('aria');
   }
@@ -212,7 +212,7 @@ export class UIManager {
   _finishTyping() {
     this._stopTyping();
     this.textEl.textContent = this._fullText;
-    this.hintEl.textContent = this._timed ? '' : '▶ Click or press Space to continue';
+    this.hintEl.textContent = this._timed ? '' : '▶ Click or press Enter to continue';
   }
 
   _stopTyping() {

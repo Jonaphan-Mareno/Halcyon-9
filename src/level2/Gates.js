@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { withHubLighting } from '../graphics/HubMaterials.js';
+import { audioSrc, preloadAudio } from '../audio/AudioCache.js';
 
 // What holds Voss back in Level 2 (scenes 2.2 to 2.9), and what lets him through:
 //
@@ -31,6 +32,12 @@ const DOG = { shut: 0.84, open: 0.72 };              // how far out the dogs sit
 const LID = { crack: 0.07, lift: 1.7, upright: 1.45, tip: 2.6, bang: 2.85, open: 1.885 };
 const RING = { off: new THREE.Color(1.4, 0.12, 0.08), on: new THREE.Color(1.6, 0.75, 0.2), open: new THREE.Color(0.3, 1.7, 0.6) };
 const SFX = './assets/audio/sfx/l3/';
+// The hatch opening: [seconds after the right code, sound, volume, rate]
+const HATCH_CUES = [
+  [0.15, 'ratchet-1', 0.9, 0.8], [0.55, 'ratchet-2', 0.9, 0.85], [0.95, 'ratchet-1', 0.9, 0.75],
+  [1.3, 'hatch-unlock', 1, 1], [1.5, 'air-hiss', 0.9, 0.8], [1.52, 'hatch-unlock', 0.7, 0.75],
+  [1.8, 'door-creak-1', 0.7, 0.75], [LID.bang, 'hatch-thud', 1, 1], [LID.bang + 0.02, 'metal-bang-2', 0.45, 0.8]
+];
 
 const polar = (r, deg, y = 0) => {
   const a = THREE.MathUtils.degToRad(deg);
@@ -143,6 +150,7 @@ export class Gates {
     this._sinking = 0;           // seconds since the bulkheads started to sink (0 = not yet)
     this._hatchT = -1;           // seconds since the right code went in (-1 = not yet)
     this._cues = [];
+    preloadAudio([...new Set(HATCH_CUES.map(([, name]) => SFX + name + '.ogg'))]);   // (so they play on cue)
 
     this._buildBulkheads();
     this._buildSigns(atrium);
@@ -447,11 +455,7 @@ export class Gates {
     this.hole.visible = true;
     if (this._capCollider) this.physics.world.removeCollider(this._capCollider, true);
     this._capCollider = null;
-    this._cues = [
-      [0.15, 'ratchet-1', 0.9, 0.8], [0.55, 'ratchet-2', 0.9, 0.85], [0.95, 'ratchet-1', 0.9, 0.75],
-      [1.3, 'hatch-unlock', 1, 1], [1.5, 'air-hiss', 0.9, 0.8], [1.52, 'hatch-unlock', 0.7, 0.75],
-      [1.8, 'door-creak-1', 0.7, 0.75], [LID.bang, 'hatch-thud', 1, 1], [LID.bang + 0.02, 'metal-bang-2', 0.45, 0.8]
-    ];
+    this._cues = HATCH_CUES.slice();
   }
 
   _updateHatch(dt) {
@@ -615,7 +619,7 @@ function keypadFace(text, color) {
 
 // One of Level 3's recorded sounds (public/assets/audio/sfx/l3), played once
 function playSfx(name, vol = 1, rate = 1) {
-  const a = new Audio(SFX + name + '.ogg');
+  const a = new Audio(audioSrc(SFX + name + '.ogg'));
   a.volume = vol;
   a.preservesPitch = false;
   a.playbackRate = rate;

@@ -1,0 +1,40 @@
+# Apache settings for serving the built game (dist/) from a LAMP server, such as the school's.
+# Copied to dist/ by Vite. Apache only reads this file if the server allows it (AllowOverride for
+# this folder); every block below is skipped if its module is not switched on, so it never breaks
+# the site.
+
+# Types older Apache versions do not know (otherwise the models and sounds can be refused or misread)
+<IfModule mod_mime.c>
+  AddType model/gltf-binary .glb
+  AddType model/gltf+json .gltf
+  AddType audio/ogg .ogg
+  AddType audio/mpeg .mp3
+  AddType video/mp4 .mp4
+  AddType image/webp .webp
+  AddType application/wasm .wasm
+  AddType text/javascript .js .mjs
+</IfModule>
+
+# Let browsers keep the files instead of asking the server again for every one, every time.
+# A day, not longer: the files in assets/ keep their names when they change (only the code is
+# renamed by Vite), so an update shows up by the next day, or at once with Ctrl+F5.
+# The page itself is always checked, so a new build is picked up.
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresDefault "access plus 1 day"
+  ExpiresByType text/html "access plus 0 seconds"
+</IfModule>
+<IfModule mod_headers.c>
+  <FilesMatch "\.(glb|gltf|bin|fbx|mp3|ogg|wav|mp4|webm|jpg|jpeg|png|webp|ktx2|wasm|js|css|json)$">
+    Header set Cache-Control "public, max-age=86400"
+  </FilesMatch>
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
+
+# Compress the text and the models on the way (sound, video and images are compressed already)
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json
+  AddOutputFilterByType DEFLATE model/gltf-binary model/gltf+json application/wasm image/svg+xml
+</IfModule>

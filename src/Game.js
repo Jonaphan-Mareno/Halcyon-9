@@ -251,7 +251,7 @@ export class Game {
     });
 
     // Controls
-    this.controls = new Controls(this.camera.instance, document.body, this.currentLevel);
+    this.controls = new Controls(this.camera.instance, document.body, this.currentLevel, { viewLocked: true });
 
     // Overlay UI, sound, the opening conversation and the circuit puzzle
     const uiRoot = document.getElementById('ui-layer');

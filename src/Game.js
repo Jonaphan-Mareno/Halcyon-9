@@ -219,6 +219,7 @@ export class Game {
     // the pause menu (Esc / P / the corner button) and the player's options
     this.pauseMenu = new PauseMenu({
       state: () => this.state,
+      shouldPauseOnUnlock: () => !this._relayHackActive,
       pause: () => this.pause(),
       resume: () => this.resume(),
       restartLevel: () => this.restartLevel(),

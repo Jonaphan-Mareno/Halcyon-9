@@ -1,3 +1,4 @@
+import { playClip, preloadAudio, loopClip, CLIPS } from '../audio/AudioCache.js';
 import * as THREE from "three";
 import { createGLTFLoader } from '../core/loaders.js';
 import { Shaders } from "../graphics/Shaders";
@@ -210,6 +211,7 @@ export class Level1{
     this._doorOpenAt = -1;
     this._cellFloorY = 0;
     this._shards = [];             // window pieces in flight
+    preloadAudio([CLIPS.glass, CLIPS.cellDoor, CLIPS.paper, CLIPS.tech]);  // (so they are ready the first time)
     this._glassMaterial = null;
     this._blocker = null;          // invisible filler for the door's window hole
     this._blockerMaterial = null;
@@ -898,6 +900,8 @@ onRingPuzzleComplete() {
   // materials have to be disposed explicitly.
   dispose() {
     this.scene.onBeforeRender = () => {};
+    this._buzz?.stop(0.3);
+    this._buzz = null;
     for (const fx of this._fixtures || []) {
       this.scene.remove(fx.frame, fx.panel);
       fx.mat.dispose();
@@ -1745,6 +1749,7 @@ onRingPuzzleComplete() {
 
   onInteract(object, options = {}) {
     if (this._isTagPart(object)) {
+      playClip(CLIPS.paper, 0.9);
       this.tagRead = true;
       this.onReadTag?.();
       return;
@@ -1758,6 +1763,7 @@ onRingPuzzleComplete() {
       return;
     }
     if (this._isConsoleScreenPart(object)) {
+      playClip(CLIPS.tech, 0.8);
       this.rideElevator();
       return;
     }
@@ -1779,7 +1785,10 @@ onRingPuzzleComplete() {
       return;
     }
     if (this._isRingPuzzlePart(object)) {
-      if (!this.ringPuzzleSolved) this.onOpenRingPuzzle?.();
+      if (!this.ringPuzzleSolved) {
+        playClip(CLIPS.tech, 0.8);
+        this.onOpenRingPuzzle?.();
+      }
       return;
     }
     if (this._isTorchPart(object)) {
@@ -1796,6 +1805,7 @@ onRingPuzzleComplete() {
       } else if (!this.hasTorch) {
         this.onLockedHint?.('It is too dark to read the wiring. Find the torch first.');
       } else if (!this.cablesFixed) {
+        playClip(CLIPS.tech, 0.8);
         this.onInspectGenerator?.();
       }
       return;
@@ -2140,12 +2150,14 @@ onRingPuzzleComplete() {
   openDoor(delay = 0.35) {
     if (!this.doorPivot || this.doorOpening || this.doorOpen || this._doorOpenAt >= 0) return;
     this._doorOpenAt = this.time + delay;   // a beat after the handle turns, so it reads
+    playClip(CLIPS.cellDoor, 0.9);
   }
 
   shatterWindow(impactPoint) {
     const w = this.window;
     if (!w || w.broken) return;
     w.broken = true;
+    playClip(CLIPS.glass, 0.9);
 
     // Remove the glass (and the hidden duplicate): raycasts ignore `visible`, so left in
     // the room they would block the doorway
@@ -2710,6 +2722,13 @@ onRingPuzzleComplete() {
     this.doorMixer?.update(delta);
     this.time += delta;
     this.power += (this.powerTarget - this.power) * Math.min(1, delta * 1.5);
+    // the dying lights buzz and crackle until the power comes back on
+    if (!this._buzz && this.powerTarget < 0.99 && !this._buzzDone) this._buzz = loopClip(CLIPS.flicker, 3.5);
+    if (this._buzz && this.powerTarget >= 0.99) {
+      this._buzz.stop(2.5);
+      this._buzz = null;
+      this._buzzDone = true;
+    }
     if (this.ariaManager) {
       this.ariaManager.update(delta, playerPosition);
     }

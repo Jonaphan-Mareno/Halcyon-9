@@ -1,3 +1,4 @@
+import { CLIPS } from '../audio/AudioCache.js';
 import * as THREE from 'three';
 import { AudioManager } from '../audio/AudioManager.js';
 
@@ -39,10 +40,13 @@ const FILES = [
   'kraken-growl-2', 'kraken-growl-3', 'kraken-roar-short', 'kraken-chomp', 'kraken-hiss',
   'shing-1', 'shing-2', 'ratchet-1', 'ratchet-2', 'slide', 'clang', 'rock-smash', 'rock-smash-2', 'ink',
   'snarl-1', 'snarl-2', 'snarl-3', 'snarl-4', 'roar-b', 'roar-c', 'heart', 'dash',
-  'chute-slide', 'chute-joint-1', 'chute-joint-2', 'metal-bang-1', 'metal-bang-2', 'metal-bang-3',
+  'chute-slide', 'chute-joint-1', 'chute-joint-2', 
   'kraken-shriek-1', 'kraken-shriek-2', 'kraken-shriek-3', 'kraken-siren', 'kraken-death',
-  'rifle-shot-1', 'rifle-shot-2', 'rifle-shot-3', 'deck-splash', 'kraken-chorus', 'kraken-chorus-short'
+  'rifle-shot-1', 'rifle-shot-2', 'rifle-shot-3', 'kraken-chorus', 'kraken-chorus-short'
 ];
+// the team's own (Pixabay), by name: the splash into the deck's water, wading through it, a hit in
+// the chute
+const TEAM = { 'water-splash': CLIPS.splash, 'water-wade': CLIPS.wade, 'metal-hit': CLIPS.metalHit, 'kraken-crowd': CLIPS.krakenScream };
 
 // What each moment sounds like: layers of [file, options]. Options: vol, rate (pitch), delay (s),
 // ui (heard in the helmet: not through the water), wet (echo send), rand (pitch wobble)
@@ -91,20 +95,22 @@ const CUES = {
   // and clear and shrill in his helmet, so they cut through)
   krakenRoar: [['kraken-roar', { rate: 0.82, vol: 1.8, wet: 0.6 }], ['kraken-growl-1', { rate: 0.45, vol: 1.2, delay: 0.1, wet: 0.5 }],
     ['snarl-3', { rate: 0.5, vol: 1.2, delay: 0.3, wet: 0.5 }], ['roar-b', { rate: 0.42, vol: 1.3, delay: 0.6, wet: 0.6 }],
-    ['kraken-siren', { ui: true, vol: 1.1, delay: 0.4 }], ['kraken-chorus', { ui: true, vol: 1.2, delay: 0.5 }]],
+    ['kraken-siren', { ui: true, vol: 1.1, delay: 0.4 }], ['kraken-chorus', { ui: true, vol: 1.2, delay: 0.5 }],
+    ['kraken-crowd', { ui: true, vol: 0.9, delay: 0.3, dur: 3.5 }]],
   // a spear in it: a demonic screech (one of three)
   // (with many shrill voices screaming on top of it, as if from inside it)
   shriek1: [['kraken-shriek-1', { vol: 1.6, wet: 0.4, rand: 0.06 }], ['kraken-shriek-1', { ui: true, vol: 0.8, rand: 0.06 }],
-    ['kraken-chorus-short', { ui: true, vol: 0.9, rand: 0.08 }]],
+    ['kraken-chorus-short', { ui: true, vol: 0.9, rand: 0.08 }], ['kraken-crowd', { ui: true, vol: 0.7, rand: 0.08, dur: 1.1 }]],
   shriek2: [['kraken-shriek-2', { vol: 1.6, wet: 0.4, rand: 0.06 }], ['kraken-shriek-2', { ui: true, vol: 0.8, rand: 0.06 }],
-    ['kraken-chorus-short', { ui: true, vol: 0.9, rand: 0.08 }]],
+    ['kraken-chorus-short', { ui: true, vol: 0.9, rand: 0.08 }], ['kraken-crowd', { ui: true, vol: 0.7, rand: 0.08, dur: 1.1 }]],
   shriek3: [['kraken-shriek-3', { vol: 1.6, wet: 0.4, rand: 0.06 }], ['kraken-shriek-3', { ui: true, vol: 0.8, rand: 0.06 }],
-    ['kraken-chorus-short', { ui: true, vol: 0.9, rand: 0.08 }]],
+    ['kraken-chorus-short', { ui: true, vol: 0.9, rand: 0.08 }], ['kraken-crowd', { ui: true, vol: 0.7, rand: 0.08, dur: 1.1 }]],
   snarl: [['snarl-1', { rate: 0.5, vol: 1.3, wet: 0.5, rand: 0.08 }]],
   punchWhoosh: [['whoosh', { rate: 0.6, vol: 1.3 }], ['dash', { rate: 0.5, vol: 0.8 }], ['snarl-2', { rate: 0.55, vol: 1.0, wet: 0.4 }]],
   stuck: [['rock-smash', { rate: 0.8, vol: 1.3, wet: 0.5 }], ['clang', { rate: 0.45, vol: 0.4 }]],
   stun: [['kraken-scream-2', { rate: 0.6, vol: 2.0, wet: 0.6 }], ['roar-c', { rate: 0.45, vol: 1.3, delay: 0.2, wet: 0.6 }],
-    ['kraken-shriek-2', { ui: true, vol: 1.0 }], ['kraken-chorus-short', { ui: true, vol: 1.0, rate: 0.9 }]],
+    ['kraken-shriek-2', { ui: true, vol: 1.0 }], ['kraken-chorus-short', { ui: true, vol: 1.0, rate: 0.9 }],
+    ['kraken-crowd', { ui: true, vol: 0.85, dur: 2.0 }]],
   rockGrab: [['rock-hit', { rate: 0.6, vol: 1.1, wet: 0.4 }], ['snarl-4', { rate: 0.5, vol: 1.1, wet: 0.4 }]],
   rockThrow: [['whoosh', { rate: 0.4, vol: 1.4 }], ['roar-b', { rate: 0.5, vol: 1.1, wet: 0.5 }]],
   rockSmash: [['rock-smash', { vol: 1.6, wet: 0.5 }], ['rock-smash-2', { rate: 0.7, vol: 1.2, delay: 0.05 }], ['slam', { vol: 0.8, rate: 1.2 }]],
@@ -118,12 +124,12 @@ const CUES = {
     ['kraken-growl-1', { rate: 0.4, vol: 0.9, delay: 0.15, wet: 0.5 }]],
   // it comes right at his face: the siren scream, loud and close
   lungeRoar: [['kraken-siren', { ui: true, vol: 1.6 }], ['kraken-siren', { vol: 2.0, wet: 0.3 }], ['kraken-roar-short', { rate: 0.5, vol: 1.8, wet: 0.3 }],
-    ['kraken-chorus', { ui: true, vol: 1.7 }], ['whoosh', { rate: 0.35, vol: 1.2 }]],
+    ['kraken-chorus', { ui: true, vol: 1.7 }], ['kraken-crowd', { ui: true, vol: 1.0, dur: 3.2 }], ['whoosh', { rate: 0.35, vol: 1.2 }]],
   chomp: [['kraken-chomp', { rate: 0.5, vol: 1.6, rand: 0.1 }], ['kraken-shriek-3', { ui: true, vol: 0.9, rand: 0.08 }], ['clank-2', { rate: 0.45, vol: 0.4 }]],
   wounded: [['kraken-siren', { ui: true, vol: 1.4, rand: 0.05 }], ['kraken-siren', { vol: 1.8, wet: 0.6, rand: 0.05 }], ['hit-flesh', { rate: 0.6, vol: 1.2 }],
-    ['kraken-chorus', { ui: true, vol: 1.5, rand: 0.04 }]],
+    ['kraken-chorus', { ui: true, vol: 1.5, rand: 0.04 }], ['kraken-crowd', { ui: true, vol: 1.0, dur: 3.0 }]],
   beaten: [['kraken-death', { ui: true, vol: 1.3 }], ['kraken-death', { vol: 1.8, wet: 0.8 }], ['kraken-roar', { rate: 0.6, vol: 1.4, delay: 0.8, wet: 0.8 }],
-    ['kraken-chorus', { ui: true, vol: 1.3, rate: 0.8 }]]
+    ['kraken-chorus', { ui: true, vol: 1.3, rate: 0.8 }], ['kraken-crowd', { ui: true, vol: 0.9, rate: 0.85 }]]
 };
 
 // the deck's random sounds: which, how often (seconds between, min and max), how far off (metres)
@@ -145,6 +151,7 @@ const SCATTER = {
 };
 
 const MUSIC_VOLUME = 0.75;
+const SEA_SWELL = 0.8;              // the sea's music the first time he steps out (0.42 the rest of the time)
 
 export class Level3Audio {
   constructor(session) {
@@ -230,6 +237,7 @@ export class Level3Audio {
       }
     };
     await Promise.all(FILES.map(async (name) => { this.buffers[name] = await get(DIR + name + '.ogg'); }));
+    await Promise.all(Object.entries(TEAM).map(async ([name, url]) => { this.buffers[name] = await get(url); }));
     [this.musicBase, this.musicIntense, this.musicSea] = await Promise.all([get(MUSIC.base), get(MUSIC.intense), get(MUSIC.sea)]);
   }
 
@@ -421,7 +429,14 @@ export class Level3Audio {
       this._seaSrc.connect(this._seaGain);
       this._seaSrc.start();
     }
-    if (this._seaGain) this._seaGain.gain.setTargetAtTime(want ? 0.42 : 0, this.ctx.currentTime, want ? 2.5 : 1.2);
+    // (louder for a while the first time he steps out: swellSea)
+    const swell = want && this.ctx.currentTime < (this._swellUntil || 0);
+    if (this._seaGain) this._seaGain.gain.setTargetAtTime(swell ? SEA_SWELL : want ? 0.42 : 0, this.ctx.currentTime, swell ? 1.5 : want ? 2.5 : 1.2);
+  }
+
+  // the moment he first steps out into the open sea: its music rises for a while, then settles back
+  swellSea(seconds) {
+    this._swellUntil = this.ctx.currentTime + seconds;
   }
 
   // his heart pounding when he is hurt (0..1: how badly): a double thump, quicker the worse it is

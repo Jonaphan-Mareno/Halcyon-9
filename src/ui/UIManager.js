@@ -1,3 +1,5 @@
+import { frame } from './hudFrame.js';
+import './hud.css';
 // In-game overlay UI: wake-up blink, interaction prompt and the dialogue box.
 // All elements live inside #ui-layer, which lets clicks pass through, so the
 // Game keeps handling clicks and calls advance() while a dialogue is open.
@@ -29,6 +31,12 @@ export class UIManager {
     this.speakerEl = this._create('div', 'dialogue-speaker', this.dialogue);
     this.textEl = this._create('div', 'dialogue-text', this.dialogue);
     this.hintEl = this._create('div', 'dialogue-hint', this.dialogue);
+
+    // the station's display frames round them (hudFrame.js, styled in hud.css)
+    frame(this.dialogue, { shape: 'long', tab: this.speakerEl });
+    frame(this.objective, { shape: 'slim' });
+    frame(this.toast, { shape: 'long' });
+    frame(this.prompt, { shape: 'tag' });
 
     this._typeTimer = null;
     this._fullText = '';

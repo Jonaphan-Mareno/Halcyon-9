@@ -1,4 +1,5 @@
 import { MAX_INTEGRITY, MAX_RESTORES } from '../player/PlayerStats.js';
+import { frame } from './hudFrame.js';
 
 // The always-visible heads-up display: a health bar, lives (shown as discs),
 // the torch slot (a live 3D model), a red flash when Voss is hurt, the "how
@@ -22,6 +23,7 @@ export class HUD {
         <span class="hud-label">LIVES</span>
         <div class="hud-restores" id="hud-restores"></div>
       </div>`;
+    frame(this.panel, { shape: 'panel', number: '02' });
     this.fill = this.panel.querySelector('#hud-fill');
     this.value = this.panel.querySelector('#hud-value');
     this.restoreBox = this.panel.querySelector('#hud-restores');

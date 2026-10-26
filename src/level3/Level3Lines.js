@@ -25,10 +25,13 @@ export const LINES = {
   // 3.3 The airlock and the suit: as he comes up into the EVA prep room
   'l3suit': aria('bubbly', "The suit's on the wall. Put it on. Please. The dish is up the pylon. You have four minutes of oxygen, and you only need three."),
   // the uplink cable on its reel (DRAFT; it answers log-5: "I put the cable down")
-  'v-cable': voss('The uplink cable. Every time, I put it down. Not this time.'),
   // trying the water lock too soon (DRAFT)
   'v-need-suit': voss('Not without the suit.'),
   'v-need-cable': voss("The cable. That's the whole reason I'm going out there."),
+  // out on the platform for the first time: the open sea, and a moment to take it in (DRAFT: new,
+  // not in the script yet)
+  'l3-ocean': aria('bubbly', 'Voss... the ocean is beautiful. Just take a look around.'),
+  'v-free': voss('I feel so free.'),
   // DRAFT from here on (the trench, the relay and the kraken): not in the Word file or recorded yet
   // the spear rifle on its rack in the prep room
   'v-harpoon': voss('A spear rifle. Whoever stocked this room expected company.'),
@@ -59,9 +62,9 @@ export const TALKS = {
   sealedGate: ['v-sealed-gate'],
   gateOpen: ['v-sealed-gate', 'l3-gate-1'],
   suit: ['l3suit'],
-  cable: ['v-cable'],
   needSuit: ['v-need-suit'],
   needCable: ['v-need-cable'],
+  ocean: ['l3-ocean', 'v-free'],
   harpoon: ['v-harpoon'],
   needHarpoon: ['v-need-harpoon'],
   descend: ['l3-trench-1'],

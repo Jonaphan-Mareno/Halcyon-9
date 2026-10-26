@@ -1,3 +1,5 @@
+import { playClip, preloadAudio, CLIPS } from '../audio/AudioCache.js';
+import { frame } from './hudFrame.js';
 export class KeypadUI {
   constructor({ onSubmit, onCancel } = {}) {
     this.onSubmit = onSubmit;
@@ -11,6 +13,7 @@ export class KeypadUI {
     this.enterButton = this.root.querySelector('[data-action="enter"]');
 
     this.onKeyDown = (event) => this.handleKeyDown(event);
+    preloadAudio([CLIPS.button]);
     window.addEventListener('keydown', this.onKeyDown);
 
     this.updateDisplay();
@@ -136,6 +139,7 @@ export class KeypadUI {
     }
 
     uiLayer.appendChild(root);
+    frame(root.querySelector('.keypad-device'), { shape: 'panel', number: '04' });
 
     return root;
   }
@@ -202,6 +206,7 @@ export class KeypadUI {
 
   addDigit(digit) {
     if (this.value.length >= 6) return;
+    playClip(CLIPS.button, 0.7);
 
     this.value += digit;
 
@@ -218,6 +223,7 @@ export class KeypadUI {
 
   backspace() {
     if (!this.value.length) return;
+    playClip(CLIPS.button, 0.6);
 
     this.value = this.value.slice(0, -1);
 
@@ -234,6 +240,7 @@ export class KeypadUI {
 
   clear() {
     this.value = '';
+    playClip(CLIPS.button, 0.6);
 
     this.setStatus('CLEARED — 6 DIGITS REQUIRED');
 
@@ -241,6 +248,7 @@ export class KeypadUI {
   }
 
   submit() {
+    playClip(CLIPS.button, 0.75);
     if (this.value.length !== 6) {
       this.setStatus(
         'ACCESS CODE MUST BE 6 DIGITS',

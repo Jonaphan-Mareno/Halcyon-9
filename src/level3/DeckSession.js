@@ -533,6 +533,11 @@ export class DeckSession {
     if (playing || g.state === 'WAKING') this.controls.update(dt, playing);
     const moving = Math.hypot(this.controls.velocity.x, this.controls.velocity.z) > 0.6;
     this._stepRing = (this._stepRing || 0) - dt;
+    // and the sound of wading, while he moves through it
+    const wading = inWater && moving && playing && !this.controls.swimming;
+    if (wading && !this._wading) this.sfx?.startLoop('wade', 'water-wade', { ui: true, vol: 3.2 });
+    else if (!wading && this._wading) this.sfx?.stopLoop('wade', 0.35);
+    this._wading = wading;
     if (inWater && moving && this._stepRing <= 0) {
       (lockLevel !== null && this.prep?._inLock(p) ? this.prep.lockWater : this.water).ring(p.x, p.z, 0.8);
       this._stepRing = 0.45;
@@ -540,7 +545,7 @@ export class DeckSession {
     // the splash as he drops into the water from the chute, and the rings as he lands
     if (this._falling && !this._splashed && p.y < WATER_LEVEL) {
       this._splashed = true;
-      this.sfx?.play('deck-splash', { ui: true, vol: 1.3 });
+      this.sfx?.play('water-splash', { ui: true, vol: 1.2 });
       this.water.ring(p.x, p.z, 2);
     }
     if (this._falling && this.controls.grounded) {

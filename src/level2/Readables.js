@@ -1,5 +1,5 @@
 import { LOGS } from './Level2Lines.js';
-import { audioSrc } from '../audio/AudioCache.js';
+import { audioSrc, playClip, CLIPS } from '../audio/AudioCache.js';
 
 // Level 2's readables (scenes 2.6 to 2.8): one panel over the game for everything Voss reads,
 // hears or watches. The entries and their words are LOGS in Level2Lines.js; each has a kind:
@@ -116,6 +116,7 @@ export class Readables {
 
   // A terminal: a numbered list of entries to open one at a time
   terminal(title, ids, onDone) {
+    playClip(CLIPS.tech, 0.8);
     this.term = { title, ids, pick: 0 };
     this.pages = null;
     this.isMontage = false;
@@ -187,6 +188,7 @@ export class Readables {
     this._reset(log.kind === 'note' && log.hand ? 'letter' : log.kind);
     this.headEl.textContent = log.title;
     this.hooks.onShown?.(id);
+    playClip(log.kind === 'note' || log.kind === 'letter' ? CLIPS.paper : CLIPS.tech, 0.8);
     if (log.kind === 'audio') {
       this.subEl.textContent = 'AUDIO LOG';
       this.meterEl.style.display = '';

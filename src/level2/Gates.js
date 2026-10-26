@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { withHubLighting } from '../graphics/HubMaterials.js';
-import { audioSrc, preloadAudio } from '../audio/AudioCache.js';
+import { audioSrc, preloadAudio, CLIPS } from '../audio/AudioCache.js';
 
 // What holds Voss back in Level 2 (scenes 2.2 to 2.9), and what lets him through:
 //
@@ -36,7 +36,7 @@ const SFX = './assets/audio/sfx/l3/';
 const HATCH_CUES = [
   [0.15, 'ratchet-1', 0.9, 0.8], [0.55, 'ratchet-2', 0.9, 0.85], [0.95, 'ratchet-1', 0.9, 0.75],
   [1.3, 'hatch-unlock', 1, 1], [1.5, 'air-hiss', 0.9, 0.8], [1.52, 'hatch-unlock', 0.7, 0.75],
-  [1.8, 'door-creak-1', 0.7, 0.75], [LID.bang, 'hatch-thud', 1, 1], [LID.bang + 0.02, 'metal-bang-2', 0.45, 0.8]
+  [1.8, 'door-creak-1', 0.7, 0.75], [LID.bang - 0.43, CLIPS.hatch, 1, 1]
 ];
 
 const polar = (r, deg, y = 0) => {
@@ -150,7 +150,7 @@ export class Gates {
     this._sinking = 0;           // seconds since the bulkheads started to sink (0 = not yet)
     this._hatchT = -1;           // seconds since the right code went in (-1 = not yet)
     this._cues = [];
-    preloadAudio([...new Set(HATCH_CUES.map(([, name]) => SFX + name + '.ogg'))]);   // (so they play on cue)
+    preloadAudio([...new Set(HATCH_CUES.map(([, name]) => sfxUrl(name)))]);   // (so they play on cue)
 
     this._buildBulkheads();
     this._buildSigns(atrium);
@@ -618,8 +618,13 @@ function keypadFace(text, color) {
 }
 
 // One of Level 3's recorded sounds (public/assets/audio/sfx/l3), played once
+// a sound's file: one of Level 3's by name, or a full path (the team's own)
+function sfxUrl(name) {
+  return name.includes('/') ? name : SFX + name + '.ogg';
+}
+
 function playSfx(name, vol = 1, rate = 1) {
-  const a = new Audio(audioSrc(SFX + name + '.ogg'));
+  const a = new Audio(audioSrc(sfxUrl(name)));
   a.volume = vol;
   a.preservesPitch = false;
   a.playbackRate = rate;

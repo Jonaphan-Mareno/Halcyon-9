@@ -43,6 +43,11 @@ import { preloadPrologue, playPrologue } from '../story/PrologueSequence.js';
 
 export const INTRO_CONFIG = {
   VIDEO_SRC: './assets/video/intro.mp4',
+  // the shot does not stop dead behind BEGIN and CREDITS: over its last moments it slows to a halt
+  // and the picture dims, so it comes to rest, darker, under the menu (the sound eases away with it)
+  SETTLE: 1.6,                 // seconds before the end the slowing and dimming begin
+  SETTLE_RATE: 0.18,           // how slow it is going as it stops (1 = normal speed)
+  SETTLE_DIM: 0.55,            // how bright the last picture stays (1 = as it was)
 
   // Hold everything behind a black screen with a Start button (a click is a user gesture, so
   // sound is certain). Off while we find out whether sound works without it.
@@ -103,12 +108,15 @@ export const INTRO_CONFIG = {
 let started = false;          // the cinematic runs once per page load
 
 const STYLE = `
+/* the title's techy, angular face: Orbitron (SIL Open Font License), shipped with the game */
+@font-face { font-family: 'Orbitron'; src: url('./assets/fonts/orbitron.ttf') format('truetype');
+  font-weight: 400 900; font-display: block; }
 #hi-root { position: fixed; inset: 0; z-index: 100000; background: #000; overflow: hidden;
   font-family: 'Helvetica Neue', 'Segoe UI Light', 'Segoe UI', Arial, sans-serif; user-select: none; }
 #hi-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
 #hi-titles { position: absolute; left: 0; right: 0; top: var(--hi-top); text-align: center;
   transform: translateX(var(--hi-shift)); pointer-events: none; color: #eef5f3; }
-#hi-title { font-weight: 200; font-size: clamp(1.8rem, 5.6vw, 6.4rem); letter-spacing: 0.5em; padding-left: 0.5em;
+#hi-title { font-family: 'Orbitron', 'Segoe UI', sans-serif; font-weight: 600; font-size: clamp(1.8rem, 5.2vw, 6rem); letter-spacing: 0.32em; padding-left: 0.32em;
   text-shadow: 0 0 28px rgba(0, 229, 255, 0.38), 0 0 6px rgba(0, 229, 255, 0.28); opacity: 0; }
 #hi-sub { margin-top: 0.9em; font-weight: 200; font-size: clamp(0.7rem, 1.45vw, 1.5rem); letter-spacing: 0.46em;
   padding-left: 0.46em; text-transform: uppercase; color: rgba(232, 244, 241, 0.8);
@@ -501,6 +509,20 @@ export function startIntro(options = {}) {
       stopDrive = drive(tick);
     });
     stopDrive();
+    // the shot slows to a halt and dims over its last moments, under the titles and the menu
+    const settleFrom = Math.max(0, duration - cfg.SETTLE);
+    const stopSettle = drive(() => {
+      if (state.phase === 'black') return stopSettle();
+      const p = Math.min(1, Math.max(0, (video.currentTime - settleFrom) / cfg.SETTLE));
+      const e = p * p * (3 - 2 * p);
+      if (!video.ended) video.playbackRate = 1 - (1 - cfg.SETTLE_RATE) * e;
+      video.style.filter = `brightness(${(1 - (1 - cfg.SETTLE_DIM) * e).toFixed(3)})`;
+      if (!unlocking && !state.skip) video.volume = Math.max(0, Math.min(1, volume() * state.fadeGain * (1 - e)));
+      if (p >= 1 || video.ended) {
+        video.style.filter = `brightness(${cfg.SETTLE_DIM})`;
+        stopSettle();
+      }
+    });
 
     // ---- the title holds, with BEGIN and CREDITS under it (the video plays out and stays on its
     // last frame). If Enter got here early, the titles come up at once ----

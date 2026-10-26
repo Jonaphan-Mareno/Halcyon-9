@@ -6,8 +6,10 @@ import { createGLTFLoader } from '../core/loaders.js';
 //   - fish schools: one mesh per school (instanced: a draw call each however many fish). Each
 //     fish steers like a flock (keep with the school, match its heading, keep apart, run from Voss)
 //     after a point that wanders round the school's home; its body wags in the vertex shader
-//     (more toward the tail, each fish out of step). Silver fish by the platform, dark ones low
-//     round the vents, and small lanternfish with rows of glowing spots
+//     (more toward the tail, each fish out of step). Silver fish by the platform and small quick
+//     ones over it, more down in the trench, dark ones low round the vents, small lanternfish
+//     with rows of glowing spots, and ghost fish: see-through deep-sea fish whose skeletons glow
+//     (spine, ribs, skull, eyes and fin rays drawn in the shader, on a body that is barely there)
 //   - jellyfish (the intro has them): glowing bells that swim as real ones do (a quick squeeze
 //     that jets them up, a slow relax), their tentacles following the beat late and billowing
 //   - anglerfish (modelled in Blender: build_l3_creatures.py) hanging low with glowing lures, which
@@ -30,9 +32,18 @@ export function seabed(x, z) {
 const SCHOOLS = [
   // what, how many, its home (where it wanders round), how far it wanders, length, speed, look
   { name: 'silver', count: 64, home: [-44, -3, -16], range: [9, 4, 9], length: 0.34, speed: 2.4, color: 0xa9bcc6, metal: 0.65 },
+  { name: 'darts', count: 40, home: [-41, 4, -31], range: [7, 3, 7], length: 0.22, speed: 2.8, color: 0xc4ccd0, metal: 0.7 },
+  { name: 'trench', count: 50, home: [-16, -30, -36], range: [10, 4, 9], length: 0.4, speed: 2.0, color: 0x8fa3ad, metal: 0.55 },
   { name: 'vent', count: 44, home: [-54, -21, -20], range: [11, 3, 10], length: 0.55, speed: 1.6, color: 0x3a3330, metal: 0.2 },
-  { name: 'lantern', count: 40, home: [-66, -10, -42], range: [14, 6, 12], length: 0.2, speed: 2.0, color: 0x2a3a44, metal: 0.4, glow: 0x5fd6ff }
+  { name: 'lantern', count: 48, home: [-53, -9, -38], range: [12, 5, 10], length: 0.2, speed: 2.0, color: 0x2a3a44, metal: 0.4, glow: 0x5fd6ff },
+  // the ghost fish (ghost: the colour their bones glow): off the platform, in the trench under the
+  // atrium, by the vents, and at the kraken's door
+  { name: 'ghost', count: 36, home: [-45, -2, -31], range: [10, 4, 9], length: 0.6, speed: 1.4, ghost: 0x62e6ff },
+  { name: 'ghost-trench', count: 30, home: [-12, -33, -6], range: [9, 4, 9], length: 0.65, speed: 1.3, ghost: 0xb08cff },
+  { name: 'ghost-vent', count: 28, home: [-70, -23, -26], range: [12, 3, 12], length: 0.55, speed: 1.4, ghost: 0x7dffc8 },
+  { name: 'ghost-cave', count: 22, home: [12, -34, -36], range: [5, 2, 7], length: 0.7, speed: 1.2, ghost: 0x62e6ff }
 ];
+const FAR = 75;                 // a school further than this from him is out of sight in the murk: not moved
 
 export class SeaLife {
   // scene: where it goes (SeaScene's group, so it shows and hides with the outside)
@@ -86,15 +97,94 @@ export class SeaLife {
           // dark back, pale belly (as fish are)
           diffuseColor.rgb *= mix(0.55, 1.25, vBelly);`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-          totalEmissiveRadiance += uGlow * vSpot * 2.5;`);
+          totalEmissiveRadiance += uGlow * vSpot * 4.0;`);
     };
     mat.customProgramCacheKey = () => 'sea-fish' + (glow ? '-glow' : '');
     return mat;
   }
 
+  // A ghost fish: a body you can see through, faint but for its edges, and a skeleton that glows:
+  // the spine, ribs swept back toward the belly, the skull, a bright eye, the rays of its fins.
+  // Drawn as light (added on, like the jellyfish), each line smoothed to the size it is on screen
+  // (fwidth) so it stays a clean thin line near or far.
+  _ghostMaterial(color) {
+    const u = this.uniforms;
+    return new THREE.ShaderMaterial({
+      uniforms: { uTime: u.uTime, uFogDensity: u.uFogDensity, uColor: { value: new THREE.Color(color) } },
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      vertexShader: /* glsl */`
+        attribute float aTail;
+        attribute float aFin;
+        uniform float uTime;
+        varying vec3 vLocal;
+        varying vec2 vUv;
+        varying float vFin;
+        varying float vRim;
+        varying float vDepth;
+        varying float vPulse;
+        void main() {
+          float id = float(gl_InstanceID);
+          vec3 p = position;
+          // the swimming wag (as the other fish: a wave down the body, growing toward the tail)
+          p.x += sin(uTime * (6.0 + mod(id, 4.0)) + id * 2.37 - aTail * 4.0) * 0.13 * aTail * aTail;
+          vec4 mv = modelViewMatrix * instanceMatrix * vec4(p, 1.0);
+          gl_Position = projectionMatrix * mv;
+          vec3 n = normalize(mat3(modelViewMatrix) * mat3(instanceMatrix) * normal);
+          vRim = 1.0 - abs(dot(normalize(-mv.xyz), n));
+          vLocal = position;
+          vUv = uv;
+          vFin = aFin;
+          vDepth = -mv.z;
+          vPulse = 0.8 + 0.2 * sin(uTime * 1.7 + id * 1.3);
+        }`,
+      fragmentShader: /* glsl */`
+        uniform vec3 uColor;
+        uniform float uFogDensity;
+        varying vec3 vLocal;
+        varying vec2 vUv;
+        varying float vFin;
+        varying float vRim;
+        varying float vDepth;
+        varying float vPulse;
+        // 1 on a thin line where x is 0 (hw either side), smooth at whatever size it is on screen
+        float line(float x, float hw) {
+          float w = fwidth(x);
+          return 1.0 - smoothstep(hw - w, hw + w, abs(x));
+        }
+        // 1 on evenly spaced lines through k (one per unit), each hw of the spacing either side
+        float lines(float k, float hw) {
+          float w = fwidth(k);
+          return 1.0 - smoothstep(hw - w, hw + w, abs(fract(k) - 0.5));
+        }
+        void main() {
+          float z = vLocal.z, y = vLocal.y;    // (the nose at z -0.5, the tail's tip at +0.5)
+          float body = 0.04 + pow(vRim, 3.0) * 0.28;
+          float bone;
+          if (vFin < 0.5) {
+            // the spine, from the skull to the tail
+            bone = line(y - 0.01, 0.011) * smoothstep(0.42, 0.32, z) * smoothstep(-0.36, -0.28, z);
+            // the ribs: arcs down from the spine, swept back toward the belly
+            float rib = lines((z + 0.3 * y + 0.26) / 0.045, 0.11) * step(-0.27, z) * step(z, 0.16) * step(y, 0.05);
+            bone = max(bone, rib * 0.9);
+            // the skull, dimly, and a bright eye
+            bone += smoothstep(-0.3, -0.45, z) * 0.35;
+            bone += smoothstep(0.03, 0.012, length(vec2(z + 0.37, y - 0.035))) * 2.0;
+          } else {
+            // the fins: rays fanning out from where each meets the body
+            bone = lines(vUv.y / max(vUv.x + vUv.y, 1e-3) * 4.0, 0.12) * 0.7;
+            body = 0.03;
+          }
+          float through = exp(-pow(uFogDensity * vDepth * 0.7, 2.0));
+          gl_FragColor = vec4(uColor * (body + bone * 1.5) * vPulse * through, 1.0);
+        }`
+    });
+  }
+
   _school(def) {
     const geo = fishGeometry({ spots: !!def.glow });
-    const mesh = new THREE.InstancedMesh(geo, this._fishMaterial(def.color, def.metal, def.glow), def.count);
+    const mat = def.ghost ? this._ghostMaterial(def.ghost) : this._fishMaterial(def.color, def.metal, def.glow);
+    const mesh = new THREE.InstancedMesh(geo, mat, def.count);
+    if (def.ghost) mesh.renderOrder = 6;          // (with the jellyfish: light, drawn after the solid things)
     mesh.frustumCulled = false;
     this.parent.add(mesh);
     const home = new THREE.Vector3(...def.home);
@@ -507,7 +597,10 @@ export class SeaLife {
     u.uTime.value = this.time;
     u.uFogColor.value.copy(fog.color);
     u.uFogDensity.value = fog.density;
-    for (const sc of this.schools) this._schoolStep(sc, dt, player);
+    for (const sc of this.schools) {
+      if (player && sc.target.distanceTo(player) > FAR) continue;
+      this._schoolStep(sc, dt, player);
+    }
     this._jellyStep(dt);
     this._anglerStep(dt, player);
     this._eelStep(dt);
@@ -517,7 +610,7 @@ export class SeaLife {
 
 // A fish, nose toward -z, one unit long: a lathed body (oval in section: taller than wide), a
 // forked tail, a back fin and two side fins. aTail: 0 at the nose to 1 at the tail's tip (how much
-// that part wags); aSpot: glowing spots along the belly (lanternfish).
+// that part wags); aSpot: glowing spots along the belly (lanternfish); aFin: 1 on the fins.
 function fishGeometry({ spots = false, long = false } = {}) {
   const prof = long
     ? [[0, 0], [0.05, 0.04], [0.08, 0.14], [0.09, 0.3], [0.08, 0.5], [0.06, 0.68], [0.035, 0.82], [0.02, 0.9]]
@@ -548,15 +641,18 @@ function fishGeometry({ spots = false, long = false } = {}) {
     return q;
   }));
   const pos = g.attributes.position;
-  const tail = new Float32Array(pos.count), spot = new Float32Array(pos.count);
+  const tail = new Float32Array(pos.count), spot = new Float32Array(pos.count), fin = new Float32Array(pos.count);
+  const bodyCount = parts[0].attributes.position.count;     // (the body first, then the fins)
   for (let i = 0; i < pos.count; i++) {
     const z = pos.getZ(i);
+    fin[i] = i >= bodyCount ? 1 : 0;
     tail[i] = THREE.MathUtils.clamp((z + 0.5) / 1.0, 0, 1);
     // lanternfish: little lights in a row along the lower flank
     if (spots && pos.getY(i) < -0.05 && z > -0.3 && z < 0.25 && Math.abs(Math.sin(z * 40)) > 0.6) spot[i] = 1;
   }
   g.setAttribute('aTail', new THREE.BufferAttribute(tail, 1));
   g.setAttribute('aSpot', new THREE.BufferAttribute(spot, 1));
+  g.setAttribute('aFin', new THREE.BufferAttribute(fin, 1));       // (the ghost fish: fins have rays, not ribs)
   g.computeVertexNormals();
   return g;
 }

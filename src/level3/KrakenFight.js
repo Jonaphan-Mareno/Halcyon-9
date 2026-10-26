@@ -9,7 +9,7 @@ import { deckMaterial } from './DeckMaterials.js';
 //            them back is how Voss finds it
 //   fight    (he comes into its lair) it roars, tears its tentacles off the station and comes for
 //            him, swimming after him: round its hall, and out of the cave after him if he backs off
-//            or runs (through its throat, over the trench floor; not into the relay). Four hits in
+//            or runs (through its throat, over the trench floor; not into the relay). Seven hits in
 //            the mouth beat it, and it
 //            gets worse as it is hurt (three phases):
 //              phase 1  SWEEP   an arm winds up, its tip glowing hot, and sweeps through where he is
@@ -20,6 +20,10 @@ import { deckMaterial } from './DeckMaterials.js';
 //              phase 2  THROW   a long tentacle tears a boulder off the floor and hurls it at him
 //                       LUNGE   the whole body surges at him and stops with its face right in his,
 //                               jaws snapping (it bites if he stays)
+//                       GRAB    an arm coils, glowing, and shoots out to seize him: dashed, it misses;
+//                               caught, he is dragged to its open mouth. Shooting the arm six
+//                               times breaks its grip (it is stunned), a shot in its mouth wounds
+//                               it and it drops him; reaching the mouth, he is bitten and thrown
 //              phase 3  INK     it clouds the water black round him and strikes out of the dark;
 //                               everything comes faster
 //            after a blow it screams, its mouth lit from inside (open to the harpoon for a moment);
@@ -30,11 +34,12 @@ import { deckMaterial } from './DeckMaterials.js';
 // Positions are world metres; the kraken's own space is its model's units (Kraken.toLocal).
 
 const SCALE = 1.6;                    // the model's units to metres: the body ~8 m across, each tentacle ~19 m
-export const WOUNDS = 4;              // spears in its mouth to beat it
+export const WOUNDS = 7;              // shots in its open mouth to beat it
 const OPEN = [2.4, 2.0, 1.7];         // seconds its mouth stays open after a blow (by phase)
 const SPEED = [1, 1.15, 1.4];         // how much faster its attacks come (by phase)
 const GAP = [1.5, 1.1, 0.7];          // seconds between attacks (by phase, plus up to a second)
-const DAMAGE = { sweep: 22, slam: 30, punch: 20, rock: 24, bite: 28 };
+const DAMAGE = { sweep: 22, slam: 30, punch: 20, rock: 24, bite: 28, grab: 34 };
+const GRAB = { windup: 0.9, shoot: 0.4, drag: 3.4, shots: 6, reach: 2.6 };   // seconds; shots in the arm to break free
 const HIT_RADIUS = 1.7;               // metres from a striking tentacle that it catches him
 const BITE_RADIUS = 3.6;
 const MOUTH_RADIUS = 1.4;             // the weak spot, for the harpoon (metres)
@@ -55,8 +60,8 @@ const LUNGE = { windup: 1.0, rush: 0.55, hold: 1.8, bite: 1.25, back: 1.0, reach
 // what it does, by phase: [attack, weight]
 const MOVES = [
   [['sweep', 1], ['punch', 1.4], ['slam', 0.8]],
-  [['sweep', 0.8], ['punch', 1.2], ['slam', 0.6], ['throw', 1.2], ['lunge', 0.9]],
-  [['sweep', 0.6], ['punch', 1.1], ['slam', 0.6], ['throw', 1.0], ['lunge', 1.1], ['ink', 0.8]]
+  [['sweep', 0.8], ['punch', 1.2], ['slam', 0.6], ['throw', 1.2], ['lunge', 0.9], ['grab', 1.0]],
+  [['sweep', 0.6], ['punch', 1.1], ['slam', 0.6], ['throw', 1.0], ['lunge', 1.1], ['ink', 0.8], ['grab', 1.1]]
 ];
 
 export class KrakenFight {
@@ -93,7 +98,7 @@ export class KrakenFight {
   }
 
   get phase() {
-    return this.wounds < 1 ? 0 : this.wounds < 3 ? 1 : 2;
+    return this.wounds < 2 ? 0 : this.wounds < 5 ? 1 : 2;
   }
 
   // beaten: the relay's door can open
@@ -155,6 +160,11 @@ export class KrakenFight {
         this._stun();
         return { point: closest(p0, p1, tip), stick: null, flesh: true, big: true };
       }
+    }
+    if (this.grabbing && a.tent >= 0 && k.distanceTo(k.tents[a.tent], p1, 0.15) < 1.1) {
+      a.shots = (a.shots || 0) + 1;
+      if (a.shots >= GRAB.shots) this._breakFree();
+      return { point: p1.clone(), stick: null, flesh: true, big: a.shots >= GRAB.shots };
     }
     const mouth = k.mouthWorld(this._p);
     if (segmentNear(p0, p1, mouth, MOUTH_RADIUS)) {
@@ -396,6 +406,7 @@ export class KrakenFight {
     switch (a.kind) {
       case 'sweep': case 'slam': this._strike(a, player, alive); break;
       case 'punch': this._punch(a, player, alive, dt); break;
+      case 'grab': this._grab(a, player, alive, dt); break;
       case 'throw': this._throw(a, player, alive); break;
       case 'ink': this._ink(a, player); break;
     }
@@ -427,7 +438,7 @@ export class KrakenFight {
       Object.assign(a, { tent: arm(), up: player.clone().addScaledVector(s, 7).add(new THREE.Vector3(0, 3.5, 0)), through: player.clone().addScaledVector(s, -8).add(new THREE.Vector3(0, -0.3, 0)) });
     } else if (kind === 'slam') {
       Object.assign(a, { tent: WHIPS[Math.floor(Math.random() * 2)], up: player.clone().add(new THREE.Vector3(0, 8.5, 0)).addScaledVector(toward, -2) });
-    } else if (kind === 'punch') {
+    } else if (kind === 'punch' || kind === 'grab') {
       a.tent = arm();
     } else if (kind === 'throw') {
       a.tent = WHIPS[Math.floor(Math.random() * 2)];
@@ -602,6 +613,91 @@ export class KrakenFight {
       tent.reach = Math.max(0, 1 - a.t * 2);
       if (a.t >= 0.6) this._done(false);
     }
+  }
+
+  // Is he in its grip (being dragged to its mouth)?
+  get grabbing() {
+    const a = this.attack;
+    return this.state === 'fight' && a?.kind === 'grab' && a.phase === 'hold';
+  }
+
+  // where its grip is pulling him: just in front of its open mouth
+  dragTo(out) {
+    const k = this.kraken;
+    const mouth = k.mouthWorld(out);
+    const fwd = this._v.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    return mouth.addScaledVector(fwd, 2.4);
+  }
+
+  // GRAB: the arm coils back, glowing, then shoots out at him; caught, he is held and dragged to
+  // its open mouth (Trench moves him) until he shoots his way free, shoots its mouth, or is bitten
+  _grab(a, player, alive, dt) {
+    const k = this.kraken, tent = k.tents[a.tent];
+    if (a.phase === 'windup') {
+      const toward = this._v.subVectors(player || a.aim, this.pos).setY(0).normalize();
+      const coil = this._w.copy(this.pos).addScaledVector(toward, -1).addScaledVector(this._p.set(-toward.z, 0, toward.x), (k.toLocal(player || a.aim).x > 0 ? -1 : 1) * 3);
+      coil.y += 4;
+      tent.target = k.toLocal(coil);
+      tent.reach = Math.min(1, a.t / 0.4);
+      tent.glow = Math.min(1, a.t / GRAB.windup) * (0.6 + 0.4 * Math.sin(this.time * 20));
+      tent.curl = 0.9;
+      tent.wave = 0.5;
+      if (a.t >= GRAB.windup && player) {
+        a.from = k.pointOn(tent, 1, new THREE.Vector3());
+        // (aimed a little past him, as the punch is: the arm lags its target)
+        const at = player.clone().add(this.t.s.controls.velocity.clone().multiplyScalar(0.2).setY(0));
+        a.to = at.addScaledVector(at.clone().sub(this._bodyCentre(new THREE.Vector3())).normalize(), 2.5);
+        a.phase = 'strike';
+        a.t = 0;
+        tent.snap = 28;
+        this.t.onStrike?.('punch', a.from);
+      }
+    } else if (a.phase === 'strike') {
+      const f = Math.min(1, a.t / GRAB.shoot);
+      tent.target = k.toLocal(this._p.copy(a.from).lerp(a.to, f));
+      tent.reach = 1;
+      tent.curl = 0;
+      if (f > 0.4 && alive && player && !a.tried && k.distanceTo(tent, player, 0.5) < GRAB.reach) {
+        a.tried = true;
+        if (this.t.onGrab?.() !== false) {
+          a.phase = 'hold';
+          a.t = 0;
+          a.shots = 0;
+          this.shake = Math.max(this.shake, 1.0);
+          return;
+        }
+      }
+      if (f >= 1) {
+        a.phase = 'back';
+        a.t = 0;
+      }
+    } else if (a.phase === 'hold') {
+      // its arm wrapped round him, the mouth wide open in front of him
+      if (player) tent.target = k.toLocal(this._p.copy(player).add(this._w.set(0, -0.3, 0)));
+      tent.reach = 1;
+      tent.curl = 1.2;
+      tent.glow = 0.4 + 0.3 * Math.sin(this.time * 9);
+      k.jawTarget = 0.55 + 0.08 * Math.sin(this.time * 24);
+      k.jawRate = 10;
+      if (a.t >= GRAB.drag) {
+        // it has him: the bite, and it flings him away
+        if (alive) this.t.onHitPlayer(DAMAGE.grab, k.mouthWorld(new THREE.Vector3()));
+        this.t.onChomp?.();
+        a.phase = 'back';
+        a.t = 0;
+      }
+    } else if (a.phase === 'back') {
+      tent.snap = 0;
+      tent.glow = Math.max(0, tent.glow - dt * 2);
+      tent.reach = Math.max(0, 1 - a.t * 2);
+      if (a.t >= 0.6) this._done(false);
+    }
+  }
+
+  // shot six times in the arm that has him: it lets go, shrieking, stunned with its mouth open
+  _breakFree() {
+    this.t.onBreakFree?.();
+    this._stun();
   }
 
   // shot in the stuck arm: it shrieks and hangs there, stunned, mouth wide open

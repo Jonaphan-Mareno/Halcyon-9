@@ -1,3 +1,4 @@
+import { playClip, preloadAudio, CLIPS } from '../audio/AudioCache.js';
 import * as THREE from 'three';
 import { createGLTFLoader } from '../core/loaders.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -514,6 +515,7 @@ export class HabitatSession {
     const clues = buildHallClues(scene, atrium);
     const pods = at('PT_PodDoor', 0);
     this._looked = new Set();
+    preloadAudio([CLIPS.paper, CLIPS.tech]);
     // (each with where its diamond floats: over the board's top edge, over the pod door's sign)
     this._hallClues = [
       ['board', clues.board, 0.9, 'Look at the photo board', 'chore', clues.boardTop],
@@ -522,7 +524,12 @@ export class HabitatSession {
       ['pods', pods, 1.2, 'Read the sign on the pod door', 'pods', pods?.clone().add(new THREE.Vector3(0, 0.35, 0))]
     ].filter(([, p]) => p);
     for (const [id, position, radius, label, talk] of this._hallClues) {
-      this.interact.add({ id, position, radius, label, use: () => { this._looked.add(id); this.say(talk); } });
+      const paper = id === 'board' || id === 'frame';
+      this.interact.add({ id, position, radius, label, use: () => {
+        if (paper) playClip(CLIPS.paper, 0.85);
+        this._looked.add(id);
+        this.say(talk);
+      } });
     }
     // FuseBox interaction (Bedroom 2)
     const fuseBoxObj = atrium.getObjectByName('FuseBox00001') || atrium.getObjectByName('FuseBox00.001') || atrium.getObjectByName('COL_Kess_FuseBox00');
@@ -536,7 +543,10 @@ export class HabitatSession {
         radius: 0.6,
         reach: 2.8,
         label: 'Use FuseBox',
-        use: () => this.game.ui.showToast('FuseBox used.', 2500)
+        use: () => {
+          playClip(CLIPS.tech, 0.8);
+          this.game.ui.showToast('FuseBox used.', 2500);
+        }
       });
     }
 
@@ -1358,6 +1368,7 @@ export class HabitatSession {
   }
 
   _tryKesslerDoor() {
+    playClip(CLIPS.tech, 0.8);
     const ui = this.game.ui;
     if (!this.story.has('cardTaken')) ui.showToast('ACCESS: CARD REQUIRED', 2500);
     else ui.showToast('CARD ACCEPTED. LAB AUTHORISATION REQUIRED', 3000);

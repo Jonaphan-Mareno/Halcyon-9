@@ -453,7 +453,10 @@ export class Game {
     }
     this.reticle.classList.remove('visible');
     if (this.level2Mode) this.level2?.onPause?.();
-    else this.currentLevel?.ariaManager?.pause?.();
+    else {
+      this.currentLevel?.ariaManager?.pause?.();
+      this.currentLevel?._buzz?.pause();
+    }
     vossVoice.pause();
     this.music?.setPaused(true);
     this.pauseMenu.open();
@@ -468,7 +471,10 @@ export class Game {
     if (c?.instance) c.instance.enabled = true;
     c?.lock?.();
     if (this.level2Mode) this.level2?.onResume?.();
-    else this.currentLevel?.ariaManager?.resume?.();
+    else {
+      this.currentLevel?.ariaManager?.resume?.();
+      this.currentLevel?._buzz?.resume();
+    }
     vossVoice.resume();
     this.music?.setPaused(false);
     this.state = 'PLAYING';
@@ -645,9 +651,12 @@ export class Game {
     this._wantLockHint = true;
   }
 
-  // A beat after waking, ARIA's first recorded line (the rest of that exchange is at her monitor)
+  // ARIA's first recorded line ("You're awake!"), the moment her monitor comes back on after the
+  // wall panel's rings are lined up (the rest of that exchange is at her monitor). Waking in the
+  // cell is silent: she is off until then, so the opening cinematic's cue does nothing.
   async openingAriaLine() {
-    if (this.state !== 'PLAYING' || !this.currentLevel || this.intro.active) return;
+    if (!this.currentLevel?.ringPuzzleSolved || this.intro.firstAriaSaid) return;
+    if (this.state !== 'PLAYING' || this.intro.active) return;
     this.state = 'DIALOGUE';
     this.reticle.classList.remove('visible');
     this.controls.stop();
@@ -1676,6 +1685,11 @@ async onRingPuzzleSolved() {
   await sleep(1200);             // let the green ticks show
   this.exitRingPuzzle();
   this.ui.showToast('Panel repaired. The wall monitor is coming back online.');
+  // (once the view is back from the panel) the monitor flickers on, and she speaks; if he gets to
+  // her monitor first, the conversation there starts with this line instead
+  for (let i = 0; i < 60 && this.state !== 'PLAYING'; i++) await sleep(100);
+  await sleep(1200);
+  this.openingAriaLine();
 }
 
 }

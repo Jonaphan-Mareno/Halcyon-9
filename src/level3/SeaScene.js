@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createGLTFLoader } from '../core/loaders.js';
 import { deckMaterial } from './DeckMaterials.js';
 import { SeaLife } from './SeaLife.js';
+import { SeaWeed } from './SeaWeed.js';
 
 // Outside the station (Blender/scripts/build_l3_outside.py): the platform beyond the water lock's
 // outer hatch, the station's hull above and below it, and the canyon from the opening cinematic:
@@ -18,6 +19,7 @@ import { SeaLife } from './SeaLife.js';
 //     work on the page). Some of it is living plankton: swim through it and it flares blue
 //   - the tube worms by the vents sway in the current (their feet stay put: the shader knows
 //     where the seabed is, from the same shape the Blender script gives it)
+//   - kelp and ribbon weed on the seabed, some of it glowing (SeaWeed.js)
 //   - smoke rising from each vent and a glow at its foot (billboards, one draw call each), and a
 //     few faint shafts of light from above
 //   - the atrium seen through the saucer's windows: not models but INTERIOR MAPPING. A 360-degree
@@ -137,6 +139,8 @@ export class SeaScene {
     this._smoke();
     this._glow();
     this._shafts();
+    // kelp below the platform, round the station's foot, by the vents and in the kraken's cave
+    this.weed = new SeaWeed(this.group, this.s.physics, { vents: this.vents, cave: { mouth: at('PT_CaveMouth'), lair: at('PT_KrakenLair') } });
     // fish, jellyfish, vent bubbles, and something big far out (SeaLife.js)
     this.life = new SeaLife(this.group, this.vents);
     await this.life.ready;
@@ -182,6 +186,7 @@ export class SeaScene {
   // player: where the swimmer is (or null), stir: how hard he is moving (0..1), lamp: his helmet
   // lamp is on (the specks in its beam light up)
   update(dt, camera, player = null, stir = 0, lamp = false) {
+    if (this.weed && !this.weed.placed) this.weed.place();     // (once the physics world can answer rays)
     if (!this.group.visible) return;
     this.time += dt;
     // the water: murkier the deeper he goes, black where the kraken's ink is
@@ -199,6 +204,7 @@ export class SeaScene {
       su.uLampOn.value += ((lamp ? 1 : 0) - su.uLampOn.value) * (1 - Math.exp(-4 * dt));
     }
     if (this.swayUniforms) this.swayUniforms.uTime.value = this.time;
+    this.weed?.update(dt);
     this.life?.update(dt, player, this.scene.fog);
     const fog = this.scene.fog;
     for (const m of [this.snowMat, this.smokeMat, this.glowMat, this.shaftMat, this.glassMat]) {

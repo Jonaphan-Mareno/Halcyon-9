@@ -1,3 +1,4 @@
+import { frame } from './hudFrame.js';
 // The garden fight's controls, on screen from ARIA's warning in the lift until the last drone
 // breaks: E takes the pipe, the left mouse button sprays, Q has ARIA freeze the wet ones (with how
 // long until she can again). Styles in level2.css.
@@ -12,6 +13,7 @@ export class FightHelp {
       <div class="fh-row"><span class="fh-key">Q</span><span>ARIA freezes the wet ones</span><span class="fh-state"></span></div>
       <div class="fh-tip">A red eye means it is about to dive: step aside.</div>`;
     root.appendChild(this.el);
+    frame(this.el, { shape: 'slim' });
     this.pipeRow = this.el.querySelector('[data-row="pipe"]');
     this.stateEl = this.el.querySelector('.fh-state');
     this._state = null;

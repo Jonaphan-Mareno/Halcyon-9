@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { frame } from '../ui/hudFrame.js';
 
 // The chute: the way down from Level 2's hatch to the drowned deck, ridden at the start of Level 3
 // (straight after its title). Under the hatch the shaft bends into a steep round steel pipe, and
@@ -377,6 +378,7 @@ export class Chute {
       <div class="fh-row"><span class="fh-key">SPACE / SHIFT</span><span>Duck under the shutters</span></div>
       <div class="fh-tip">Red lamps on the walls: something is just ahead.</div>`;
     document.getElementById('ui-layer').appendChild(this.help);
+    frame(this.help, { shape: 'slim' });
     requestAnimationFrame(() => this.help.classList.add('visible'));
     // and big in the middle of the screen as the ride starts, blinking for a few seconds, so no one
     // misses how to steer
@@ -477,9 +479,9 @@ export class Chute {
     this.shake = 0.35;
     this.slow = 1;
     this.spin += (Math.random() - 0.5) * 3;
-    // a heavy metal bang (one of three), or the steam's hiss
+    // a metal hit, or the steam's hiss
     if (o.kind === 'spray') this.s.sfx?.play('air-hiss', { ui: true, vol: 0.7, rate: 0.9, rand: 0.1 });
-    else this.s.sfx?.play('metal-bang-' + (1 + Math.floor(Math.random() * 3)), { ui: true, vol: 0.9, rand: 0.06 });
+    else this.s.sfx?.play('metal-hit', { ui: true, vol: 0.9, rand: 0.06 });
   }
 
   // what to press, as each one comes up (the shutters always; the first couple of the rest)

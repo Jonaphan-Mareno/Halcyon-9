@@ -1,3 +1,4 @@
+import { playClip, CLIPS } from '../audio/AudioCache.js';
 import * as THREE from 'three';
 import { Water } from './Water.js';
 import { dressInSuit, rackSuit, attachAtBind } from './DiveSuit.js';
@@ -17,7 +18,9 @@ import { SEA, dotTexture } from './SeaScene.js';
 //      hatch slides shut, the red beacon turns, water pours up through the floor vents until the
 //      lock is full (its pressure matches the sea's), and the outer hatch opens onto the sea
 //   5. out through the outer hatch and the docking collar onto the platform outside (SeaScene.js):
-//      the canyon, the vents far below. (Swimming out from there is the next part.)
+//      the canyon, the vents far below. The first time, ARIA tells him to take a look around, he
+//      looks up ("I feel so free"), the sea's music swells, and for a while there is nothing to do
+//      but look; then the dive gate is pointed out. (Swimming out from there is the next part.)
 //
 // The status screen by the door says where he is up to (suit, cable, lock). Coming back in, the
 // lock would be pumped dry before the inner hatch opens (not needed yet: the way is one way).
@@ -36,6 +39,8 @@ const SUIT_HOLD = 2.0;              // seconds holding E to put the suit on
 const UP_HERE = -10.4, DOWN_THERE = -10.0;   // the stairwell's x where the room's lights take over (and back)
 const OUT_HERE = -25.7, IN_THERE = -25.3;    // past the outer hatch: outside (and back in)
 const PLATFORM_X = -28.8;                    // past the hull: on the platform
+const VIEW_TIME = 20;                        // the first time out: seconds to take in the view (the air holds meanwhile)
+const LOOK_UP = 0.38;                        // ... and how far his head tilts up at it (radians)
 const PREP_LIGHTS = [               // colour, candela, range: the stairwell lamp, the two panels, the lock lamp
   [0xffc48a, 4, 10], [0xe2ecff, 5, 9], [0xe2ecff, 5, 9], [0xcfe2ff, 2.2, 6]
 ];
@@ -123,7 +128,7 @@ export class PrepRoom {
     if (this.pos.gate) {
       it.add({
         id: 'gate1', position: this.pos.gate, radius: 0.9, label: 'Open the bulkhead',
-        when: () => this.gate === 'shut', use: () => this._openGate()
+        when: () => this.gate === 'shut', use: () => { playClip(CLIPS.tech, 0.8); this._openGate(); }
       });
     }
     if (this.pos.suitTop) {
@@ -154,7 +159,7 @@ export class PrepRoom {
     if (this.pos.panel) {
       it.add({
         id: 'lockPanel', position: this.pos.panel, radius: 0.35, reach: 2.2, label: 'Flood the lock',
-        when: () => this.lock === 'inner', use: () => this._flood()
+        when: () => this.lock === 'inner', use: () => { playClip(CLIPS.tech, 0.8); this._flood(); }
       });
     }
   }
@@ -232,7 +237,6 @@ export class PrepRoom {
     this._carry.classList.add('on');
     this._drawScreen();
     this.game.ui.showToast('Uplink cable taken. It pays out from the reel behind you: plug the end in at the relay station at the bottom of the trench.', 7000);
-    this.s.say('cable');
   }
 
   _openInner() {
@@ -340,16 +344,35 @@ export class PrepRoom {
     this._bubbles(dt, working && this.lock !== 'outer');
     this._underwater();
     // the air, once he is breathing from the tanks
-    if (this.breathing && playing) this.oxygen = Math.max(0, this.oxygen - dt);
+    if (this.breathing && playing && !(this._view > 0)) this.oxygen = Math.max(0, this.oxygen - dt);
     if (this.suited) this._drawOxygen();
     this._visor.style.display = playing ? '' : 'none';
     // (out in the sea, more than a few metres from the hatch, the inside cannot be seen at all)
     if (this.s.deck) this.s.deck.visible = !(this.zone === 'sea' && (p.x < -38 || p.y < -6));
-    // out on the platform for the first time
+    // out on the platform for the first time: the open sea. ARIA tells him to look round, he looks
+    // up, the sea's music swells, and for a while there is nothing to do but look
     if (!this._outside && p.x < PLATFORM_X) {
       this._outside = true;
-      this.game.ui.showToast('Outside. The gap in the far rail is the dive gate: go through it to swim.', 7000);
+      this._view = VIEW_TIME;
+      this.s.sfx?.swellSea(VIEW_TIME + 6);
+      this.s.say('ocean');
     }
+    if (this._view > 0) this._viewStep(dt, playing);
+  }
+
+  // The first look at the open sea: his head tilts up for a moment (the player can still look
+  // anywhere), and when the moment is over the dive gate is pointed out (diving in first ends it)
+  _viewStep(dt, playing) {
+    if (!playing) return;
+    const since = VIEW_TIME - this._view;
+    this._view -= dt;
+    if (since > 1.0 && since < 4.5) {
+      const cam = this.s.controls.camera;
+      cam.rotation.x += (LOOK_UP - cam.rotation.x) * (1 - Math.exp(-1.2 * dt));
+    }
+    if (this.s.controls.swimming) this._view = 0;
+    else if (this._view <= 0) this.game.ui.showToast('The gap in the far rail is the dive gate: go through it to swim.', 7000);
+    this._view = Math.max(0, this._view);
   }
 
   // how deep the water is where he stands: the lock's own water in the lock and outside it
@@ -635,6 +658,7 @@ export class PrepRoom {
       case 'sealing': case 'flooding': case 'full': return { text: 'Wait while the lock floods', target: null };
       default:
         if (!this._outside) return { text: 'Go outside', target: this.s.sea?.points.outside || null, label: 'OUT' };
+        if (this._view > 0 && !this.s.swim?._told) return { text: 'Take a look around', target: null };
         if (!this.s.swim?._told) return { text: 'Swim out through the dive gate', target: this.s.sea?.points.gate || null, label: 'GATE' };
         return this.s.trench ? this.s.trench.guide() : { text: 'Swim down into the trench', target: null };
     }

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { frame } from '../ui/hudFrame.js';
 
 // The rifle (Level 3): an automatic rifle, built for the deep. Voss takes it from the rack in the
 // EVA prep room, beside the suit. It rides slung across his backpack (seen in third person) until
@@ -235,6 +236,7 @@ export class Harpoon {
     el.id = 'l3-ammo';
     el.innerHTML = '<div class="am-count"><span class="am-n">' + MAG + '</span><span class="am-of">/ &infin;</span></div><div class="am-label">RIFLE</div><div class="am-reload">RELOADING</div>';
     document.getElementById('ui-layer').appendChild(el);
+    frame(el, { shape: 'panel' });
     this.hudEl = el;
   }
 

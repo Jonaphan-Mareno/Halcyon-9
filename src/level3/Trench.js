@@ -301,7 +301,9 @@ export class Trench {
     this.s.harpoon?.draw(true);
     this.sfx?.cue('krakenRoar', this.fight.kraken.mouthWorld());
     this.sfx?.cue('draw');
-    this.s.say('kraken');
+    // (only the first time: after a death and restore, nobody says it again)
+    if (!this._krakenSaid) this.s.say('kraken');
+    this._krakenSaid = true;
     this._showBoss(true);
     this.game.ui.showToast('It tore its tentacles off the station. TAP SHIFT to dash out of the way. Dodge its punch and shoot the arm while it is stuck; shoot its mouth when it glows (hold left click; R reloads).', 9000);
   }
@@ -466,6 +468,7 @@ export class Trench {
     if (this.fight.state !== 'gone') k.root.visible = p.distanceTo(this.pts.inside) < 90;
     this.fight.update(dt, playing ? chest : null, playing && !this._restoring);
     this.shake = Math.max(this.shake, this.fight.shake);
+    this._held(dt, playing);
     this._lights(p);
     this._air(playing);
     this._sounds(dt, p);
@@ -690,6 +693,44 @@ export class Trench {
     if (Math.abs(cam.fov - want) > 0.01) {
       cam.fov = want;
       cam.updateProjectionMatrix();
+    }
+  }
+
+  // Caught by its arm (or the dash slips him out of it: then it misses)
+  onGrab() {
+    if (this._restoring) return false;
+    if (this._dash.iframes > 0) {
+      this._dodged();
+      return false;
+    }
+    this.sfx?.cue('punchWhoosh');
+    this.sfx?.cue('snarl', this.fight.kraken.mouthWorld());
+    this.s.hud.flash();
+    this.game.ui.showToast('IT HAS YOU! Shoot the arm holding you to break free, or shoot into its mouth!', 4000);
+    return true;
+  }
+
+  onBreakFree() {
+    this.game.ui.showToast('Free! It is stunned: shoot its mouth!', 2500);
+    this.sfx?.cue('stuck', this.s.controls.position);
+  }
+
+  // in its grip: dragged toward its open mouth (his own swimming cannot pull him away), the view
+  // shaking, a prompt to shoot
+  _held(dt, playing) {
+    const held = playing && this.fight.grabbing;
+    if (held) {
+      const c = this.s.controls;
+      const to = this.fight.dragTo(this._v);
+      const d = to.sub(c.position);
+      const L = d.length();
+      if (L > 0.05) c.velocity.copy(d.multiplyScalar(Math.min(4.5, L * 1.3) / L));
+      this.shake = Math.max(this.shake, 0.35);
+      this.game.ui.setPrompt('SHOOT THE ARM HOLDING YOU!');
+      this._wasHeld = true;
+    } else if (this._wasHeld) {
+      this._wasHeld = false;
+      this.game.ui.setPrompt(null);
     }
   }
 

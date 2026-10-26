@@ -306,7 +306,7 @@ export class Kraken {
     const br = Math.sin(t * 1.4);
     this.body.scale.set(1 + 0.025 * br, 1 + 0.04 * Math.sin(t * 1.4 + 0.5), 1 + 0.03 * br);
     this.root.rotation.x = 0.06 * Math.sin(t * 0.7) + (this.pitch || 0);
-    this.root.rotation.z = 0.05 * Math.sin(t * 0.53 + 1.0) + this.roll;
+    this.root.rotation.z = 0.05 * Math.sin(t * 0.53 + 1.0) + this.roll + (this.tilt || 0);   // (tilt: its head cocked)
     this.root.updateMatrixWorld(true);
     // the jaw, eased (snaps shut fast)
     this.jaw += (this.jawTarget - this.jaw) * (1 - Math.exp(-this.jawRate * dt));

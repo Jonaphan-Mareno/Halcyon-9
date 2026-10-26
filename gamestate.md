@@ -40,7 +40,7 @@ npm run extract-lift     # extract lift.glb from the control room model
 | `?level=2` | Straight into Level 2 (the habitat atrium) |
 | `?level=3` | Straight into Level 3 (starts with the chute) |
 | `?level=3&nochute` | Level 3 without the chute (lands in the pump room) |
-| `?level=3&relay` | Start inside the relay station at the Blender test location: suited, cable in hand, kraken beaten |
+| `?level=3&relay` | Start inside the buried relay room (under the drowned works): suited, cable in hand, kraken beaten |
 | `?debug` (with `?level=2`) | `]` sets the next story flag, `[` plays the next dialogue exchange |
 | `?level=hose`, `?level=reactor` | Old test rooms (coolant hose; old cargo atrium) |
 
@@ -115,14 +115,23 @@ Placeholder: the FuseBox in Bedroom 2 only shows "FuseBox used."
 4. **The sea** (`SeaScene.js`, `Swim.js`, `SeaLife.js`, `Headlamp.js`) — murky deep water, a
    headlamp beam, swimming with a thruster pack, the cable as a tether, oxygen as the clock, ARIA's
    face in the visor (`VisorAria.js`).
-5. **The trench and the kraken** (`Trench.js`, `Kraken.js`, `KrakenFight.js`, `Harpoon.js`) —
-   the kraken's tentacles hold the relay station's door shut; follow them into its cave; the boss
-   fight (boss bar, 4 hits in its glowing mouth, punches, slams, thrown boulders, lunges, ink;
-   Shift-tap dash; automatic spear rifle with an 8-round magazine). Beaten, it lets go and the
-   relay's door opens.
+5. **The trench and the drowned works** (`Trench.js`, `Works.js`, `Kraken.js`, `KrakenFight.js`,
+   `KrakenHunt.js`, `Harpoon.js`; the works are modelled by `Blender/scripts/build_l3_works.py` into
+   `l3-works.glb`) — the lights at the bottom of the trench are the works' entrance in the cliff:
+   the old research works, a construction site in a great hall, with the relay at the back. Inside,
+   a maze 7.5 m tall decked over with grating; the kraken swims over it. Follow the marker through
+   while it stalks you (its glow over the decks, its den lighting up behind bars, an arm driven down
+   through the deck, a grab, a wall it bursts out of). Then the floodlit clearing: the shutter
+   slams, it bursts up out of the floor and the fight begins (7 hits in its glowing mouth; Shift-tap
+   dash; automatic rifle). At 5 hits the finale: it crashes through the gantry and the crane, a
+   floodlight mast and the scaffolding come down. Beaten, it escapes into a crack in the rock and
+   the excavation shaft opens: down it and along a sand tunnel to the buried relay room. Air
+   stations in the works refill the suit.
 6. **Inside the relay — THE TEAM'S PART.** Hook: `RELAY` in `src/level3/Trench.js`
-   (`RELAY.enter(trench)` runs when Voss first comes in; `RELAY.guide(trench)` returns the
-   objective). Still to build: the puzzles, the uplink, the two endings.
+   (`RELAY.enter(trench)` runs when Voss first comes into the relay room; `RELAY.guide(trench)`
+   returns the objective). The room's points are in `trench.pts` as before (`inside`, `port`,
+   `screen`, `bay`: the empty corner for the puzzles, `air`, `hatch`). Still to build: the puzzles,
+   the uplink, the two endings.
 
 Health or oxygen running out: ARIA restores Voss from backup at the last safe place.
 
@@ -195,7 +204,8 @@ Health or oxygen running out: ARIA restores Voss from backup at the last safe pl
 ## Summary
 
 Levels 1 and 2 are complete, playable arcs. Level 3 plays from the chute through the flooded
-deck, the dive, and the kraken boss fight to the relay station's door. Still to do: the inside
+deck, the dive, the maze and the kraken fight in the drowned works, down to the buried relay
+room. Still to do: the inside
 of the relay (the team's puzzles, the uplink and the two endings), the Level 3 bulkhead puzzle
 (ARIA opens it for now), gating Level 1's lift on the relay rings, the Level 2 FuseBox, a credits
 screen, and the remaining voice recordings.

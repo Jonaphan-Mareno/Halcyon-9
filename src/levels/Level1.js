@@ -211,7 +211,7 @@ export class Level1{
     this._doorOpenAt = -1;
     this._cellFloorY = 0;
     this._shards = [];             // window pieces in flight
-    preloadAudio([CLIPS.glass, CLIPS.cellDoor, CLIPS.paper, CLIPS.tech]);  // (so they are ready the first time)
+    preloadAudio([CLIPS.glass, CLIPS.cellDoor, CLIPS.paper, CLIPS.tech, CLIPS.ding]);  // (so they are ready the first time)
     this._glassMaterial = null;
     this._blocker = null;          // invisible filler for the door's window hole
     this._blockerMaterial = null;
@@ -1018,6 +1018,7 @@ onRingPuzzleComplete() {
     // and ARIA can follow Voss onto the lift's screen
     if (this.liftScreen && this.ariaManager) this.ariaManager.collectMonitors(this.liftScreen);
 
+    playClip(CLIPS.ding, 0.9);
     console.log('Elevator door opening');
   }
 
@@ -1056,6 +1057,7 @@ onRingPuzzleComplete() {
       action.play();
     }
 
+    playClip(CLIPS.ding, 0.9);
     console.log(`Elevator door closing (${duration.toFixed(2)}s)`);
     return duration;
   }

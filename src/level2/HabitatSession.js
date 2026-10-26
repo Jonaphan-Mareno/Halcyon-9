@@ -515,7 +515,7 @@ export class HabitatSession {
     const clues = buildHallClues(scene, atrium);
     const pods = at('PT_PodDoor', 0);
     this._looked = new Set();
-    preloadAudio([CLIPS.paper, CLIPS.tech]);
+    preloadAudio([CLIPS.paper, CLIPS.tech, CLIPS.ding]);
     // (each with where its diamond floats: over the board's top edge, over the pod door's sign)
     this._hallClues = [
       ['board', clues.board, 0.9, 'Look at the photo board', 'chore', clues.boardTop],
@@ -824,6 +824,7 @@ export class HabitatSession {
   // Voss is out of the lift: its doors shut behind him and its lights die (it is flooded below)
   _shutLift() {
     this.liftShut = true;
+    playClip(CLIPS.ding, 0.8);
     if (this.liftStripMat) this.liftStripMat.emissiveIntensity = 0.1;
     for (const m of this.liftInsideMats || []) m.envMapIntensity = 0.3;
     this.say('liftShut');
@@ -991,6 +992,7 @@ export class HabitatSession {
       this._arrive();
     }
     if (this._arrivalDone && this._worldReady && !this.liftShut && this.doorOpen < 1) {
+      if (this.doorOpen === 0) playClip(CLIPS.ding, 0.9);      // (the lift's ding as its doors open)
       this.doorOpen = Math.min(1, this.doorOpen + dt / 1.6);
       this._setLiftDoors(this.doorOpen);
       // open wide enough to walk through: the invisible wall goes

@@ -76,7 +76,7 @@ export class PauseMenu {
     }, true);
     // the mouse was released (Esc while it was captured, or the player switched tabs)
     document.addEventListener('pointerlockchange', () => {
-      if (!document.pointerLockElement && this.hooks.state() === 'PLAYING') this.hooks.pause();
+      if (!document.pointerLockElement && this.hooks.state() === 'PLAYING' && this.hooks.shouldPauseOnUnlock?.() !== false) this.hooks.pause();
     });
   }
 

@@ -126,6 +126,22 @@ const CUES = {
   lungeRoar: [['kraken-siren', { ui: true, vol: 1.6 }], ['kraken-siren', { vol: 2.0, wet: 0.3 }], ['kraken-roar-short', { rate: 0.5, vol: 1.8, wet: 0.3 }],
     ['kraken-chorus', { ui: true, vol: 1.7 }], ['kraken-crowd', { ui: true, vol: 1.0, dur: 3.2 }], ['whoosh', { rate: 0.35, vol: 1.2 }]],
   chomp: [['kraken-chomp', { rate: 0.5, vol: 1.6, rand: 0.1 }], ['kraken-shriek-3', { ui: true, vol: 0.9, rand: 0.08 }], ['clank-2', { rate: 0.45, vol: 0.4 }]],
+  // the drowned works: shutters rolling, gates torn away, the panel it bursts through, the shaft's
+  // cover, the floodlights coming on, the finale's groaning and crashing, its arms on the bars, the
+  // decks rattling as it passes over
+  shutterUp: [['latch', { vol: 0.9 }], ['door-creak-1', { rate: 0.7, vol: 1.0, delay: 0.1, wet: 0.4 }], ['clank-2', { rate: 0.8, vol: 0.8, delay: 1.5, wet: 0.4 }]],
+  shutterDown: [['door-creak-2', { rate: 0.6, vol: 1.0, wet: 0.4 }], ['slam', { vol: 1.3, delay: 1.4, wet: 0.5 }], ['clank-1', { rate: 0.6, vol: 0.8, delay: 1.45, wet: 0.5 }]],
+  gateSmash: [['slam', { vol: 1.8, wet: 0.5 }], ['metal-hit', { vol: 1.4, rate: 0.7 }], ['clang', { rate: 0.5, vol: 0.9, delay: 0.05 }], ['rock-smash', { rate: 0.6, vol: 1.0, delay: 0.1, wet: 0.5 }]],
+  wallBurst: [['slam', { vol: 2.0, wet: 0.5 }], ['metal-hit', { vol: 1.6, rate: 0.6 }], ['rock-smash', { rate: 0.7, vol: 1.2, delay: 0.05, wet: 0.5 }], ['clang', { rate: 0.45, vol: 1.0, delay: 0.1 }]],
+  thud: [['slam', { vol: 1.5, rate: 0.7, wet: 0.6 }], ['metal-hit', { vol: 1.0, rate: 0.5 }]],
+  shaftOpen: [['latch', { vol: 0.9 }], ['hatch-open', { rate: 0.7, vol: 1.1, delay: 0.1, wet: 0.4 }], ['groan-1', { rate: 0.5, vol: 0.7, delay: 0.6, wet: 0.5 }]],
+  floodOn: [['click', { vol: 1.0, rate: 0.8 }], ['console', { rate: 0.5, vol: 0.6, delay: 0.05 }], ['click', { vol: 0.8, rate: 0.7, delay: 0.5 }], ['click', { vol: 0.9, rate: 0.75, delay: 0.9 }]],
+  groan: [['groan-1', { rate: 0.4, vol: 1.3, wet: 0.6 }], ['creak-2', { rate: 0.5, vol: 1.0, delay: 0.3, wet: 0.5 }], ['groan-2', { rate: 0.35, vol: 1.0, delay: 0.8, wet: 0.6 }]],
+  creak: [['creak-4', { rate: 0.5, vol: 1.2, wet: 0.5 }], ['whoosh', { rate: 0.35, vol: 0.9, delay: 0.2 }]],
+  crash: [['slam', { vol: 2.0, wet: 0.6 }], ['rock-smash', { vol: 1.5, rate: 0.7, delay: 0.03, wet: 0.5 }], ['metal-hit', { vol: 1.5, rate: 0.6, delay: 0.05 }],
+    ['clang', { rate: 0.4, vol: 1.0, delay: 0.1 }], ['rock-smash-2', { rate: 0.6, vol: 1.0, delay: 0.2, wet: 0.6 }]],
+  bars: [['clank-1', { rate: 0.7, vol: 1.2, wet: 0.4 }], ['clang', { rate: 0.6, vol: 0.8, delay: 0.1 }], ['clank-2', { rate: 0.8, vol: 1.0, delay: 0.25 }]],
+  deckRattle: [['clank-2', { rate: 0.6, vol: 0.9, wet: 0.5 }], ['creak-1', { rate: 0.6, vol: 0.8, delay: 0.15, wet: 0.5 }], ['clank-1', { rate: 0.7, vol: 0.7, delay: 0.4, wet: 0.5 }]],
   wounded: [['kraken-siren', { ui: true, vol: 1.4, rand: 0.05 }], ['kraken-siren', { vol: 1.8, wet: 0.6, rand: 0.05 }], ['hit-flesh', { rate: 0.6, vol: 1.2 }],
     ['kraken-chorus', { ui: true, vol: 1.5, rand: 0.04 }], ['kraken-crowd', { ui: true, vol: 1.0, dur: 3.0 }]],
   beaten: [['kraken-death', { ui: true, vol: 1.3 }], ['kraken-death', { vol: 1.8, wet: 0.8 }], ['kraken-roar', { rate: 0.6, vol: 1.4, delay: 0.8, wet: 0.8 }],

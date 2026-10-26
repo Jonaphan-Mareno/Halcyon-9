@@ -61,6 +61,8 @@ const WINDOW_NEAR = 3.0;                // this close to the window, the crew ar
 // (core/mergeStatic.js). The sea's plants sway by their own shape, so they stay apart too.
 const DECK_KEEP = /^(DOOR_|PROP_|GATE_|PT_|SPAWN_|COL_)/;
 const SEA_KEEP = /^(GATE_|PT_|SEA_Life|TERRAIN_Cave|TRENCH_|COL_|SPAWN_)/;
+// the drowned works: its doors, gates, the panel it bursts and the finale's pieces move; its weed sways
+const WORKS_KEEP = /^(GATE_|BURST_|FALL_|PT_|WL_|COL_|SEA_Weed)/;
 
 export class DeckSession {
   constructor(game) {
@@ -121,6 +123,7 @@ export class DeckSession {
       // the still meshes that share a material are drawn as one
       if (this.deck) mergeStatic(this.deck, DECK_KEEP);
       if (this.sea?.model) mergeStatic(this.sea.model, SEA_KEEP);
+      if (this.sea?.works) for (const part of [this.sea.works.inner, this.sea.works.outer]) mergeStatic(part, WORKS_KEEP);
       // behind the title: only what he sees first (the chute, the deck, the crew); the outside
       // (hidden till the outer hatch opens) is readied while he rides the chute
       this.sea?.setShown(false);
@@ -473,12 +476,12 @@ export class DeckSession {
     const spawn = trench.pts.inside.clone().add(new THREE.Vector3(0, 0.3, 0));
     this._relayStart = spawn.clone();
     this._relayStartPending = true;
-    trench.checkpoint.copy(spawn);
+    trench.checkpoint = spawn.clone();
     // the uplink cable is already run in and plugged at the relay's port, so its tether no longer
     // holds him back (Swim._limit returns early once the end is plugged)
     if (this.swim) this.swim.plugged = (trench.pts.port || spawn).clone();
     this.controls.teleport(spawn);
-    const toDoor = trench.pts.door.clone().sub(spawn);
+    const toDoor = (trench.pts.roomDoor || trench.pts.door).clone().sub(spawn);
     const yaw = Math.atan2(-toDoor.x, -toDoor.z);
     this.controls.camera.rotation.set(0, yaw, 0);
     this.controls.facing = yaw;
@@ -733,11 +736,13 @@ export class DeckSession {
     q.time = 0;
     q.frames = 0;
     const pr = this.game.renderer.instance.getPixelRatio();
-    if (avg <= 1 / 40) q.done = true;
-    else if (this.bloom.enabled) { this.bloom.enabled = false; q.step = 1; }
+    // (it keeps watching: a heavy part later on, the drowned works, steps it down then; it never
+    // steps back up, so the picture does not keep changing)
+    if (avg <= 1 / 40) return;
+    if (this.bloom.enabled) { this.bloom.enabled = false; q.step = 1; }
     else if (pr > 0.8) { this._scale(0.8); q.step = 2; }
-    else if (avg > 1 / 28 && pr > 0.67) { this._scale(0.67); q.step = 3; q.done = true; }
-    else q.done = true;
+    else if (avg > 1 / 28 && pr > 0.67) { this._scale(0.67); q.step = 3; }
+    else if (avg > 1 / 24 && pr > 0.55) { this._scale(0.55); q.step = 4; q.done = true; }
   }
 
   // a frame counter in the top right (F3 or Options hide it)
@@ -757,7 +762,7 @@ export class DeckSession {
       const fps = this._fps.frames / this._fps.time;
       const step = this._quality?.step;
       this.fpsEl.textContent = Math.round(fps) + ' fps  ' + (1000 / fps).toFixed(1) + ' ms' +
-        (step ? '  (quality ' + ['', 'medium', 'low', 'lowest'][step] + ')' : '');
+        (step ? '  (quality ' + ['', 'medium', 'low', 'lower', 'lowest'][step] + ')' : '');
       this._fps.frames = 0;
       this._fps.time = 0;
     }

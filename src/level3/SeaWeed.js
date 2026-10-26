@@ -9,11 +9,14 @@ import { seabed } from './SeaLife.js';
 //     the vents, and outside the kraken's cave. Some of it glows: its floats shine, a slow wave of
 //     light running up the stalk
 //   - ribbon weed, 1.5 to 6 m: clumps of long thin fronds, low on the floor round the vents and
-//     the cave, and lining the kraken's tunnel and lair (there all of it glows, teal and violet)
+//     the cave's mouth; in the drowned works behind the cliff (the kraken's, Works.js) it lines the
+//     throat, the entry, the pockets, its dens and the clearing's edges, and grows here and there
+//     along the corridors, nearly all of it glowing, teal and violet (the only light in there,
+//     besides the lamps); kelp rises in the works' open entry and east end
 // All of it leans and sways with a slow current (vertex shader: the root stays put, the top moves
 // most), the blades and fronds fluttering on top of that. Each kind is one instanced mesh per
-// area (west: the platform's side; east: the trench and the cave), so a few draw calls in all,
-// each culled when it is out of view.
+// area (west: the platform's side; east: the trench and the cave's mouth; the works, hidden with
+// them), so a few draw calls in all, each culled when it is out of view.
 //
 // Where it grows is found by casting rays down onto the real seabed (and across the cave to
 // find its walls), so it is placed once the physics world can answer them (place(), called each
@@ -26,12 +29,14 @@ const LAIR_GLOWS = [0x47f0ff, 0xa98bff, 0x6dffc8];
 const LAIR_BRIGHT = 1.8;            // (the lair is darkest: its weed glows strongest)
 
 export class SeaWeed {
-  // parent: the sea's group; physics: for the rays; at: the cave's points (mouth, caveIn, lair)
-  constructor(parent, physics, { vents = [], cave = {} } = {}) {
+  // parent: the sea's group; physics: for the rays; cave: the cave's mouth; works: the drowned
+  // works (Works.js: its plan, and its group the works' weed goes in)
+  constructor(parent, physics, { vents = [], cave = {}, works = null } = {}) {
     this.parent = parent;
     this.physics = physics;
     this.vents = vents;
     this.cave = cave;
+    this.works = works;
     this.uniforms = { uTime: { value: 0 } };
     this.material = this._material();
     this.kelpGeo = kelpGeometry();
@@ -39,13 +44,15 @@ export class SeaWeed {
     this.placed = false;
     this._jobs = null;
     // (the meshes exist from the start, empty, so the shader is compiled with the rest of the sea)
+    const inWorks = works?.inner || parent;
     this.meshes = {
       westKelp: this._mesh(this.kelpGeo, 150), westWeed: this._mesh(this.weedGeo, 120),
-      eastKelp: this._mesh(this.kelpGeo, 110), eastWeed: this._mesh(this.weedGeo, 220)
+      eastKelp: this._mesh(this.kelpGeo, 110), eastWeed: this._mesh(this.weedGeo, 160),
+      worksKelp: this._mesh(this.kelpGeo, 40, inWorks), worksWeed: this._mesh(this.weedGeo, 260, inWorks)
     };
   }
 
-  _mesh(geo, max) {
+  _mesh(geo, max, parent = this.parent) {
     const mesh = new THREE.InstancedMesh(geo, this.material, max);
     mesh.count = 0;
     mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(max * 3), 3);
@@ -55,7 +62,7 @@ export class SeaWeed {
     mesh.geometry.setAttribute('aSeed', new THREE.InstancedBufferAttribute(new Float32Array(max), 1));
     mesh.castShadow = mesh.receiveShadow = false;
     mesh.name = 'SEA_Weed';
-    this.parent.add(mesh);
+    parent.add(mesh);
     return mesh;
   }
 
@@ -135,7 +142,7 @@ export class SeaWeed {
     if (!this._jobs) {
       if (!ph.castRayNormal({ x: -50, y: -6, z: -20 }, DOWN, 60)) return false;
       this._rand = mulberry(9);
-      this._jobs = [() => this._forest(), () => this._trench(), () => this._vents(), () => this._caveMouth(), () => this._lair()];
+      this._jobs = [() => this._forest(), () => this._trench(), () => this._vents(), () => this._caveMouth(), () => this._throat(), () => this._works()];
     }
     this._jobs.shift()();
     if (this._jobs.length) return false;
@@ -213,33 +220,57 @@ export class SeaWeed {
     }
   }
 
-  // the tunnel and the lair: glowing weed along the walls (none in the open middle, where the
-  // fight is)
-  _lair() {
-    const { mouth, lair } = this.cave;
-    if (!mouth || !lair) return;
+  // the cave's throat into the works: glowing weed along both its walls
+  _throat() {
+    const { mouth } = this.cave;
+    if (!mouth) return;
     const r = this._rand, ph = this.physics;
     const y = mouth.y - 0.5, z0 = mouth.z;
-    const along = new THREE.Vector3();
-    // the tunnel: both walls, every couple of metres
-    for (let x = mouth.x + 1; x < mouth.x + 12; x += 1.6) {
+    for (let x = mouth.x + 1; x < mouth.x + 10; x += 1.6) {
       for (const dir of [-1, 1]) {
         const hit = ph.castRayNormal({ x, y, z: z0 }, { x: 0, y: 0, z: dir }, 30);
         if (!hit) continue;
         const z = z0 + dir * Math.max(0.5, hit.distance - (0.6 + r() * 1.6));
-        this._weed('east', x + (r() - 0.5), z, 1.5 + r() * 2.5, true, LAIR_GLOWS, y + 3, LAIR_BRIGHT);
+        this._weed('works', x + (r() - 0.5), z, 1.5 + r() * 2.5, true, LAIR_GLOWS, y + 3, LAIR_BRIGHT);
       }
     }
-    // the lair: all the way round its wall, found by rays out from its middle
-    const centre = along.set((mouth.x + 12 + lair.x + 4) / 2, y, z0);
-    for (let i = 0; i < 64; i++) {
-      const a = (i / 64) * Math.PI * 2 + r() * 0.08;
-      const dir = { x: Math.cos(a), y: 0, z: Math.sin(a) };
-      const hit = ph.castRayNormal(centre, dir, 40);
-      if (!hit || hit.distance < 6) continue;
-      const d = hit.distance - (0.8 + r() * 2.5);
-      this._weed('east', centre.x + dir.x * d, centre.z + dir.z * d, 2 + r() * 4, true, LAIR_GLOWS, y + 3, LAIR_BRIGHT);
-      if (i % 3 === 0) this._weed('east', centre.x + dir.x * (d - 1.5), centre.z + dir.z * (d - 1.5), 1.2 + r() * 2, true, LAIR_GLOWS, y + 3, LAIR_BRIGHT);
+  }
+
+  // The works: by its plan's cells. Clumps along the edges of the open places (the entry, the
+  // pockets, its dens, the clearing's rim, the east end) and now and then in a corridor, kept out
+  // of the middle of the ways through; kelp in the entry and the east end (open to the roof)
+  _works() {
+    const W = this.works;
+    if (!W) return;
+    const { X0, CELL, COLS, ROWS, Y0, F } = W.constructor.PLAN || W.plan;
+    const r = this._rand;
+    const per = { E: 2, O: 3, h: 2, '-': 0, X: 1.2, s: 0, k: 0, '.': 0.45, g: 0.3, w: 0.3 };
+    for (let row = 0; row < ROWS; row++) {
+      for (let col = 0; col < COLS; col++) {
+        const cx = X0 + col * CELL, cz = -(Y0 + row * CELL);
+        const ch = W.cellAt({ x: cx + 2.5, z: cz - 2.5 });
+        // the clearing: only round its rim
+        let n = per[ch] ?? 0;
+        if (ch === '-') {
+          const rim = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dc, dr]) => W.cellAt({ x: cx + 2.5 + dc * CELL, z: cz - 2.5 - dr * CELL }) !== '-');
+          n = rim ? 1.5 : 0;
+        }
+        let k = Math.floor(n) + (r() < n % 1 ? 1 : 0);
+        for (let i = 0; i < k; i++) {
+          // near an edge of the cell (a wall), not in the middle of the way
+          const side = Math.floor(r() * 4);
+          const along = 0.6 + r() * 3.8, off = 0.5 + r() * 0.8;
+          const x = cx + (side === 0 ? off : side === 1 ? CELL - off : along);
+          const z = cz - (side === 2 ? off : side === 3 ? CELL - off : along);
+          const tall = ch === '.' || ch === 'g' || ch === 'w' ? 1.2 + r() * 1.6 : 1.8 + r() * 3.5;
+          this._weed('works', x, z, tall, r() < 0.85, LAIR_GLOWS, F + 3, LAIR_BRIGHT);
+        }
+        if ((ch === 'E' || ch === 'X') && r() < 0.5) {
+          const x = cx + 0.8 + r() * 3.4, z = cz - 0.8 - r() * 3.4;
+          const floor = this._floor(x, z, F + 3);
+          if (floor !== null) this._add(this.meshes.worksKelp, x, floor - 0.3, z, 1, 8 + r() * 6, KELP_COLORS, r() < 0.7 ? LAIR_GLOWS[Math.floor(r() * 3)] : 0, 1.4);
+        }
+      }
     }
   }
 
@@ -264,7 +295,7 @@ export class SeaWeed {
   // the seabed's height under (x, z): the first ground a ray down meets, if it is flat enough and
   // near where the seabed should be (not a roof, a rail or the side of the cliff)
   _floor(x, z, from) {
-    const top = from ?? -8;
+    const top = from ?? -15;              // (below the station's underside: it is solid)
     const hit = this.physics.castRayNormal({ x, y: top, z }, DOWN, 70);
     if (!hit || hit.normal.y < 0.7) return null;
     const y = top - hit.distance;

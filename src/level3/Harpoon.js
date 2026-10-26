@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { frame } from '../ui/hudFrame.js';
+import { mergeStatic } from '../core/mergeStatic.js';
 
 // The rifle (Level 3): an automatic rifle, built for the deep. Voss takes it from the rack in the
 // EVA prep room, beside the suit. It rides slung across his backpack (seen in third person) until
@@ -105,6 +106,10 @@ export function harpoonModel() {
   cyl(0.017, 0.16, m.dark, 0, 0.07, 0.08, 14);
   box(0.044, 0.085, 0.15, m.black, 0, 0.045, 0.2, 0.012);
   box(0.048, 0.1, 0.022, m.rubber, 0, 0.04, 0.283, 0.008);
+  // (its seventy-odd parts drawn as a few meshes, one a material: nothing on it moves by itself;
+  // each part has one material, so the shapes' per-face groups can go)
+  g.traverse((o) => { if (o.isMesh) o.geometry.clearGroups(); });
+  mergeStatic(g);
   g.userData = {};
   return g;
 }

@@ -29,5 +29,13 @@ function voiceFiles() {
 
 export default defineConfig({
   base: './',
-  plugins: [voiceFiles()]
+  plugins: [voiceFiles()],
+  build: {
+    rollupOptions: {
+      input: {
+        game: fileURLToPath(new URL('./index.html', import.meta.url)),
+        submarineHack: fileURLToPath(new URL('./submarine-hack.html', import.meta.url))
+      }
+    }
+  }
 });

@@ -63,7 +63,8 @@ export const CLIPS = {
   cellDoor: DIR + 'sound-effects/opening-cell-door.mp3',                // Level 1's cell door
   flicker: DIR + 'sound-effects/freesound_community-lights-flicker-on-and-some-electrical-noises-33079.mp3', // its dying lights
   paper: DIR + 'sound-effects/floraphonic-paper-collect-7-186721.mp3',  // picking up or looking at paper, a photo
-  tech: DIR + 'sound-effects/button-press-tech.mp3'                     // pressing a machine's button: a log, a terminal, a panel
+  tech: DIR + 'sound-effects/button-press-tech.mp3',                    // pressing a machine's button: a log, a terminal, a panel
+  ding: DIR + 'sound-effects/frigginmouse-ding-dong-new-267803.mp3'     // the lift's doors opening or closing
 };
 
 // One of them looped without a gap (through Web Audio, so a quiet recording can be turned up past

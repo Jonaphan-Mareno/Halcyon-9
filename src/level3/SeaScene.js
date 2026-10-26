@@ -3,6 +3,7 @@ import { createGLTFLoader } from '../core/loaders.js';
 import { deckMaterial } from './DeckMaterials.js';
 import { SeaLife } from './SeaLife.js';
 import { SeaWeed } from './SeaWeed.js';
+import { Works } from './Works.js';
 
 // Outside the station (Blender/scripts/build_l3_outside.py): the platform beyond the water lock's
 // outer hatch, the station's hull above and below it, and the canyon from the opening cinematic:
@@ -48,6 +49,7 @@ export const SEA = {
 };
 
 const MODEL = './assets/models/l3-outside.glb';
+const STATION_SOLID = ['L3_HullShell', 'L3_Leg', 'L3_Roof', 'L3_MachShell', 'L3_AtriumGlass', 'L3_Bridge'];
 const INK = new THREE.Color(0x010203);
 
 // The atrium behind the saucer's windows (interior mapping, see _atriumGlass): the photo, the real
@@ -89,9 +91,16 @@ export class SeaScene {
     model.updateMatrixWorld(true);
     for (const node of [...model.children]) {
       if (node.name.startsWith('COL_')) {
-        this.s.physics.addStaticObject(node);
+        // (the old cave and relay pod are replaced by the works: their collision is left out)
+        if (!Works.skipCollider(node.name)) this.s.physics.addStaticObject(node);
         model.remove(node);
       }
+    }
+    // the station itself is solid out here (its hull, leg, roof, machinery and the atrium's glass:
+    // he cannot swim into them)
+    for (const name of STATION_SOLID) {
+      const o = model.getObjectByName(name);
+      if (o) this.s.physics.addStaticObject(o, null, { oriented: false });
     }
     // the textured surfaces (sea versions: no water line out here), and the glowing ones toned down
     const cache = new Map();
@@ -120,6 +129,9 @@ export class SeaScene {
     }
     this.group.add(model);
     this.model = model;
+    // the drowned works behind the cliff (the kraken's), the buried relay, the relay's hatch
+    this.works = new Works(this, this.s.physics);
+    await this.works.ready;
 
     const at = (name) => model.getObjectByName(name)?.getWorldPosition(new THREE.Vector3()) || null;
     this.points = {
@@ -140,11 +152,21 @@ export class SeaScene {
     this._glow();
     this._shafts();
     // kelp below the platform, round the station's foot, by the vents and in the kraken's cave
-    this.weed = new SeaWeed(this.group, this.s.physics, { vents: this.vents, cave: { mouth: at('PT_CaveMouth'), lair: at('PT_KrakenLair') } });
+    this.weed = new SeaWeed(this.group, this.s.physics, { vents: this.vents, cave: { mouth: at('PT_CaveMouth') }, works: this.works });
     // fish, jellyfish, vent bubbles, and something big far out (SeaLife.js)
     this.life = new SeaLife(this.group, this.vents);
     await this.life.ready;
+    // (what is only out in the canyon: hidden from deep in the works, where none of it can be seen)
+    this._outsideOnly = this.group.children.filter((o) => o !== this.works.group && o !== this.snow);
     this.scene.add(this.group);
+  }
+
+  // Deep in the drowned works (or under them) nothing out in the canyon can be seen: the station,
+  // the rock, the vents' smoke, the fish and the kelp are not drawn (Works.update says when)
+  setOutsideShown(on) {
+    if (on === this._outsideOn) return;
+    this._outsideOn = on;
+    for (const o of this._outsideOnly || []) o.visible = on;
   }
 
   // Seen at all: the outer hatch is opening or open, or he is out here. (Hidden otherwise: no cost.)
@@ -386,6 +408,7 @@ export class SeaScene {
     pts.frustumCulled = false;
     pts.renderOrder = 5;
     this.snowMat = mat;
+    this.snow = pts;
     this.group.add(pts);
   }
 

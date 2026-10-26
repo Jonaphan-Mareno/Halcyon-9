@@ -51,6 +51,10 @@ export const LINES = {
   // the kraken rises in its lair
   'v-kraken': voss("Those aren't pipes..."),
   'l3-kraken-0': aria('hesitant', "Oh no. Voss... it's a kraken!"),
+  // at the cave's mouth: the works' lit entrance (the relay is inside, at the back)
+  'l3-works-1': aria('guarded', "That's the old research works, dug into the cliff. The relay's at the back, down the excavation shaft. Go carefully, Voss."),
+  // the finale: it crashes down through the gantry, and the clearing starts to come down
+  'l3-finale': aria('hesitant', 'Voss, the whole place is coming down! Finish it!'),
   // beaten, it lets go of the station and sinks away
   'l3-kraken-2': aria('relieved', "...Oh, well done. It's let go. Now get inside, quickly, please.")
 };
@@ -73,5 +77,7 @@ export const TALKS = {
   doorHeld: ['v-door-held'],
   caveMouth: ['v-cave', 'l3-cave'],
   kraken: ['v-kraken', 'l3-kraken-0'],
-  krakenGone: ['l3-kraken-2']
+  krakenGone: ['l3-kraken-2'],
+  works: ['l3-works-1'],
+  finale: ['l3-finale']
 };

@@ -234,6 +234,43 @@ export class Trench {
   _spots() {
     const it = this.s.interact, p = this.pts;
     it.add({ id: 'relayDoor', position: p.door, radius: 0.9, label: 'Open the relay station door', when: () => this.doors.front?.target === 0, use: () => this._useDoor() });
+    it.add({ id: 'relayScreen', position: p.screen, radius: 0.8, reach: 3.2,
+      label: 'Access ARIA uplink terminal',
+      when: () => this.stage === 'inside' && this.fight?.free && !this._uplinkOverridden,
+      use: () => this._openHack() });
+  }
+
+  _openHack() {
+    if (this.stage !== 'inside' || !this.fight?.free || this._uplinkOverridden || this._hackFrame) return;
+    // Level 3 normally owns a locked pointer for mouse-look. Release it and freeze its controls so
+    // the embedded hack gets a normal cursor and the parent camera cannot respond to mouse input.
+    this.game._relayHackActive = true;
+    this.s.controls.stop();
+    document.exitPointerLock?.();
+    const shade = document.createElement('div');
+    shade.className = 'l3-hack-overlay';
+    shade.innerHTML = '<section class="l3-hack-window" role="dialog" aria-modal="true" aria-label="ARIA uplink override"><button class="l3-hack-close" type="button" aria-label="Close hack">×</button><iframe title="ARIA uplink override" src="./submarine-hack.html"></iframe></section>';
+    document.body.append(shade);
+    this._hackFrame = shade.querySelector('iframe');
+    const close = (event) => {
+      event?.stopPropagation();
+      shade.remove();
+      this._hackFrame = null;
+      window.removeEventListener('message', onMessage);
+      this.game._relayHackActive = false;
+      if (!this.s.disposed) this.s.controls.instance.enabled = true;
+    };
+    const onMessage = (event) => {
+      if (event.origin !== window.location.origin || event.source !== this._hackFrame?.contentWindow || event.data?.type !== 'halcyon-submarine-hack-won') return;
+      this._uplinkOverridden = true;
+      this._screenText = ['ARIA OVERRIDE ACCEPTED', 'CABLE UPLINK CONTROL: TRANSFERRED'];
+      this._drawSign();
+      this.game.ui.showToast('ARIA uplink overridden. Cable control transferred.', 6000);
+      close();
+    };
+    window.addEventListener('message', onMessage);
+    shade.querySelector('.l3-hack-close').addEventListener('click', close);
+    shade.addEventListener('click', (event) => { if (event.target === shade) close(event); });
   }
 
   // the door: held shut by its tentacles until it is beaten
@@ -272,7 +309,7 @@ export class Trench {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.85), new THREE.MeshBasicMaterial({ map: this._signTex, toneMapped: false }));
     m.position.copy(this.pts.screen).add(new THREE.Vector3(0, 0, 0.03));   // (it faces south, into the room: three's +z)
     this.sea.group.add(m);
-    this._screenText = ['UPLINK RELAY 3', 'PORT: WAITING FOR CABLE'];
+    this._screenText = ['UPLINK RELAY 3', 'ARIA TERMINAL: ACCESS LOCKED'];
     this._drawSign();
   }
 
@@ -438,6 +475,8 @@ export class Trench {
 
   onBeaten() {
     this.shake = 2;
+    this._screenText = ['ARIA TERMINAL ONLINE', 'ACCESS GRANTED: UPLINK OVERRIDE'];
+    this._drawSign();
     this._drawBoss(true);
     setTimeout(() => this._showBoss(false), 2500);
     this.stage = 'free';
@@ -613,7 +652,7 @@ export class Trench {
       }
       case 'free': return { text: 'It let go. Get into the relay station', target: P.door, label: 'DOOR' };
       case 'enter': return { text: 'Go inside the relay station', target: P.inside, label: 'IN' };
-      case 'inside': return RELAY.guide?.(this) || { text: 'Inside the relay station', target: null };
+      case 'inside': return RELAY.guide?.(this) || { text: this._uplinkOverridden ? 'ARIA uplink overridden' : 'Access the ARIA terminal to override the cable uplink', target: this._uplinkOverridden ? null : P.screen, label: 'TERMINAL' };
       default: return { text: 'Uplink established', target: null };
     }
   }

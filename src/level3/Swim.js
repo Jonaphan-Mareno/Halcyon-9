@@ -17,7 +17,7 @@ import { dotTexture } from './SeaScene.js';
 
 const DECK = { minX: -36.4, maxX: -28.6, minZ: -25.5, maxZ: -19.5, y: 1.5 };   // the platform (world metres)
 const HULL_X = -28.6;
-const CABLE_MAX = 120;              // metres of cable on the reel (down to the relay at the trench's foot, and round the kraken's lair)
+const CABLE_MAX = 175;              // metres of cable on the reel (down to the trench, through the drowned works, to the buried relay)
 const ROPE_N = 56;                  // points along the rope
 const BUBBLES = 260;
 

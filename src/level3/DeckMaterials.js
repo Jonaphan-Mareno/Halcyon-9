@@ -31,7 +31,10 @@ const SURFACES = {
   // outside: the station's plating, the canyon rock (ambientCG Rock 035) and the vents
   l3_hull: { set: 'l3_wall', tile: 3.2, tint: 0xa8b2ba, normal: 1.0 },
   l3_rock: { set: 'l3_rock', tile: 7.0, tint: 0x9fb2ba, normal: 1.4, rough: 1.0, sediment: 1 },
-  l3_vent: { set: 'l3_rock', tile: 2.4, tint: 0x5f5a55, normal: 1.3, rough: 1.0, lava: 1 }
+  l3_vent: { set: 'l3_rock', tile: 2.4, tint: 0x5f5a55, normal: 1.3, rough: 1.0, lava: 1 },
+  // the drowned works: painted containers, the paint worn through to rust
+  l3_navy: { set: 'l3_rust', tile: 1.6, tint: 0x46698c, normal: 1.0, paint: 0.7 },
+  l3_orange: { set: 'l3_rust', tile: 1.6, tint: 0xd0703a, normal: 1.0, paint: 0.7 }
 };
 
 // shared, per frame

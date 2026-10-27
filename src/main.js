@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { Game } from './Game.js';
 import { startIntro } from './intro/intro-cinematic.js';
+import { createOpeningSettings } from './ui/OpeningSettings.js';
+import './ui/opening-settings.css';
 import './style.css';
 
 // Entry point for Halcyon-9
@@ -19,6 +21,9 @@ function setUpStartScreen() {
   const welcomeContent = document.getElementById('welcome-content');
 
   if (startBtn && welcomeScreen && welcomeContent) {
+    const openingSettings = createOpeningSettings(document.body, 'opening-options-btn');
+    welcomeContent.appendChild(openingSettings.button);
+
     // Preload the background image to prevent Flash of Unstyled Content (FOUC)
     const bgImg = new Image();
     bgImg.src = './assets/textures/bunker_bg.jpg';
@@ -29,6 +34,7 @@ function setUpStartScreen() {
     };
 
     startBtn.addEventListener('click', () => {
+      openingSettings.dispose();
       // Fade out welcome screen
       welcomeScreen.style.opacity = '0';
 

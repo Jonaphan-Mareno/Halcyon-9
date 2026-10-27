@@ -109,6 +109,21 @@ body, html {
   box-shadow: 0 0 15px var(--primary-color);
 }
 
+.opening-options-btn {
+  display: block;
+  margin: 0.85rem auto 0;
+  padding: 0.65rem 1.4rem;
+  background: rgba(0, 229, 255, 0.06);
+  border: 1px solid rgba(0, 229, 255, 0.65);
+  color: var(--text-color);
+  font: inherit;
+  font-size: 0.9rem;
+  letter-spacing: 0.12rem;
+  cursor: pointer;
+}
+.opening-options-btn:hover,
+.opening-options-btn:focus-visible { background: rgba(0, 229, 255, 0.18); outline: none; }
+
 #reticle {
   position: fixed;
   top: 50%;

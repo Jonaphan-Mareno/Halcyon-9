@@ -3,6 +3,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { settings } from '../core/Settings.js';
 import { CREDITS_HTML } from './credits.js';
 import { preloadPrologue, playPrologue } from '../story/PrologueSequence.js';
+import { createOpeningSettings } from '../ui/OpeningSettings.js';
 
 // HALCYON-9's opening cinematic.
 //
@@ -326,7 +327,9 @@ export function startIntro(options = {}) {
   creditsBtn.type = 'button';
   creditsBtn.className = 'hi-btn';
   creditsBtn.textContent = 'CREDITS';
-  menu.append(beginBtn, creditsBtn);
+  const openingSettings = createOpeningSettings(root, 'hi-btn');
+  openingSettings.button.classList.add('hi-settings-btn');
+  menu.append(beginBtn, openingSettings.button, creditsBtn);
   const credits = document.createElement('div');
   credits.id = 'hi-credits';
   credits.setAttribute('role', 'dialog');
@@ -371,8 +374,8 @@ export function startIntro(options = {}) {
     // on the buttons: Esc closes the credits, Enter begins (unless it is on another button)
     if (state.phase === 'menu') {
       if (e.code === 'Escape' && credits.classList.contains('on')) openCredits(false);
-      else if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !credits.classList.contains('on') &&
-               document.activeElement !== creditsBtn) {
+      else if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !credits.classList.contains('on') && !openingSettings.isOpen &&
+               document.activeElement !== creditsBtn && document.activeElement !== openingSettings.button) {
         e.preventDefault();
         beginBtn.click();
       }
@@ -399,6 +402,7 @@ export function startIntro(options = {}) {
     window.removeEventListener('keydown', onKey);
     window.removeEventListener('pointerdown', unlock, true);
     window.removeEventListener('keydown', unlock, true);
+    openingSettings.dispose();
     video.pause();
     video.removeAttribute('src');
     video.src = '';

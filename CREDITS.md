@@ -1,5 +1,14 @@
 # Credits: third-party assets
 
+## Development team
+
+- Jonaphan Mareno
+- Naomi Mareno
+- Simphiwe Kwela
+- Thabiso Ramaema
+- Sivunile Mlambo
+- Tariro Muvevi
+
 Everything not listed here (the station, rooms, furniture, props, the organism, the drowned deck,
 shaders, the procedural textures and the sound effects) is our own work. The sound effects are
 synthesised in the browser (src/audio). The background music is the team's own choice of tracks

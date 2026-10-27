@@ -1,7 +1,7 @@
 # Halcyon-9 — Game State
 
-Snapshot of the repository and game on branch **`level3-puzzle2`**.
-Updated 2026-10-24 (the first version, 2026-10-14, described `level1-restyle`).
+Snapshot of the repository and game on branch **`main`**.
+Updated 2026-10-27 from the merged codebase (the first version, 2026-10-14, described `level1-restyle`).
 
 ---
 
@@ -9,10 +9,9 @@ Updated 2026-10-24 (the first version, 2026-10-14, described `level1-restyle`).
 
 | Item | Value |
 |---|---|
-| Branch | `level3-puzzle2` (in sync with `origin/level3-puzzle2`) |
-| HEAD | `ec2d666` — "added camera restrictions + afew dialog lines" |
-| Source size | ~35,300 lines of JS across `src/` (was ~16,200 on 14 Oct) |
-| Recent changes | Level 1 first-person camera lock; Level 2 visor and camera guidance |
+| Branch | `main` (in sync with `origin/main`) |
+| HEAD | `339702a` — merge of Level 3: the drowned works and kraken fight rework |
+| Recent changes | Drowned works maze and expanded kraken hunt/fight; buried relay room; playable ARIA uplink hack |
 
 ### Engine / stack
 - Vanilla JavaScript (ES Modules), no framework.
@@ -43,6 +42,7 @@ npm run extract-lift     # extract lift.glb from the control room model
 | `?level=3&relay` | Start inside the buried relay room (under the drowned works): suited, cable in hand, kraken beaten |
 | `?debug` (with `?level=2`) | `]` sets the next story flag, `[` plays the next dialogue exchange |
 | `?level=hose`, `?level=reactor` | Old test rooms (coolant hose; old cargo atrium) |
+| `/submarine-hack.html` | Standalone ARIA uplink network hack (also opened from the relay terminal) |
 
 ### Controls
 WASD move, mouse look, Space jump, Shift sprint, V first/third person, E use, I inventory,
@@ -127,11 +127,14 @@ Placeholder: the FuseBox in Bedroom 2 only shows "FuseBox used."
    floodlight mast and the scaffolding come down. Beaten, it escapes into a crack in the rock and
    the excavation shaft opens: down it and along a sand tunnel to the buried relay room. Air
    stations in the works refill the suit.
-6. **Inside the relay — THE TEAM'S PART.** Hook: `RELAY` in `src/level3/Trench.js`
-   (`RELAY.enter(trench)` runs when Voss first comes into the relay room; `RELAY.guide(trench)`
-   returns the objective). The room's points are in `trench.pts` as before (`inside`, `port`,
-   `screen`, `bay`: the empty corner for the puzzles, `air`, `hatch`). Still to build: the puzzles,
-   the uplink, the two endings.
+6. **The buried relay room and uplink override** (`Trench.js`, `submarineHack/`) — reaching the room
+   triggers `RELAY.enter`; its guide hook is `RELAY.guide`. Use the terminal to open the ARIA network
+   hack in an overlay. Capture neutral nodes to extend the powered route, breach red firewall nodes
+   with rapid clicks, use Space for sonar, and keep a powered connection to the gold override node
+   through the 30-second window. ARIA's Warden sweeps the network and can sever routes. A win sends
+   a same-origin message back to Level 3, marks the terminal overridden, and transfers cable uplink
+   control. The hack can also be played directly at `/submarine-hack.html`. The relay's other planned
+   puzzles and the two endings are not implemented yet.
 
 Health or oxygen running out: ARIA restores Voss from backup at the last safe place.
 
@@ -173,6 +176,8 @@ Health or oxygen running out: ARIA restores Voss from backup at the last safe pl
 - `ui/` — `UIManager`, `HUD`, `Inventory`, `KeypadUI`, `PauseMenu`, `FightHelp`, `waypoint`,
   `level2.css`, `level3.css`.
 - `puzzles/` — `CircuitPuzzle`. `story/` — `IntroSequence`. `intro/` — the opening cinematic.
+- `submarineHack/` — standalone network-control minigame used by the Level 3 relay terminal
+  (`submarine-hack.html`); graph, capture, visibility, AI, severing and sonar systems.
 - `audio/` — `AudioManager`, `Soundtrack`, `VossVoice`.
 - `level2/`, `level3/` — the sessions above.
 
@@ -203,9 +208,9 @@ Health or oxygen running out: ARIA restores Voss from backup at the last safe pl
 
 ## Summary
 
-Levels 1 and 2 are complete, playable arcs. Level 3 plays from the chute through the flooded
-deck, the dive, the maze and the kraken fight in the drowned works, down to the buried relay
-room. Still to do: the inside
-of the relay (the team's puzzles, the uplink and the two endings), the Level 3 bulkhead puzzle
-(ARIA opens it for now), gating Level 1's lift on the relay rings, the Level 2 FuseBox, a credits
+Levels 1 and 2 are playable arcs. Level 3 plays from the chute through the flooded deck, the dive,
+the drowned works maze and kraken fight, then into the buried relay room, where the ARIA network
+hack can transfer control of the cable uplink. Still to do: the relay's other puzzles and two
+endings, the Level 3 bulkhead puzzle (ARIA opens it for now), gating Level 1's lift on the relay
+rings, meaningful FuseBox functionality in Level 2 (it currently only shows a toast), a credits
 screen, and the remaining voice recordings.

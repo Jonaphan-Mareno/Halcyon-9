@@ -16,9 +16,9 @@ import { makeLiftScreen } from "./liftCabin.js";
 const MAX_LIGHTS = 9;
 
 // Brightness of each room light at full power. Before the generator is fixed
-// the lights sit at DIM_LEVEL of this, except two emergency lights that stutter.
+// the room stays very dark, with only faint emergency-light flicker.
 const LIGHT_FULL = 6.5;
-const DIM_LEVEL = 0.04;
+const DIM_LEVEL = 0.01;
 
 // Ambient light (the habitat look): with the power out only a faint navy glow, at full power
 // the soft bright fill of level 2's atrium, from the ceiling above and the floor below
@@ -2404,11 +2404,8 @@ onRingPuzzleComplete() {
   // ---------------------------------------------------------
   // The power relay: three linked rings
   //
-  // Scene graph: ring 2 is a CHILD of ring 1 and ring 3 a child of ring 2, and
-  // every bolt, light and marker is a child of its ring. Turning a ring
-  // therefore carries everything above it (and all of its own parts) round with
-  // it: each ring's real orientation is the sum of its own turn and all the
-  // turns below it. That is what makes it a puzzle.
+  // The rings rotate independently; turnRing() applies the relay's linked-ring
+  // controls so one ring can turn selected others with it.
   // ---------------------------------------------------------
   _buildRelay() {
     if (this._generatorRadius <= 0) return;
@@ -2435,16 +2432,13 @@ onRingPuzzleComplete() {
     root.name = 'PowerRelay';
     root.position.set(centre.x, 0, centre.z);
 
-    const rings = [];
-    let parent = root;
-    let previousY = 0;
-    RELAY_RING_HEIGHTS.forEach((y, index) => {
+    const rings = new Array(RELAY_RING_HEIGHTS.length);
+    for (let index = 0; index < RELAY_RING_HEIGHTS.length; index++) {
+      const y = RELAY_RING_HEIGHTS[index];
       const group = new THREE.Group();
-      group.position.y = y - previousY; // relative to the parent ring
-      previousY = y;
+      group.position.y = y;
       group.userData.ringIndex = index;
-      parent.add(group);
-      parent = group;
+      root.add(group);
 
       const torus = new THREE.Mesh(torusGeometry, ringMaterial);
       torus.rotation.x = Math.PI / 2;
@@ -2475,8 +2469,8 @@ onRingPuzzleComplete() {
       slot.position.set(-(RELAY_RADIUS + 0.64), y, 0);
       root.add(slot);
 
-      rings.push({ group, markerMaterial, slotMaterial, steps: 0, angle: 0, aligned: false });
-    });
+      rings[index] = { group, markerMaterial, slotMaterial, steps: 0, angle: 0, aligned: false };
+    }
 
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.5, 0.16), boltMaterial);
     rail.position.set(-(RELAY_RADIUS + 0.72), 2.3, 0);
@@ -2499,13 +2493,10 @@ onRingPuzzleComplete() {
     this._rebuildInteractables();
   }
 
-  // The real (absolute) orientation of each ring, in steps: the running sum of the turns
+  // Each ring's step count is its own world orientation; linked turns are
+  // applied directly to the affected rings.
   _absoluteSteps(steps) {
-    let total = 0;
-    return steps.map((s) => {
-      total += s;
-      return ((total % RELAY_STEPS) + RELAY_STEPS) % RELAY_STEPS;
-    });
+    return steps.map((step) => ((step % RELAY_STEPS) + RELAY_STEPS) % RELAY_STEPS);
   }
 
   _isRelayPart(object) {
@@ -2517,7 +2508,7 @@ onRingPuzzleComplete() {
   }
 
   // Which ring a clicked object belongs to: the nearest ring group above it
-  // (a bolt on ring 2 sits below ring 1 in the tree, but belongs to ring 2)
+  // in the scene graph (bolts and markers are children of their own ring).
   _ringIndexOf(object) {
     for (let o = object; o; o = o.parent) {
       if (o.userData && o.userData.ringIndex !== undefined) return o.userData.ringIndex;
@@ -2525,10 +2516,20 @@ onRingPuzzleComplete() {
     return -1;
   }
 
-  // Turn one ring a step. Every ring above it in the tree turns with it.
+  // Ring order is bottom to top. Each control turns itself and its linked rings:
+  // bottom -> 3rd, 2nd -> 4th, 3rd -> 2nd, top -> all four.
   turnRing(index, direction = 1) {
     if (!this.relay || !this.cablesFixed || this.relaySolved) return;
-    this.relay.rings[index].steps += direction;
+    const linkedRings = [
+      [0, 2],
+      [1, 3],
+      [2, 1],
+      [1, 2, 3],
+    ][index];
+    if (!linkedRings) return;
+    for (const ringIndex of linkedRings) {
+      this.relay.rings[ringIndex].steps += direction;
+    }
     this.onRingTurned?.();
     this._relayCheckAt = this.time + 0.6; // after the turn has finished animating
   }
@@ -2540,8 +2541,7 @@ onRingPuzzleComplete() {
     const absolute = this._absoluteSteps(rings.map((r) => r.steps));
 
     rings.forEach((ring, i) => {
-      // Ease toward the target turn. The child rings inherit the parent's
-      // motion on top of this, purely through the scene graph.
+      // Ease each independently controlled ring toward its own target turn.
       const target = (ring.steps * Math.PI * 2) / RELAY_STEPS;
       ring.angle += (target - ring.angle) * ease;
       ring.group.rotation.y = ring.angle;
@@ -2575,7 +2575,7 @@ onRingPuzzleComplete() {
   // comes back partway. The rings are still locked out of phase.
   partialRepair() {
     this.cablesFixed = true;
-    this.powerTarget = 0.4;
+    this.powerTarget = 0.16;
     this._surgeSparks();
   }
 
@@ -2678,7 +2678,7 @@ onRingPuzzleComplete() {
     let dead = DIM_LEVEL;
     if (this._flicker.has(i)) {
       const stutter = Math.sin(this.time * 23 * (1 + 2.5 * stress) + i * 3.1) * Math.sin(this.time * 7.7 + i);
-      dead = stutter > 0.25 - 0.3 * stress ? 0.55 : 0.05;
+      dead = stutter > 0.25 - 0.3 * stress ? 0.15 : 0.02;
     }
     // After the relay engages each light comes back in turn (and they all go
     // briefly dark first, so the surge reads)
@@ -2716,7 +2716,10 @@ onRingPuzzleComplete() {
     let sum = 0;
     for (let i = 0; i < this.lights.length; i++) sum += this._lightFactor(i);
     const f = sum / this.lights.length;
-    return THREE.MathUtils.clamp((f - DIM_LEVEL) / (1 - DIM_LEVEL), 0, 1);
+    const lit = THREE.MathUtils.clamp((f - DIM_LEVEL) / (1 - DIM_LEVEL), 0, 1);
+    // Keep the generator-only state as a faint lift. The habitat ambient reaches
+    // full strength only when the relay rings bring the whole station online.
+    return this.relaySolved ? lit : Math.min(lit, this.cablesFixed ? 0.08 : 0);
   }
 
   update(delta, playerPosition, camera) {

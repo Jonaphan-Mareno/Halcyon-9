@@ -115,7 +115,11 @@ export class KeypadUI {
     root.addEventListener('click', (event) => {
       const button = event.target.closest('button');
 
-      if (!button) return;
+      // Clicking the dimmed area outside the keypad leaves keypad mode.
+      if (!button) {
+        if (event.target === root) this.cancel();
+        return;
+      }
 
       const digit = button.dataset.digit;
       const action = button.dataset.action;

@@ -795,6 +795,9 @@ export class Game {
     if (this.state !== 'KEYPAD') return;
 
     this.keypadUI.close();
+    // Request pointer lock while the close click still has browser user
+    // activation; controls stay disabled until the camera returns.
+    try { this.controls.lock(); } catch (e) { /* the next click can re-lock */ }
 
     if (!this.keypadReturnPose) {
       this.state = 'PLAYING';

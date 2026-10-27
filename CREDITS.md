@@ -49,6 +49,27 @@ no credit, but we credit the artists anyway. The models are downloaded by `Blend
 Suggested credits-screen line: *"Plant and food models and textures from Poly Haven (polyhaven.com,
 CC0) by Rob Tuytel, Rico Cilliers, James Ray Cock, Oliver Harries, Kuutti Siitonen, Jan Martens and Amal Kumar."*
 
+## Level 1 furniture and generator details
+
+| Model | Author | Used for | Licence | Link |
+|---|---|---|---|---|
+| Armchair | captain_neodym | the armchair in the control room | Personal Use License (as listed on Free3D) | https://free3d.com/3d-model/armchair-72618.html |
+| MI smart TV (32 inch) | vinitk | parts used for the control-room TVs | Personal Use License (as listed on Free3D) | https://free3d.com/3d-model/mi-smart-tv-32-inch-239229.html |
+| Chair | bananacake | the other control-room chairs | Personal Use License (as listed on Free3D) | https://free3d.com/3d-model/chair-16205.html |
+| Sci-fi modular assets | ahedov | parts used for the generator wall panel and pillar | CC-BY-SA | https://blendswap.com/blend/9831 |
+
+Credit lines:
+- *"Armchair" by captain_neodym (https://free3d.com/3d-model/armchair-72618.html), listed under Free3D's Personal Use License.*
+- *"MI smart TV (32) inch" by vinitk (https://free3d.com/3d-model/mi-smart-tv-32-inch-239229.html), listed under Free3D's Personal Use License. Parts used for the control-room TVs.*
+- *"Chair" by bananacake (https://free3d.com/3d-model/chair-16205.html), listed under Free3D's Personal Use License.*
+- *"Sci-fi modular assets" by ahedov (https://blendswap.com/blend/9831), licensed under CC-BY-SA. Modified (parts used for the Level 1 generator wall panel and pillar).*
+
+## Additional asset sources
+
+Some items in the Level 2 bedrooms and the robots were downloaded for free from CGTrader and
+BlendSwap. Their original listings are no longer available, so the individual asset names and links
+could not be recovered.
+
 ## Sketchfab (CC BY 4.0: the authors must be credited)
 
 The vegetables in the atrium's garden beds (Level 2). Downloaded by hand into

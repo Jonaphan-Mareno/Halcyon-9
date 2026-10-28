@@ -1,0 +1,284 @@
+/* Level 3 (src/level3): the dive suit's visor and air, the water lock, the hold-E bar, the end card */
+
+/* the helmet's visor, round the view once the suit is on: dark curved edges and a faint glint */
+#l3-visor {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  background: radial-gradient(ellipse 74% 80% at 50% 48%, transparent 64%, rgba(3, 9, 13, 0.55) 80%, rgba(1, 4, 7, 0.96) 93%);
+}
+#l3-visor.on { opacity: 1; }
+#l3-visor::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 22%, rgba(220, 240, 255, 0.05) 30%, transparent 37%),
+              linear-gradient(115deg, transparent 70%, rgba(220, 240, 255, 0.03) 74%, transparent 78%);
+}
+#l3-visor::after {
+  content: '';
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 5%;
+  bottom: 7%;
+  border-radius: 48% / 44%;
+  box-shadow: inset 0 0 0 2px rgba(255, 140, 70, 0.12), inset 0 0 60px rgba(120, 200, 230, 0.06);
+}
+
+/* under the water (the flooded lock, the sea): green-black and close */
+#l3-under {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  background: radial-gradient(ellipse at 50% 45%, rgba(20, 90, 90, 0.18), rgba(0, 25, 28, 0.55) 75%);
+}
+#l3-under.on { opacity: 1; }
+
+/* the blink while he puts the suit on */
+#l3-blink {
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+#l3-blink.on { opacity: 1; }
+
+/* the suit's air, bottom centre */
+#l3-oxygen {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 11;
+  display: none;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.45rem 0.9rem;
+  background: rgba(0, 12, 22, 0.72);
+  border-left: 3px solid #4fd0ff;
+  font-family: "Courier New", monospace;
+  pointer-events: none;
+}
+#l3-oxygen.on { display: flex; }
+.ox-label { font-size: 0.7rem; letter-spacing: 0.25rem; color: #4fd0ff; }
+.ox-bar { width: 170px; height: 8px; background: rgba(79, 208, 255, 0.15); }
+.ox-bar div { height: 100%; width: 100%; background: #4fd0ff; box-shadow: 0 0 8px rgba(79, 208, 255, 0.6); }
+.ox-time { font-size: 1.05rem; letter-spacing: 0.1rem; color: #e6f8ff; min-width: 3.2rem; text-align: right; }
+#l3-oxygen.waiting .ox-time::after { content: '  FULL'; font-size: 0.65rem; letter-spacing: 0.15rem; color: #3dff9a; }
+#l3-oxygen.low { border-left-color: #ff5a4a; }
+#l3-oxygen.low .ox-bar div { background: #ff5a4a; box-shadow: 0 0 8px rgba(255, 90, 74, 0.7); }
+#l3-oxygen.low .ox-label, #l3-oxygen.low .ox-time { color: #ff8a7a; animation: ox-warn 0.8s steps(2) infinite; }
+@keyframes ox-warn { 50% { opacity: 0.35; } }
+
+/* what he is carrying, top left under the objective */
+#l3-carry {
+  position: absolute;
+  left: 24px;
+  top: 132px;
+  z-index: 11;
+  display: none;
+  padding: 0.5rem 1rem 0.6rem;
+  background: rgba(20, 14, 0, 0.78);
+  border-left: 3px solid #ffd23f;
+  pointer-events: none;
+}
+#l3-carry.on { display: block; }
+.cc-label { font-size: 0.62rem; letter-spacing: 0.25rem; color: #ffd23f; opacity: 0.85; }
+.cc-item { margin-top: 0.15rem; font-size: 1rem; letter-spacing: 0.15rem; color: #fff3c4; }
+.cc-note { margin-top: 0.15rem; font-size: 0.75rem; opacity: 0.75; }
+
+/* holding E: a bar under the crosshair fills */
+#l3-hold {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 34px);
+  width: 160px;
+  height: 5px;
+  transform: translateX(-50%);
+  z-index: 12;
+  background: rgba(0, 229, 255, 0.15);
+  opacity: 0;
+  pointer-events: none;
+}
+#l3-hold.on { opacity: 1; }
+#l3-hold div { height: 100%; width: 0; background: var(--primary-color, #00e5ff); box-shadow: 0 0 8px rgba(0, 229, 255, 0.6); }
+
+/* ARIA in the visor's top right corner (VisorAria.js): a thin frame round her hologram */
+#l3-aria-frame {
+  position: absolute;
+  z-index: 7;
+  display: none;
+  border: 1px solid rgba(80, 160, 255, 0.45);
+  border-radius: 10px;
+  box-shadow: 0 0 18px rgba(47, 124, 255, 0.25), inset 0 0 14px rgba(47, 124, 255, 0.15);
+  pointer-events: none;
+  transition: border-color 0.4s ease, box-shadow 0.4s ease;
+}
+#l3-aria-frame.on { display: block; }
+#l3-aria-frame.angry { border-color: rgba(255, 60, 50, 0.8); box-shadow: 0 0 22px rgba(255, 40, 30, 0.45), inset 0 0 16px rgba(255, 40, 30, 0.25); }
+.af-label { position: absolute; left: 8px; bottom: 5px; font-size: 0.6rem; letter-spacing: 0.3rem; color: #9fc6ff; opacity: 0.8; }
+#l3-aria-frame.angry .af-label { color: #ff8a80; }
+
+/* when ARIA turns hostile, the visor's edges flush red; the middle of the view stays clear */
+#l3-anger {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 72% 78% at 50% 50%, transparent 58%, rgba(255, 30, 20, 0.35) 78%, rgba(200, 0, 0, 0.75) 100%);
+}
+
+/* the end of what is built of Level 3 (Trench.js), for now */
+#l3-end {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 6, 10, 0.9);
+  opacity: 0;
+  transition: opacity 2.5s ease;
+  pointer-events: none;
+  font-family: "Courier New", monospace;
+}
+#l3-end.on { opacity: 1; }
+.l3-end-title { font-size: 2.2rem; letter-spacing: 0.6rem; color: #7fe8ff; }
+.l3-end-sub { margin-top: 1rem; font-size: 0.9rem; letter-spacing: 0.15rem; color: #9fc6d8; }
+
+/* the kraken's boss bar (Trench.js): its name and a segment for each hit it can take */
+#l3-boss {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 11;
+  display: none;
+  text-align: center;
+  font-family: "Courier New", monospace;
+  pointer-events: none;
+}
+#l3-boss.on { display: block; }
+#l3-boss .b-name { font-size: 0.8rem; letter-spacing: 0.5rem; color: #ffb38a; text-shadow: 0 0 8px rgba(255, 90, 40, 0.6); }
+#l3-boss .b-bar { display: flex; gap: 6px; margin-top: 6px; }
+#l3-boss .b-bar div { width: 84px; height: 9px; background: rgba(120, 30, 20, 0.35); border: 1px solid rgba(255, 120, 80, 0.5); }
+#l3-boss .b-bar div.on { background: linear-gradient(#ff6a3a, #c2321a); box-shadow: 0 0 8px rgba(255, 80, 40, 0.6); }
+#l3-boss.hit .b-bar { animation: boss-hit 0.5s ease; }
+@keyframes boss-hit { 0%, 100% { transform: none; filter: none; } 30% { transform: translateX(-4px); filter: brightness(2.2); } 60% { transform: translateX(4px); } }
+
+/* its ink: the screen closing in black */
+#l3-ink {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 60% 55% at 50% 50%, rgba(2, 4, 6, 0.35) 30%, rgba(1, 2, 3, 0.95) 85%);
+}
+
+/* the spear rifle's ammo, bottom right (Harpoon.js) */
+#l3-ammo {
+  position: absolute;
+  right: 28px;
+  bottom: 58px;
+  z-index: 11;
+  display: none;
+  text-align: right;
+  font-family: "Courier New", monospace;
+  pointer-events: none;
+}
+#l3-ammo.on { display: block; }
+#l3-ammo .am-count { color: #ffb03a; text-shadow: 0 0 8px rgba(255, 140, 30, 0.5); }
+#l3-ammo .am-n { font-size: 2rem; font-weight: bold; }
+#l3-ammo .am-of { font-size: 1rem; margin-left: 0.4rem; opacity: 0.8; }
+#l3-ammo .am-label { font-size: 0.6rem; letter-spacing: 0.3rem; color: #ffd28a; opacity: 0.75; }
+#l3-ammo .am-reload { display: none; margin-top: 0.2rem; font-size: 0.75rem; letter-spacing: 0.2rem; color: #ff5a4a; animation: ox-warn 0.6s steps(2) infinite; }
+#l3-ammo.reloading .am-reload { display: block; }
+#l3-ammo.low .am-count { color: #ff5a4a; }
+
+/* the chute (Chute.js): its controls under the objective, and the burst of white water at the bottom */
+#chute-help {
+  position: absolute;
+  left: 24px;
+  top: 124px;
+  max-width: 320px;
+  padding: 0.55rem 1rem 0.6rem;
+  background: rgba(0, 15, 30, 0.7);
+  border-left: 3px solid #ffd23f;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  z-index: 11;
+}
+#chute-help.visible { opacity: 1; }
+#chute-splash {
+  position: absolute;
+  inset: 0;
+  background: #d8ecf8;
+  opacity: 0;
+  transition: opacity 0.12s ease-in;
+  pointer-events: none;
+  z-index: 17;
+}
+#chute-splash.on { opacity: 1; }
+#chute-splash.off { opacity: 0; transition: opacity 0.9s ease-out; }
+
+/* the chute's controls, big in the middle of the screen for its first few seconds (blinking) */
+#chute-banner {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.1rem 1.8rem;
+  background: rgba(0, 12, 22, 0.72);
+  border: 1px solid rgba(255, 210, 63, 0.6);
+  box-shadow: 0 0 24px rgba(255, 210, 63, 0.25);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+  z-index: 14;
+}
+#chute-banner.on { opacity: 1; }
+#chute-banner.on.dim { opacity: 0.35; }
+.cb-row { display: flex; align-items: center; gap: 0.6rem; white-space: nowrap; font-size: 1.35rem; letter-spacing: 0.2rem; color: #ffe9a8; text-shadow: 0 0 10px rgba(255, 200, 80, 0.5); }
+.cb-key {
+  min-width: 2.2rem;
+  padding: 0.15rem 0.5rem;
+  border: 2px solid #ffd23f;
+  border-radius: 6px;
+  color: #ffd23f;
+  text-align: center;
+  font-weight: bold;
+}
+.cb-key.wide { min-width: 4.6rem; }
+.cb-or { font-size: 0.9rem; opacity: 0.8; letter-spacing: 0.1rem; }
+.l3-hack-overlay {
+  position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center;
+  padding: 3vh 3vw; background: rgb(0 6 13 / 88%); backdrop-filter: blur(8px);
+}
+.l3-hack-window {
+  position: relative; width: min(1200px, 96vw); height: min(820px, 94vh);
+  border: 1px solid rgb(84 219 247 / 55%); background: #040912;
+  box-shadow: 0 0 60px rgb(13 125 170 / 24%);
+}
+.l3-hack-window iframe { width: 100%; height: 100%; border: 0; }
+.l3-hack-close {
+  position: absolute; z-index: 2; top: 8px; right: 10px; width: 34px; height: 34px;
+  color: #a9dbe5; border: 1px solid rgb(105 216 242 / 45%); background: #071926;
+  font-size: 24px; cursor: pointer;
+}

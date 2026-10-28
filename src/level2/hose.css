@@ -1,0 +1,20 @@
+/* The coolant gauge, just under the crosshair */
+#coolant-gauge {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 26px);
+  transform: translateX(-50%);
+  width: 90px;
+  height: 5px;
+  background: rgba(0, 20, 30, 0.55);
+  border: 1px solid rgba(120, 230, 255, 0.6);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.coolant-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #6fe4ff, #e8fbff);
+  box-shadow: 0 0 8px rgba(120, 230, 255, 0.8);
+}
+#coolant-gauge.low .coolant-fill { background: #ff7a6a; box-shadow: 0 0 8px rgba(255, 90, 70, 0.8); }

@@ -1,0 +1,122 @@
+/* The HUD's framed look (hudFrame.js draws the frames): the boxes lose their old borders, fills and
+   glows, and take their colour from --frame. ARIA speaks in blue, Voss in orange, the rest of the
+   HUD is a soft steel cyan. Labels in Orbitron (the title's face), text in Bahnschrift (Windows'
+   own condensed industrial face; the school PCs have it). */
+@font-face {
+  font-family: 'Orbitron';
+  src: url('../../public/assets/fonts/orbitron.ttf') format('truetype');
+  font-weight: 400 900;
+  font-display: swap;
+}
+
+:root {
+  --frame: #8fd8e4;
+  --frame-bg: rgba(6, 14, 22, 0.84);
+  --frame-tab: rgba(143, 216, 228, 0.16);
+  --hud-text: #e8ecef;
+  --hud-label: 'Orbitron', 'Bahnschrift', 'Segoe UI', sans-serif;
+  --hud-body: 'Bahnschrift', 'Segoe UI', 'Arial Narrow', sans-serif;
+}
+
+html .hud-framed {
+  background: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  clip-path: none !important;
+  isolation: isolate;
+  overflow: visible !important;
+}
+html .hud-framed::before { display: none !important; }
+html .hud-frame { position: absolute; z-index: -1; pointer-events: none; overflow: visible; }
+html .hf-fill { fill: var(--frame-bg); }
+html .hf-line { fill: none; stroke: var(--frame); stroke-width: 1.4; stroke-linejoin: miter; }
+html .hf-heavy { stroke-width: 3; }
+html .hf-solid { fill: var(--frame); }
+html .hf-dim { opacity: 0.5; }
+html .hf-faint { fill: rgba(6, 14, 22, 0.52); }
+html .hf-tab { fill: var(--frame-tab); stroke: var(--frame); stroke-width: 1.4; }
+html .hf-num { fill: var(--frame); font-family: var(--hud-label); font-size: 8px; letter-spacing: 1px; }
+
+/* the dialogue box: the speaker's name in the tab on its top edge */
+html #dialogue-box.hud-framed { padding: 1.05rem 1.7rem 0.9rem; }
+html #dialogue-box.aria { --frame: #5b9bff; --frame-tab: rgba(91, 155, 255, 0.55); }
+html #dialogue-box.voss { --frame: #ff9a3d; --frame-tab: rgba(255, 154, 61, 0.5); }
+html #dialogue-box #dialogue-speaker,
+html #dialogue-box.aria #dialogue-speaker,
+html #dialogue-box.voss #dialogue-speaker {
+  position: absolute;
+  top: -16px;
+  left: 34px;
+  line-height: 1;
+  margin: 0;
+  font-family: var(--hud-label);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.3rem;
+  color: #f4f8ff;
+  text-shadow: 0 0 6px var(--frame);
+}
+html #dialogue-box #dialogue-text,
+html #dialogue-box.aria #dialogue-text,
+html #dialogue-box.voss #dialogue-text {
+  font-family: var(--hud-body);
+  font-size: 1.12rem;
+  line-height: 1.5;
+  color: var(--hud-text);
+  min-height: 3rem;
+}
+html #dialogue-box #dialogue-hint,
+html #dialogue-box.aria #dialogue-hint,
+html #dialogue-box.voss #dialogue-hint {
+  font-family: var(--hud-label);
+  font-size: 0.6rem;
+  letter-spacing: 0.15rem;
+  color: var(--frame);
+  opacity: 0.75;
+  margin-top: 0.35rem;
+}
+/* Voss thinking: the frame's lines go dashed */
+html #dialogue-box.voss.thought .hf-line { stroke-dasharray: 5 4; }
+html #dialogue-box.voss.thought #dialogue-text { font-style: italic; }
+html #dialogue-box.voss.thought::before,
+html #dialogue-box.voss.thought::after { display: none !important; }
+
+/* the objective (top left) */
+html #objective.hud-framed { padding: 0.35rem 0.9rem 0.4rem 0.7rem; max-width: 300px; }
+html #objective #objective-label { font-family: var(--hud-label); font-size: 0.5rem; letter-spacing: 0.28rem; color: var(--frame); opacity: 0.85; margin-bottom: 0.1rem; }
+html #objective #objective-text { font-family: var(--hud-body); font-size: 0.92rem; line-height: 1.25; color: var(--hud-text); }
+@keyframes objective-pulse {
+  0%, 100% { filter: none; }
+  30% { filter: drop-shadow(0 0 10px var(--frame)); }
+}
+
+/* the toast (top middle) and the prompt (under the crosshair) */
+html #toast.hud-framed { padding: 0.7rem 1.8rem 0.8rem; font-family: var(--hud-body); font-size: 1rem; letter-spacing: 0.04rem; color: var(--hud-text); text-shadow: none; }
+html #interact-prompt.hud-framed { padding: 0.5rem 1.3rem; font-family: var(--hud-label); font-size: 0.72rem; letter-spacing: 0.2rem; color: var(--frame); text-shadow: none; }
+
+/* health (bottom left) */
+html #hud.hud-framed { padding: 0.75rem 1.4rem 0.8rem 1.1rem; }
+html #hud.critical { --frame: #ff6a4a; }
+html #hud .hud-label { font-family: var(--hud-label); font-size: 0.6rem; color: var(--frame); }
+html #hud .hud-value { font-family: var(--hud-label); font-size: 0.7rem; color: var(--hud-text); }
+html #hud .hud-bar { border: 1px solid var(--frame); background: rgba(143, 216, 228, 0.08); }
+html #hud .hud-hint-line { font-family: var(--hud-body); }
+
+/* the help panels (the drones, the chute) and the rifle's ammo */
+html #fight-help.hud-framed, html #chute-help.hud-framed { top: 88px; padding: 0.35rem 0.9rem 0.4rem 0.7rem; max-width: 290px; font-family: var(--hud-body); }
+html #fight-help .fh-row, html #chute-help .fh-row { font-size: 0.78rem; margin: 0.12rem 0; gap: 0.45rem; }
+html #fight-help .fh-key, html #chute-help .fh-key { font-size: 0.6rem; padding: 0 0.3rem; }
+html #fight-help .fh-tip, html #chute-help .fh-tip { font-size: 0.68rem; margin-top: 0.2rem; }
+html #fight-help .fh-title, html #chute-help .fh-title { font-family: var(--hud-label); font-size: 0.5rem; margin-bottom: 0.15rem; }
+html #l3-ammo.hud-framed { padding: 0.55rem 1.1rem 0.6rem; --frame: #ffb347; }
+
+/* the keypad: the panel framed, its keys cut at the corners */
+html .keypad-device.hud-framed { padding: 30px 32px 28px; }
+html .keypad-device .keypad-brand { font-family: var(--hud-label); letter-spacing: 0.35rem; }
+html .keypad-device .keypad-instruction, html .keypad-device .keypad-status { font-family: var(--hud-body); letter-spacing: 0.12rem; }
+html .keypad-device .keypad-key {
+  border-radius: 0;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  font-family: var(--hud-label);
+}

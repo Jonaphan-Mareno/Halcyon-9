@@ -51,7 +51,8 @@ import '../ui/level2.css';
 // ENVIRONMENT PREVIEW. You arrive in the lift, the doors open, and you can walk the whole space.
 // No gameplay yet: that is designed and added after the environment is approved.
 
-// The 3D flashback (Flashback3D) plays when it is ready and the machine keeps up; the 2D one otherwise
+// The 3D flashback (Flashback3D, Flashback 2 in first person) plays when it is ready and the machine
+// keeps up; the 2D one otherwise
 const FLASHBACK_3D = true;
 const SOLID = ['COL_', 'DOOR_'];
 // what the code finds by name, moves or hides: never joined with the still meshes round it
@@ -166,8 +167,8 @@ export class HabitatSession {
       head: (name) => (name === 'voss' ? LogHead.fromPlayer(this.controls.character, this.atrium) : null)
     });
     this.flashback = new Flashback(root);
-    // the full flashback, in 3D (Kessler and the living Voss); the 2D one above stays as the fallback
-    this.flashback3d = new Flashback3D(root, null);
+    // the full flashback, in 3D (Kessler, through Voss's eyes); the 2D one above stays as the fallback
+    this.flashback3d = new Flashback3D(root, null, this);
     // for poking at from the dev console, e.g. __level2.reader.read('log-8') or __level2.flashback.play()
     if (import.meta.env.DEV) window.__level2 = this;
     // the inventory (I): Kessler's card and the hatch code go in it
@@ -272,7 +273,7 @@ export class HabitatSession {
       this.ready = true;
       this.game.applySettings?.();
       this.loadingEl.classList.remove('visible');
-      this._readyWorld(held);
+      this.worldReady = this._readyWorld(held);     // (Flashback 3D waits for it: the rooms are in the scene)
       game.ui.showToast('WASD to move, Space to jump, E to use things, V to switch camera.', 7000);
       // ?flashback in the address (with ?level=2): Kessler's flashback plays as soon as the level is
       // in, for testing it (?flashback=2d: the drawn one)
@@ -1019,7 +1020,8 @@ export class HabitatSession {
     // Solid only while fully closed, since that is where their collider is baked.
     for (const d of this.quarterDoors) {
       const allowed = d.node.name !== 'DOOR_KESSLER' || this._kesslerUnlocked();
-      const near = allowed && this.controls.position.distanceTo(d.centre) < 4;
+      // (Flashback 2 holds Kessler's door open as she walks out: flashbackDoors, name -> open)
+      const near = this.flashbackDoors?.[d.node.name] ?? (allowed && this.controls.position.distanceTo(d.centre) < 4);
       d.open = THREE.MathUtils.clamp(d.open + (near ? dt : -dt) / (d.panels ? 0.7 : 1.2), 0, 1);
       const t = d.open * d.open * (3 - 2 * d.open);
       if (d.panels) for (const pn of d.panels) pn.obj.position.x = pn.s * (d.pw / 2 + d.pw * t);
@@ -1165,7 +1167,7 @@ export class HabitatSession {
     // on the way to Kessler's room: load her for the flashback ahead of time
     if (FLASHBACK_3D && (flag === 'cardTaken' || flag === 'labDone')) {
       this.flashback3d.player = this.controls.character;
-      this.flashback3d.preload();
+      this.flashback3d.preload(this.game.renderer.instance);
     }
     if (flag === 'gardenCleared') {
       this.garden?.end();
@@ -1245,8 +1247,8 @@ export class HabitatSession {
     });
   }
 
-  // Scene 2.8: he reads the code card. The full flashback plays (Kessler at the shutdown console,
-  // Voss arguing, then walking to the door controls instead of to her), then ARIA: "You weren't
+  // Scene 2.8: he reads the code card. The full flashback plays (Flashback 2: Kessler at the
+  // workbench in this room, Voss arguing for the work, she walks out to the engine room), then ARIA: "You weren't
   // supposed to find that so soon", Voss's "What did I do?", the snap (the room goes red), the
   // silence and the lights coming back slowly, her apology. Only then does the code count.
   async _kesslerScene() {
@@ -1263,6 +1265,7 @@ export class HabitatSession {
     } else {
       await this.flashback.play();
     }
+    this.flashback3d.dispose();      // (it plays once)
     g.state = 'PLAYING';
     await sleep(700);
     await this.say('kessler');
@@ -1275,7 +1278,7 @@ export class HabitatSession {
     if (!flat) {
       await this.controls.character.whenReady;
       this.flashback3d.player = this.controls.character;
-      await this.flashback3d.preload();
+      await this.flashback3d.preload(this.game.renderer.instance);
     }
     const g = this.game;
     g.state = 'FLASHBACK';
@@ -1286,6 +1289,8 @@ export class HabitatSession {
     } else {
       await this.flashback.play();
     }
+    if (import.meta.env.DEV) console.info('Flashback 2:', this.flashback3d.stats);
+    this.flashback3d.dispose();
     g.state = 'PLAYING';
   }
 
@@ -1541,6 +1546,7 @@ export class HabitatSession {
     this.sea?.dispose?.();
     this.visorAria?.dispose?.();
     this.aria?.dispose?.();
+    this.flashback3d?.dispose();
     try { this.garden?.audio?.ctx?.close(); } catch (e) { /* already closed */ }
     for (const el of [this.codeNote, this.fpsEl, this.keypad?.root, this.flashback?.el]) el?.remove();
     this.composer?.dispose?.();

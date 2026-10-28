@@ -104,11 +104,28 @@ Dr. Kessler (`public/assets/models/kessler.glb`) is built from these models by
 
 | Model | Author | Used for | Link |
 |---|---|---|---|
-| Female scientist | photon (that one larry) | Dr. Kessler's body, hands and glasses | https://sketchfab.com/3d-models/female-scientist-c34c0fb5c79d41a18436933f937b283c |
+| Female scientist | photon (that one larry) | Dr. Kessler's body and hands (and Lindqvist's) | https://sketchfab.com/3d-models/female-scientist-c34c0fb5c79d41a18436933f937b283c |
 | Angelica - Female Head PBR Model with Animation | Sell Asset Store | Dr. Kessler's head, face, eyes and hair | https://sketchfab.com/3d-models/angelica-female-head-pbr-model-with-animation-bada072816b74daeb860b8e0725c254d |
 
-- *"Female scientist" by photon (that one larry) (https://sketchfab.com/Professor_E12), licensed under CC-BY-4.0. Modified (rigged to Voss's skeleton, clothes repainted, head and hair replaced).*
-- *"Angelica - Female Head PBR Model with Animation" by Sell Asset Store (https://sketchfab.com/emraanalis), licensed under CC-BY-4.0. Modified (decimated, neck refitted, given expressions, hair, brows and eyes recoloured, eyelashes and eye highlights removed).*
+- *"Female scientist" by photon (that one larry) (https://sketchfab.com/Professor_E12), licensed under CC-BY-4.0. Modified (rigged to Voss's skeleton, clothes repainted, head and hair replaced, glasses removed; also Lindqvist's body, repainted again).*
+- *"Angelica - Female Head PBR Model with Animation" by Sell Asset Store (https://sketchfab.com/emraanalis), licensed under CC-BY-4.0. Modified (decimated, neck refitted, given expressions, skin warmed, hair, brows and eyes recoloured, eyelashes and eye highlights removed; the eyeballs also used for Lindqvist and Navarro).*
+
+Voss's crewmates Lindqvist, Navarro and Park (`public/assets/models/lindqvist.glb`, `navarro.glb`,
+`park.glb`) are the heads of these models on bodies already in the game (Lindqvist on Kessler's, so
+on "Female scientist" above, recoloured; Navarro and Park on Voss's), built by
+`Blender/scripts/build_crew_head.py` (the sources are `Blender/assets/lindqvist.glb`, `navarro.glb`
+and `park.glb`). Their eyeballs are
+Angelica's (above), the irises recoloured.
+
+| Model | Author | Used for | Link |
+|---|---|---|---|
+| Female Character athletic woman | 3dUVpro | Lindqvist's head, face and hair | https://sketchfab.com/3d-models/female-character-athletic-woman-0b2bdf1b3b1f41d4b3faa7a3bccc0842 |
+| Man base mesh | BlakkMato | Navarro's head, face, hair and beard | https://sketchfab.com/3d-models/man-base-mesh-a870a28384fb428da535b6a816fea73e |
+| FREE DOWNLOAD Athletic African man walking 223 | deep3dstudio | Park's head and face | https://sketchfab.com/3d-models/free-download-athletic-african-man-walking-223-f9a8e3b108f04e998815593f78f163b1 |
+
+- *"Female Character athletic woman" by 3dUVpro (https://sketchfab.com/3dUVpro), licensed under CC-BY-4.0. Modified (head cut from the body and set on another character's body and skeleton, neck refitted, hair shortened, decimated, texture rebaked, eyes cut out and replaced, mouth opened, given expressions).*
+- *"Man base mesh" by BlakkMato (https://sketchfab.com/BlakkMato), licensed under CC-BY-4.0. Modified (head cut from the body and set on another character's body and skeleton, neck refitted, subdivided, hair cards thinned, texture rebaked, eyes replaced, mouth opened, given expressions).*
+- *"FREE DOWNLOAD Athletic African man walking 223" by deep3dstudio (https://sketchfab.com/deep3dstudio), licensed under CC-BY-4.0. Modified (head cut from the body, straightened and set on another character's body and skeleton, a new neck made, decimated, texture rebaked, eyes cut out and replaced, mouth opened, given expressions).*
 
 The kraken (Level 3). Downloaded by hand (glTF) into `Blender/assets/kraken/` (not in git: download it
 from the link to rebuild) and taken apart by `Blender/scripts/build_l3_kraken.py` into its body, one
@@ -126,7 +143,10 @@ Required credit line (CC BY 4.0):
 
 Level 3's sound effects and the kraken fight's music (`src/level3/Level3Audio.js`). The clips were
 cut, levelled and converted to ogg into `public/assets/audio/sfx/l3/` and `public/assets/audio/music/`.
-CC0 needs no credit, but the authors are named here (some ask for it).
+CC0 needs no credit, but the authors are named here (some ask for it). Flashback 3
+(`src/level3/LockFlashback.js`) uses some of the same clips (the engines' hum, the clunk of the main
+feed, the door's creak and slam, the latch, the seal's hiss, fists on the glass, the water); its sparks,
+low thuds, footsteps and the console's buzz are synthesised in the browser.
 
 | Pack | Author | Used for | Link |
 |---|---|---|---|

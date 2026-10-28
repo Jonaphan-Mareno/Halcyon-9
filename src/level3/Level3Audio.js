@@ -366,8 +366,8 @@ export class Level3Audio {
     const p = this.s.controls.position;
     const outside = zone === 'sea';
     const playing = this.game.state === 'PLAYING' && !this._paused;
-    // everything quiet while paused
-    this.bus.gain.setTargetAtTime(this._paused ? 0.15 : 1, t, 0.15);
+    // everything quiet while paused (and silent while a flashback plays)
+    this.bus.gain.setTargetAtTime(this._muted ? 0 : this._paused ? 0.15 : 1, t, 0.15);
     // through the water outside (and in the flooded lock)
     const inLock = prep && (prep.lock === 'flooding' || prep.lock === 'full' || prep.lock === 'outer') && zone === 'prep' && prep._inLock?.(p);
     this.waterFilter.frequency.setTargetAtTime(outside ? 900 : inLock ? 1600 : 20000, t, 0.3);
@@ -538,7 +538,7 @@ export class Level3Audio {
     this.fight.duck = Math.max(0, this.fight.duck - dt);
     const user = m ? (m.muted ? 0 : m.volume) * (m.ducked ? 0.5 : 1) * (m.paused ? 0.3 : 1) : 1;
     const duck = this.fight.duck > 0 ? 0.45 : 1;
-    this.music.gain.setTargetAtTime(MUSIC_VOLUME * user * duck, t, this.fight.duck > 0 ? 0.08 : 0.5);
+    this.music.gain.setTargetAtTime(this._muted ? 0 : MUSIC_VOLUME * user * duck, t, this.fight.duck > 0 ? 0.08 : 0.5);
     if (!this._musicOn) return;
     const f = this.fight;
     let base = 0, cut = 300, top = 0;
@@ -571,6 +571,11 @@ export class Level3Audio {
 
   setPaused(on) {
     this._paused = on;
+  }
+
+  // a flashback: the deck's own sound away while it plays
+  setMuted(on) {
+    this._muted = on;
   }
 
   dispose() {

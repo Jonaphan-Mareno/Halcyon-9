@@ -8,17 +8,17 @@ the file Blender/assets/angelica_head.glb); both credited in CREDITS.md. Made to
 (human_scientist_v2.glb): his skeleton, his clips and his face's morphs.
 
 What is kept and what changes (Blender axes: z up, the face looks toward -y):
-  - the scientist's body mesh (coat, shirt, trousers, shoes, hands) and her glasses (dark lenses:
-    she keeps her shades); her own head, eyes and hair go
+  - the scientist's body mesh (coat, shirt, trousers, shoes, hands); her own head, eyes, hair and
+    glasses go (no shades: her eyes are seen)
   - the skeleton becomes Voss's: her body is first posed into his rest pose (limb by limb, so his
     clips move her as they move him), his joints are then moved onto hers, and her skin is bound
     to them
   - Angelica's head, eyes, lashes and mouth take the old head's place: scaled to its height above
-    the eyes, the neck brought forward onto the old neck and cut off inside the collar, thinned
+    the eyes, the neck drawn onto the old neck (neck_fit.py) and cut off inside the collar, thinned
     (the source is 5 MB, most of it hair) and skinned as the old head was; Voss's face morphs
     (jaw_open, blink, ...) are carried over
   - Angelica's hair, thinned, and red: coloured per vertex (no texture); her painted scalp and
-    brows go red too, her eyes green
+    brows go red too, her eyes green, her skin a little warmer (Angelica's is very pale)
   - the clothes are repainted in Kessler's colours, flat, the way Voss's are
 
 Run (from the repo root):
@@ -32,6 +32,8 @@ import numpy as np
 from mathutils import Vector, Matrix, Quaternion
 from mathutils.bvhtree import BVHTree
 import bmesh
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from neck_fit import neck_rings, fit_neck
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -319,7 +321,8 @@ for o in [o for o in bpy.data.objects if o.name in ('F_EyeL', 'F_EyeR')]:
 EYE_Z = (OLD_EYES[0].z + OLD_EYES[1].z) / 2
 TOP = float(oco[:, 2].max())
 NOSE_Y = float(oco[np.abs(oco[:, 0]) < 0.01, 1].min())
-CHIN_Z, NECK_Z, NECK_CUT, NECK_FORWARD = EYE_Z - 0.077, EYE_Z - 0.1, EYE_Z - 0.127, 0.035
+CHIN_Z, NECK_Z, NECK_CUT = EYE_Z - 0.077, EYE_Z - 0.1, EYE_Z - 0.127
+NAPE_Z = EYE_Z - 0.035          # (the drawing-in starts here at the back of her neck, below the skull)
 
 before = set(bpy.data.objects)
 bpy.ops.import_scene.gltf(filepath=ANGELICA, merge_vertices=True)
@@ -348,19 +351,15 @@ for o in ang.values():
     o.data.transform(FIT)
 log(f'Angelica scaled {s:.5f}')
 
+# Her neck is drawn onto the old head's neck (the one her collar was made round): gradually, from
+# under the chin at the front and from below the skull at the back, so her own fuller neck never
+# stands out over the collar
 bm = bmesh.new()
 bm.from_mesh(ang['Head'].data)
 bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z < NECK_CUT], context='VERTS')
-for v in bm.verts:
-    v.co.y -= NECK_FORWARD * smooth(CHIN_Z, NECK_Z, v.co.z)
-ring = np.array([v.co for v in bm.verts if abs(v.co.z - NECK_Z) < 0.003])
-ncy, nrx, nry = (ring[:, 1].max() + ring[:, 1].min()) / 2, np.ptp(ring[:, 0]) / 2, np.ptp(ring[:, 1]) / 2
-for v in bm.verts:
-    if v.co.z < NECK_Z:
-        e = math.hypot(v.co.x / nrx, (v.co.y - ncy) / nry)
-        if e > 1:
-            v.co.x /= e
-            v.co.y = ncy + (v.co.y - ncy) / e
+NZS, NRS = neck_rings(oco, NECK_CUT, NECK_Z, flare=True)
+log('old neck at', round(NECK_Z, 4), np.round(NRS[-1], 4))
+fit_neck(bm.verts, NZS, NRS, CHIN_Z, NAPE_Z, NECK_Z)
 bm.to_mesh(ang['Head'].data)
 bm.free()
 
@@ -543,6 +542,7 @@ def plain_material(name, img=None, color=(1, 1, 1, 1), alpha=None, rough=0.7, vc
 HAIR_DARK, HAIR, HAIR_LIGHT = rgb('#5A1A10'), rgb('#A3341A'), rgb('#D2602F')
 BROW_DARK, BROW = rgb('#3E160E'), rgb('#7A3020')
 TEETH, GUMS, THROAT = rgb('#EEE8DA'), rgb('#9A4650'), rgb('#3A141B')
+SKIN_WARM = np.array([0.96, 0.86, 0.77], np.float32)        # (a multiplier on her skin's texture)
 head = ang['Head']
 a_img = base_image(head.data.materials[0])
 aorig = pixels(a_img)[..., :3]
@@ -565,10 +565,16 @@ browy = dilate(browy[..., None], filled)[..., 0]
 red = mix(HAIR_DARK, HAIR_LIGHT, np.clip(L / 0.32, 0, 1) ** 0.8)
 brow = mix(BROW_DARK, BROW, np.clip(L / 0.5, 0, 1))
 skin_img = mix(mix(aorig, red, hairy), brow, browy * (1 - hairy))
+# her skin a little warmer and less pale than Angelica's (not the hair, brows or eyes)
+eyes_ = np.zeros((S, S), bool)
+for e in EYES:
+    eyes_ |= (((x - e.x) / 0.017) ** 2 + ((z - e.z) / 0.0105) ** 2 < 1) & (y < EYE_Y + 0.01)
+skinny = filled * (1 - np.clip(hairy + browy, 0, 1)) * ~eyes_
+skin_img = mix(skin_img, skin_img * SKIN_WARM, skinny)
 head_img = new_image('K_Head_albedo', skin_img)
 # her skin tone (her cheeks), for the hands
 cheeks = filled & (np.abs(np.abs(x) - 0.035) < 0.01) & (np.abs(z - (EYE_Z - 0.022)) < 0.007) & (y < EYE_Y)
-SKIN = np.median(aorig[cheeks], 0) if cheeks.any() else rgb('#E8C2A8')
+SKIN = np.median(skin_img[cheeks], 0) if cheeks.any() else rgb('#E8C2A8')
 SKIN_SHADE = SKIN * 0.86
 log('skin', np.round(SKIN, 3))
 
@@ -640,6 +646,9 @@ for i in np.unique(bisl[bfill]):
         cls[m & dark] = BLACK                        # the belt
 feet = bfill & (bpos[..., 2] < 0.1) & (cls != BLACK)
 cls[feet] = names.index('shoe')                      # (everything below the ankle is shoe, whatever its island)
+# the dark patch in the V of her collar (her old neck hid it; her new one, drawn onto it, does not)
+vneck = bfill & (cls == BLACK) & (bpos[..., 2] > EYE_Z - 0.17) & (np.abs(bpos[..., 0]) < 0.04)
+cls[vneck] = names.index('shirt')
 bout = np.zeros_like(borig)
 for k in range(len(names)):
     m = (cls == k) & bfill
@@ -664,10 +673,8 @@ hands.data.materials.clear()
 hands.data.materials.append(plain_material('M_Hands', hands_img))
 body.data.materials.clear()
 body.data.materials.append(plain_material('M_Clothes', body_img))
-her['Frame'].data.materials.clear()
-her['Frame'].data.materials.append(plain_material('M_GlassesFrame', color=(0.035, 0.037, 0.042, 1), rough=0.35))
-her['Lens'].data.materials.clear()
-her['Lens'].data.materials.append(plain_material('M_GlassesLens', color=(0.012, 0.016, 0.022, 1), alpha=0.85, rough=0.1))
+for k in ('Frame', 'Lens'):                         # (her glasses go: no shades)
+    bpy.data.objects.remove(her.pop(k))
 log('painted')
 
 
@@ -696,8 +703,8 @@ def set_colours(o, cols):
 # inside the mouth: white teeth at the front, rose behind them, darker toward the throat
 mco = np.array([v.co for v in ang['Mouth'].data.vertices])
 depth = mco[:, 1] - float(mco[:, 1].min())
-mcol = np.where(((depth < 0.005) & (np.abs(mco[:, 2] - MOUTH_Z) < 0.009))[:, None], TEETH[None],
-                mix(GUMS, THROAT, np.clip((depth - 0.004) / 0.02, 0, 1) ** 0.7))
+mcol = np.where(((depth < 0.005) & (np.abs(mco[:, 2] - MOUTH_Z) < 0.009) & (np.abs(mco[:, 2] - MOUTH_Z) > 0.0015))[:, None], TEETH[None],
+                mix(GUMS, THROAT, np.clip((depth - 0.002) / 0.009, 0, 1) ** 0.7))      # (dark soon behind the lips: an open mouth reads as open)
 set_colours(ang['Mouth'], mcol)
 set_colours(ang['Head'], np.ones((len(ang['Head'].data.vertices), 3), np.float32))   # (white: it only matters inside the mouth)
 
@@ -711,7 +718,9 @@ def join(objs, name):
     return objs[0]
 
 
-head = join([ang['Head'], ang['Mouth']], 'K_Head')
+N_SKIN = len(ang['Head'].data.vertices)             # (her mouth's vertices follow these, after the join)
+bpy.data.objects.remove(ang.pop('Mouth'))          # (her own mouth piece goes: Voss's teeth and a pocket are put in below)
+head = join([ang['Head']], 'K_Head')
 hm = head.data
 
 
@@ -757,6 +766,7 @@ log('head bound')
 # the point of his face it lands on, scaled back to her width. Her lips touch, so near the mouth
 # each lip looks a little above (or below) itself, to land on the same lip of his.
 V_EYE_Z, V_EYE_X, V_MOUTH_Z, V_CORNER_X, V_NOSE_Y = 1.300, 0.0225, 1.2445, 0.021, -0.079   # (build_voss_face.py)
+JAW_GAIN = 1.45      # (her lips are much fuller than his: his jaw's drop barely parted them when she spoke)
 
 
 def to_voss(p):
@@ -766,6 +776,20 @@ def to_voss(p):
     return Vector((p.x * sx, p.y + (V_NOSE_Y - NOSE.y), p.z + dz)), sx
 
 
+vteeth = vhead.copy()
+vteeth.data = vhead.data.copy()
+bpy.context.collection.objects.link(vteeth)
+_tm = {i for i, m in enumerate(vteeth.data.materials) if m.name.split('.')[0] == 'M_Teeth'}
+_bm = bmesh.new()
+_bm.from_mesh(vteeth.data)
+bmesh.ops.delete(_bm, geom=[f for f in _bm.faces if f.material_index not in _tm], context='FACES')
+_bm.to_mesh(vteeth.data)
+_bm.free()
+vteeth.data.transform(vteeth.matrix_world, shape_keys=True)
+vteeth.parent = None
+vteeth.matrix_world = Matrix()
+for _k in [k for k in vteeth.data.shape_keys.key_blocks if k.name not in ('Basis', 'jaw_open')]:
+    _k.data.foreach_set('co', [c for d in vteeth.data.shape_keys.key_blocks[0].data for c in d.co])
 vm = vhead.data
 vm.calc_loop_triangles()
 VM = vhead.matrix_world
@@ -789,14 +813,33 @@ vkeys = vm.shape_keys.key_blocks
 morphs = [k.name for k in vkeys[1:]]
 vdelta = {k: np.array([VM.to_3x3() @ (a.co - b.co) for a, b in zip(vkeys[k].data, vkeys[0].data)]) for k in morphs}
 
+# Which lip each vertex round her mouth belongs to. On the front of her lips, which side of the line
+# it is on; behind their front, which way it faces (the inside of the upper lip faces down, the
+# lower lip's up). By height alone, the inside of her full upper lip, which curls down below the
+# line, went with the lower lip and hung across her mouth like a curtain as it opened.
+hm.calc_normals_split() if hasattr(hm, 'calc_normals_split') else None
+lip_side = {}
+for v in hm.vertices[:N_SKIN]:
+    if abs(v.co.z - MOUTH_Z) < 0.008 and abs(v.co.x) < CORNER_X * 1.1:
+        if v.co.y > LIP_Y + 0.0025 + 0.004 * (v.co.x / CORNER_X) ** 2:
+            lip_side[v.index] = -1.0 if v.normal.z > 0 else 1.0
+        else:
+            lip_side[v.index] = 1.0 if v.co.z > MOUTH_Z else -1.0
+log('lips told apart:', sum(1 for s_ in lip_side.values() if s_ > 0), 'upper,', sum(1 for s_ in lip_side.values() if s_ < 0), 'lower')
+
 head.shape_key_add(name='Basis', from_mix=False)
 hkeys = {k: head.shape_key_add(name=k, from_mix=False) for k in morphs}
 for k in hkeys.values():
     k.value = 0.0                   # (new keys start fully on; the export carries these as her resting weights)
 for v in hm.vertices:
     q, sx = to_voss(Vector(v.co))
-    q.z += math.copysign(0.002, v.co.z - MOUTH_Z) * gauss(v.co.x / (CORNER_X * 1.3), (v.co.z - MOUTH_Z) / 0.008)
-    loc, nrm, ti, dist = vbvh.find_nearest(q)
+    if v.index in lip_side and abs(v.co.z - MOUTH_Z) < 0.008 and abs(v.co.x) < CORNER_X * 1.1:
+        # (on the lips: the front of his lip of the same side, straight ahead)
+        loc, nrm, ti, dist = vbvh.ray_cast(Vector((q.x, -1.0, q.z + lip_side[v.index] * 0.0025)), Vector((0, 1, 0)))
+        dist = 0.0
+    else:
+        q.z += math.copysign(0.002, v.co.z - MOUTH_Z) * gauss(v.co.x / (CORNER_X * 1.3), (v.co.z - MOUTH_Z) / 0.008)
+        loc, nrm, ti, dist = vbvh.find_nearest(q)
     if loc is None or dist > 0.02:
         continue
     fade = smooth(0.02, 0.01, dist)
@@ -812,15 +855,114 @@ for v in hm.vertices:
         dd = (vdelta[k][list(vtris[ti])] * w[:, None]).sum(0) * fade
         if not dd.any():
             continue
-        hkeys[k].data[v.index].co = v.co + Vector((dd[0] / sx, dd[1], dd[2]))
+        hkeys[k].data[v.index].co = v.co + Vector((dd[0] / sx, dd[1], dd[2])) * (JAW_GAIN if k == 'jaw_open' else 1.0)
 bpy.data.objects.remove(vhead)
 log('morphs', morphs)
 
+# ---------------------------------------------------------------- the inside of her mouth, as the crew's
+# Voss's teeth (and their jaw_open motion), scaled to her mouth, behind her lips; around them a
+# pocket from the lips' inner edges (the mouth's opening) back toward the throat, its roof still,
+# its floor riding her lower lip down. (Angelica's own mouth piece was decimated into one lump and
+# stretched across her mouth as it opened.)
+V_LIP_Y = -0.066
+hm.update()
+bm = bmesh.new()
+bm.from_mesh(hm)
+bm.verts.ensure_lookup_table()
+opening = [v.index for v in bm.verts if v.is_boundary and abs(v.co.x) < CORNER_X * 1.15
+           and abs(v.co.z - MOUTH_Z) < 0.012 and v.co.y < LIP_Y + 0.012]
+# (only the front ring, the lips' inner edge: one vertex per spot along it, upper and lower)
+opening = sorted(opening, key=lambda i: hm.vertices[i].co.y)
+_seen, _ring = set(), []
+for i in opening:
+    c = hm.vertices[i].co
+    key = (round(c.x / 0.0012), c.z >= MOUTH_Z)
+    if key not in _seen:
+        _seen.add(key)
+        _ring.append(i)
+opening = _ring
+bm.free()
+op_y = float(np.mean([hm.vertices[i].co.y for i in opening]))
+km = CORNER_X / V_CORNER_X * 0.9
+teeth = vteeth
+tk = teeth.data.shape_keys.key_blocks
+tbase = [d.co.copy() for d in tk[0].data]
+front_t = min(c.y for c in tbase)
+dy_t = (op_y + 0.0015) - (LIP_Y + (front_t - V_LIP_Y) * km)
 
-# ====================================================================== hair: Angelica's, red
-# Coloured per vertex: each lock its own shade of red, darker deep in the hair (near her head)
-# and toward the roots, lighter on the outside and at the ends. Bound to her head: it is
-# shoulder length, so it turns with her head.
+
+def to_her(c):
+    return Vector((c.x * km, LIP_Y + (c.y - V_LIP_Y) * km + dy_t, MOUTH_Z + (c.z - V_MOUTH_Z) * km))
+
+
+for kb in tk:
+    for n_, d in enumerate(kb.data):
+        delta = d.co - tbase[n_]
+        g = JAW_GAIN if kb.name == 'jaw_open' else 1.0
+        d.co = to_her(tbase[n_]) + delta * km * g
+for n_, v in enumerate(teeth.data.vertices):
+    v.co = tk[0].data[n_].co
+for a in list(teeth.data.color_attributes):
+    teeth.data.color_attributes.remove(a)
+set_colours(teeth, np.tile(TEETH * 0.9, (len(teeth.data.vertices), 1)))
+teeth.data.materials.clear()
+teeth.data.materials.append(plain_material('M_Teeth', vcol=True, rough=0.5))
+
+# the pocket, from her opening's upper and lower edges
+up = sorted([i for i in opening if hm.vertices[i].co.z >= MOUTH_Z], key=lambda i: hm.vertices[i].co.x)
+lo = [i for i in opening if hm.vertices[i].co.z < MOUTH_Z]
+lo_x = np.array([hm.vertices[i].co.x for i in lo])
+jaw = {i: hkeys['jaw_open'].data[i].co - hm.vertices[i].co for i in up + lo}
+TONGUE = rgb('#B65A62')
+DEPTH, ROWS = 0.026 * km, 6
+pv, pdel, pcol, L = [], [], [], 2 * ROWS + 1
+for ui in up:
+    pu = hm.vertices[ui].co
+    li = lo[int(np.argmin(np.abs(lo_x - pu.x)))]
+    pl = hm.vertices[li].co
+    h = max(0.0, 1 - (pu.x / (CORNER_X * 1.1)) ** 2) ** 0.5
+    zb = MOUTH_Z - 0.002 * h
+    yb = max(pu.y, pl.y) + DEPTH * (0.35 + 0.65 * h)
+    for j_ in range(ROWS + 1):
+        t = j_ / ROWS
+        pv.append((pu.x * (1 - 0.25 * t), pu.y + (yb - pu.y) * t, pu.z * (1 - t) + zb * t + 0.009 * h * math.sin(math.pi * t)))
+        pdel.append((ui, 1 - t))
+        pcol.append(mix(GUMS, THROAT, min(1.0, t * 1.4)))
+    for j_ in range(ROWS - 1, -1, -1):
+        t = j_ / ROWS
+        pv.append((pl.x * (1 - 0.25 * t), pl.y + (yb - pl.y) * t, pl.z * (1 - t) + zb * t - 0.005 * h * math.sin(math.pi * t)))
+        pdel.append((li, 1 - 0.4 * t))
+        pcol.append(mix(TONGUE, THROAT, max(0.0, t - 0.35) * 1.5))
+pf = [(c * L + k, (c + 1) * L + k, (c + 1) * L + k + 1, c * L + k + 1) for c in range(len(up) - 1) for k in range(L - 1)]
+pme = bpy.data.meshes.new('Pocket')
+pme.from_pydata(pv, [], pf)
+pocket = bpy.data.objects.new('Pocket', pme)
+bpy.context.collection.objects.link(pocket)
+pme.materials.append(plain_material('M_MouthInner', vcol=True))
+set_colours(pocket, np.array(pcol, np.float32))
+pocket.shape_key_add(name='Basis', from_mix=False)
+for k in morphs:
+    kb = pocket.shape_key_add(name=k, from_mix=False)
+    kb.value = 0.0
+    for n_, (src, w) in enumerate(pdel):
+        kb.data[n_].co = Vector(pv[n_]) + (hkeys[k].data[src].co - hm.vertices[src].co) * w
+for o in (teeth, pocket):
+    for g in list(o.vertex_groups):
+        o.vertex_groups.remove(g)
+    o.vertex_groups.new(name=vbone[B + 'Head1']).add(list(range(len(o.data.vertices))), 1.0, 'REPLACE')
+    for m in list(o.modifiers):
+        o.modifiers.remove(m)
+    o.parent = rig
+    o.matrix_world = Matrix()
+    o.modifiers.new('Armature', 'ARMATURE').object = rig
+head = join([head, teeth, pocket], 'K_Head')
+hm = head.data
+for a in [a for a in hm.color_attributes if a.name != 'Col']:
+    hm.color_attributes.remove(a)
+hm.color_attributes.active_color = hm.color_attributes['Col']
+log(f'mouth: Voss teeth x{km:.3f}, pocket {len(pv)} vertices, opening {len(opening)}')
+
+
 hair = ang['Hair']
 hme = hair.data
 while hme.uv_layers:
@@ -852,7 +994,6 @@ hair.name = 'Hair'
 ang['Eyes'].name = 'Eyes'
 hands.name = 'Hands'
 body.name = 'Body'
-join([her['Frame'], her['Lens']], 'Glasses')
 for o in rig.children:
     if o.type != 'MESH':
         continue

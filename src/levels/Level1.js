@@ -10,7 +10,7 @@ import { surfaceFor, SURFACE } from "./level1Look.js";
 import { createBrickMaps } from "./brickTexture.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { MonitorWall } from "./MonitorWall.js";
-import { makeLiftScreen } from "./liftCabin.js";
+import { makeLiftScreen, makeLiftPhoto } from "./liftCabin.js";
 
 // Must match MAX_LIGHTS in Shaders.js (the room's 8 lights + the flashlight)
 const MAX_LIGHTS = 9;
@@ -76,6 +76,10 @@ const BRICK_THROW_SPEED = 15;
 const GRAVITY = 9.8;
 const HANDLE_RANGE = 2.5;            // reaching through the broken window to the far-side handle
 const TAG_WAYPOINT_RANGE = 4;        // after the hint, how close Voss gets before the waypoint points at the tag
+// The torn photograph on the lift's back wall (Flashback 1): from public/, made by
+// scripts/flashback1-photo. Voss must look at it before the lift will go down.
+const LIFT_PHOTO = './assets/textures/flashback1/briefing-photo.webp';
+const PHOTO_RANGE = 3.4;             // from the doorway to the back wall is about 2.6
 
 export class Level1{
 
@@ -116,6 +120,10 @@ export class Level1{
     this.elevatorRiding = false;
     this._consoleCentre = new THREE.Vector3();
     this.onElevatorDepart = null;   // set by the Game
+    // The photograph on the lift's back wall: the lift will not leave until Voss has looked at it
+    this.liftPhoto = null;
+    this.photoSeen = false;
+    this.onLookAtPhoto = null;      // set by the Game: the flashback
 
     this.ringPuzzle = null;          // the wall panel puzzle (RingPuzzle)
     this.ringPuzzleSolved = false;   // ARIA stays off until this is true
@@ -524,6 +532,7 @@ export class Level1{
         this.wallMonitor = this.ariaManager.pinnedMonitor;
       }
       this._buildLiftScreen();
+      this._buildLiftPhoto();
 
       this._measureGenerator();
       if (this.wallMonitor) new THREE.Box3().setFromObject(this.wallMonitor).getCenter(this._monitorCentre);
@@ -780,6 +789,7 @@ export class Level1{
       group.position.set(TORCH_XZ.x, floorY, TORCH_XZ.y);
 
       this.torch = group;
+      group.visible = !this.hasTorch;     // (?flashback1 may have taken it already)
       this.scene.add(group);
       this._rebuildInteractables();
     } catch (error) {
@@ -842,6 +852,7 @@ onRingPuzzleComplete() {
     if (this.elevatorConsoleScreen && this.doorOpened && !this.elevatorRiding) {
       this._interactables.push(this.elevatorConsoleScreen);
     }
+    if (this.liftPhoto && this.doorOpened && !this.photoSeen) this._interactables.push(this.liftPhoto);
     if (this.brick && this.brick.visible && !this.brickDone) this._interactables.push(this.brick);
     // The far-side handle: reachable only once the window is broken, and gone
     // again as soon as the door is moving. Falls back to the door leaf itself
@@ -916,6 +927,17 @@ onRingPuzzleComplete() {
     }
     this.ariaManager?.dispose();
     this.sparks.dispose();
+    if (this._liftPhotoFrame) {
+      this.scene.remove(this._liftPhotoFrame);
+      this._liftPhotoFrame.traverse((o) => {
+        if (!o.isMesh) return;
+        o.geometry.dispose();
+        if (!this._liftPhotoAssets.includes(o.material)) o.material.dispose();
+      });
+      for (const a of this._liftPhotoAssets) a.dispose();
+      this._liftPhotoFrame = null;
+      this.liftPhoto = null;
+    }
     for (const object of [this.room, this.torch, this.brick, ...this._shards, this.relay?.root, this.ringPuzzle?.hub, this.keypad, this.maintenanceTag]) {
       if (!object) continue;
       object.traverse((o) => o.geometry?.dispose?.());
@@ -1035,6 +1057,27 @@ onRingPuzzleComplete() {
     this.liftScreen = parts.screen;
   }
 
+  // The torn photograph on the lift's back wall, facing the doors (see makeLiftPhoto)
+  _buildLiftPhoto() {
+    const texture = new THREE.TextureLoader().load(LIFT_PHOTO, undefined, undefined,
+      () => console.warn('Level1: the lift photograph did not load.'));
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    const frameMat = new THREE.MeshBasicMaterial({ color: 0x1b1714 });
+    const parts = makeLiftPhoto(this.room, texture, frameMat);
+    if (!parts) {
+      texture.dispose();
+      frameMat.dispose();
+      console.warn('Level1: no Cabin_Wall_Back in controlroom.glb; the lift has no photograph, and goes without it.');
+      this.photoSeen = true;
+      return;
+    }
+    this.scene.add(parts.frame);
+    this.liftPhoto = parts.print;
+    this._liftPhotoFrame = parts.frame;
+    this._liftPhotoAssets = [texture, frameMat];
+  }
+
   // controlroom.glb ships no "close" clip: each of the two actions runs its door
   // from the rest (shut) position out to the open position, so shutting them is
   // the same clips played backwards — negative timeScale, started at the end.
@@ -1062,10 +1105,48 @@ onRingPuzzleComplete() {
     return duration;
   }
 
+  // ?flashback1 (a test link): everything up to the lift done at once, quietly (no ARIA lines),
+  // with the doors open. The Game puts Voss in the doorway.
+  debugSkipToLift() {
+    if (this.inCell) this._leaveCell();
+    if (!this.ringPuzzleSolved) {
+      this.ringPuzzleSolved = true;
+      this.ariaManager?.activate();
+    }
+    this.talkEnabled = false;
+    this.ariaManager?.unpinMonitor();
+    this.hasTorch = true;
+    if (this.torch) this.torch.visible = false;
+    this.cablesFixed = true;
+    this.relaySolved = true;
+    this.powerTarget = 1;
+    this._setKeypadPowered(true);
+    this.tagRead = true;
+    this.openElevatorDoor();
+    this._rebuildInteractables();
+  }
+
+  // Where to stand to see the photograph: just inside the lift's doors, facing in
+  liftViewpoint(eyeHeight, position, lookAt) {
+    const cabin = this.room?.getObjectByName('ElevatorCabin');
+    const doors = this.room?.getObjectByName('Cabin_Threshold_Hazard');
+    if (!cabin || !doors || !this.liftPhoto) return false;
+    const c = new THREE.Box3().setFromObject(cabin).getCenter(new THREE.Vector3());
+    const d = new THREE.Box3().setFromObject(doors).getCenter(new THREE.Vector3());
+    position.copy(d).lerp(c, 0.45);
+    position.y = d.y + eyeHeight;
+    this.liftPhoto.getWorldPosition(lookAt);
+    return true;
+  }
+
   // Voss pressed the lift's call panel: shut the doors, then let the Game take
   // the level down to the habitat deck once they are closed.
   rideElevator() {
     if (this.elevatorRiding || !this.doorOpened) return;
+    if (!this.photoSeen) {
+      this.onLockedHint?.('Something on the back wall of the lift catches your eye. A photograph.');
+      return;
+    }
 
     this.elevatorRiding = true;
     this._rebuildInteractables(); // the panel is no longer clickable mid-ride
@@ -1673,6 +1754,9 @@ onRingPuzzleComplete() {
 
       return 'Click or press E to use keypad';
     }
+    if (object === this.liftPhoto) {
+      return this.canInteract(object, distance) ? 'Click or press E to look at the photograph' : null;
+    }
     if (this._isConsoleScreenPart(object)) {
       return this.canInteract(object, distance)
         ? 'Click or press E to ride the lift down'
@@ -1722,6 +1806,9 @@ onRingPuzzleComplete() {
     if (this._isKeypadPart(object)) {
       return distance <= this.keypad.userData.maxInteractionDistance;
     }
+    if (object === this.liftPhoto) {
+      return this.doorOpened && !this.photoSeen && distance <= PHOTO_RANGE;
+    }
     if (this._isConsoleScreenPart(object)) {
       return this.doorOpened && !this.elevatorRiding && distance <= Level1.CONSOLE_RANGE;
     }
@@ -1762,6 +1849,10 @@ onRingPuzzleComplete() {
         return;
       }
       this.onUseKeypad?.(this.keypad);
+      return;
+    }
+    if (object === this.liftPhoto) {
+      this.onLookAtPhoto?.();
       return;
     }
     if (this._isConsoleScreenPart(object)) {
@@ -1870,6 +1961,9 @@ onRingPuzzleComplete() {
         w.position.copy(this.keypad.position);
         w.label = 'Keypad';
       }
+    } else if (this.doorOpened && !this.photoSeen && this.liftPhoto) {
+      this.liftPhoto.getWorldPosition(w.position);
+      w.label = 'Photograph';
     } else if (this.doorOpened && !this.elevatorRiding) {
       w.position.copy(this._consoleCentre);
       w.label = 'Lift';

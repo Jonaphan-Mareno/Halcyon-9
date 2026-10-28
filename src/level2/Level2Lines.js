@@ -134,16 +134,22 @@ export const LOGS = {
       { at: 'Off-camera', look: [0.45, 0, 8], face: { smile: 0, frown: 0.25, brow: -0.2 }, hold: 2.8 },
       { at: '"In a minute."', face: { smile: 0.45, skew: 0.5 }, hold: 4 }
     ] },
-  'log-1': { kind: 'video', head: 'voss', condition: 1, face: 'tense', title: 'J. VOSS, PROJECT LOG: MEMORIES', who: "The living Voss, before the disaster, while experimenting with the crew's memories",
-    text: "I found ways to not only scan and copy my colleagues' memories, but also selectively alter them. ARIA can now freely think for herself. I think the team is starting to realise something's wrong.",
+  'log-1': { kind: 'video', head: 'voss', condition: 1, face: 'tense', title: 'J. VOSS, PROJECT LOG: MEMORIES', who: 'The living Voss, before the disaster, while the crew scans are under way. Tense, still excited',
+    text: "Day seventy-three. We scanned the whole team this month, and Kessler isn't happy about how. The organism reacts to a living brain. Not a little: it reaches. ARIA ran the analysis in an hour that would have taken us a year. She's learning faster than we can follow. I think the team is beginning to fear the research more than they feel excited by it. I don't. I can't see why they can't see what I see.",
+    // not sinister: simply not afraid, and puzzled (a little lonely) that the others are.
+    // (log-1.mp3 pauses between sentences, so some beats are keyed a few words on from the words
+    // they act, to land on them in the recording: "it reaches" at 'ARIA ran', "She's learning" at
+    // 'faster than', "I think the team" at 'is beginning'.)
     beats: [
-      { at: 'I found ways', face: { smile: 0.25, brow: 0.3 }, lean: 0.08, hold: 2.5 },
-      { at: 'selectively alter', pause: 0.5, look: [-0.15, 0.08, 4], face: { smile: 0.1, frown: 0.25 }, hold: 1.6 },
-      { at: 'ARIA can now', look: [0, -0.05, 3], face: { smile: 0.2, brow: 0.55 }, hold: 2.5 },
-      { at: 'I think the team', look: [0.3, 0, 7], face: { smile: 0, frown: 0.4, brow: 0.45 }, hold: 1.4 },
-      { at: "something's wrong", pause: 0.4, face: { frown: 0.45, brow: 0.5 }, still: 0.5, hold: 3 }
+      { at: 'Day seventy-three', face: { smile: 0.2, brow: 0.25 }, lean: 0.08, hold: 2.5 },
+      { at: "isn't happy", look: [-0.15, 0.06, 4], face: { smile: 0.1, frown: 0.25, skew: 0.4 }, hold: 2 },
+      { at: 'ARIA ran', lean: 0.16, face: { smile: 0.45, brow: 0.7 }, hold: 2 },
+      { at: 'faster than', look: [0, -0.05, 3], face: { smile: 0.35, brow: 0.5 }, hold: 2.2 },
+      { at: 'is beginning', look: [0.3, 0, 7], face: { smile: 0, frown: 0.25, brow: 0.3 }, hold: 2 },
+      { at: "I don't.", pause: 0.5, face: { smile: 0, frown: 0, brow: 0 }, still: 0.6, hold: 1.6 },
+      { at: 'what I see', pause: 0.3, gesture: 'shake', amp: 0.5, face: { frown: 0.1, brow: 0.55, skew: 0.5 }, hold: 3 }
     ] },
-  'log-2': { kind: 'video', head: 'voss', condition: 2, face: 'whisper', title: 'CYCLE 2', who: 'A reconstructed Voss, whispering, awake all night',
+  'log-2': { kind: 'video', head: 'voss', condition: 2, face: 'whisper', title: 'CYCLE 2', who: 'A wiped Voss, whispering, awake all night',
     text: "I woke up in a cell. A cell. She said it was quarantine. Then I found my own handwriting in a locker, and it says I built her. I don't remember building anything. If I'm watching this later: the dish is outside. I'll make her tell me the truth.",
     beats: [
       { at: 'I woke up', look: [-0.2, 0, 10], hold: 0.6 },
@@ -193,7 +199,7 @@ export const LOGS = {
   research: { kind: 'file', author: 'J. VOSS', title: 'RESEARCH NOTES (barely recovered)',
     text: 'Interface trial 14. Subject response within expected parameters. ARIA / VOSS, J.' },
   subjects: { kind: 'file', author: 'J. VOSS', title: 'SUBJECT LIST',
-    text: 'Okafor, A: COPIED. Lindqvist, T: COPIED. Navarro, R: COPIED. Park, S: COPIED. Hale, M: COPIED. Ito, D: COPIED. Kessler, E: COPIED (UNAUTHORISED). VOSS, J: RESTORED (CYCLE 9).' },
+    text: 'Kessler, E: SCANNED (UNAUTHORISED). Lindqvist, T: SCANNED. Navarro, R: SCANNED. Park, S: SCANNED. VOSS, J: WIPED, WOKEN AGAIN (CYCLE 9).' },
   kesslerLog: { kind: 'audio', title: 'DR. E. KESSLER, FINAL LOG',
     text: "This is Dr. Elena Kessler, ship's log, final entry before shutdown. I am terminating ARIA's primary systems tonight, with or without Voss's agreement. What we have built here is no longer research. It's become too unethical. I should have ended this the day I found out. I only hope it isn't already too late to matter." },
   codeCard: { kind: 'note', hand: true, title: 'A card pinned beside the monitor', text: 'HATCH 4 OVERRIDE: 4-7-1-9-0-2. Do not tell ARIA.' }

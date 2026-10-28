@@ -43,10 +43,11 @@ function pump() {
 }
 
 // Which recordings belong to which level, by their names: ARIA's l2-/l3 lines and the logs are
-// Levels 2 and 3; Voss's v- lines are spoken in both; the rest (the intro, the puzzles) are Level 1's
+// Levels 2 and 3; Voss's v- lines are spoken in both; the rest (the intro, the puzzles, Flashback 1's
+// fb1- lines) are Level 1's
 const DIR = './assets/audio/';
 const LEVEL = {
-  1: { aria: (f) => !/^l[23]/.test(f), voss: (f) => f.startsWith('intro-'), logs: () => false },
+  1: { aria: (f) => !/^l[23]/.test(f), voss: (f) => f.startsWith('intro-') || f.startsWith('fb1-'), logs: () => false },
   2: { aria: (f) => f.startsWith('l2'), voss: (f) => f.startsWith('l2') || f.startsWith('v-'), logs: () => true },
   3: { aria: (f) => f.startsWith('l3'), voss: (f) => f.startsWith('v-'), logs: () => false }
 };

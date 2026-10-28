@@ -15,6 +15,9 @@ export const LINES = {
   'l3hall-1': aria('bubbly', "Voss, the water's rising faster than I said. Straight ahead, then left. I'll open the doors."),
   // the window into the engine room, where they were locked in (DRAFT: the script only says he
   // sees them here)
+  // looking through it, his head pounds and the memory comes (Flashback 3): the lift's line again
+  // (Flashback 1), its recording reused
+  'v-window-head': voss('Ah… my head.', 'fb1-voss-head'),
   'v-window-1': voss('Oh no. No, no, no... Dr. Kessler?'),
   'v-window-2': voss("Kessler. Lindqvist. Navarro... Park. It's locked from out here. Someone shut them in."),
   'l3-window-1': aria('hesitant', "Don't look, Voss. There was nothing anyone could have done. Please. Left. Keep moving."),

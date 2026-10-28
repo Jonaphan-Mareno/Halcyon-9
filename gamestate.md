@@ -36,10 +36,12 @@ npm run extract-lift     # extract lift.glb from the control room model
 |---|---|
 | (none) | The opening cinematic, then Level 1 |
 | `?nointro` | Level 1 with the old WAKE UP start screen, no cinematic |
+| `?flashback1` | Level 1 done up to the lift, Voss in its doorway facing the photograph (E plays Flashback 1); `?flashback1=play` plays it straight away |
 | `?level=2` | Straight into Level 2 (the habitat atrium) |
 | `?level=3` | Straight into Level 3 (starts with the chute) |
 | `?level=3&nochute` | Level 3 without the chute (lands in the pump room) |
 | `?level=3&relay` | Start inside the buried relay room (under the drowned works): suited, cable in hand, kraken beaten |
+| `?level=3&flashback3` | Level 3 at the engine room door's window, as if E had been pressed there: the headache, Flashback 3, then Voss names the crew; `?flashback3=still` plays its slow-machine version (stills) |
 | `?debug` (with `?level=2`) | `]` sets the next story flag, `[` plays the next dialogue exchange |
 | `?level=hose`, `?level=reactor` | Old test rooms (coolant hose; old cargo atrium) |
 | `/submarine-hack.html` | Standalone ARIA uplink network hack (also opened from the relay terminal) |

@@ -33,6 +33,8 @@ import { dressInSuit, attachAtBind } from './DiveSuit.js';
 import { Level3Audio } from './Level3Audio.js';
 import { Headlamp } from './Headlamp.js';
 import { Chute } from './Chute.js';
+import { LockFlashback } from './LockFlashback.js';
+import { buildLockPanel, Sparks, crackle, PANEL_SIZE } from './LockPanel.js';
 import '../ui/level3.css';
 import { LINES, TALKS } from './Level3Lines.js';
 import { disposeScene } from '../core/disposeScene.js';
@@ -47,6 +49,12 @@ import { disposeScene } from '../core/disposeScene.js';
 // (PrepRoom.js) onto a platform on the station's flank, over the canyon and its vents
 // (SeaScene.js). (The flooded hall's other gates and its logs are still to come.)
 //
+// The first time he looks through the window (E), his head pounds and Flashback 3 plays
+// (LockFlashback.js): the moment he locked them in. Back in the corridor he names them. Beside the
+// door, on the corridor side, the lock panel he tore out still hangs sparking (LockPanel.js, placed
+// here in code).
+// (?level=3&flashback3: straight to it, for testing.)
+//
 // Its own renderer settings, physics world, player and HUD, like Level 2's session; the game keeps
 // whichever session is running in game.level2 and calls update() on it every frame.
 
@@ -60,6 +68,8 @@ const WINDOW_NEAR = 3.0;                // this close to the window, the crew ar
 // what the code finds by name, moves or hides: never joined with the still meshes round it
 // (core/mergeStatic.js). The sea's plants sway by their own shape, so they stay apart too.
 const DECK_KEEP = /^(DOOR_|PROP_|GATE_|PT_|SPAWN_|COL_)/;
+// ?flashback3 (with ?level=3): Flashback 3 at once, for testing; ?flashback3=still: its slow-machine stills
+const TEST_FLASHBACK = new URLSearchParams(window.location.search).get('flashback3');
 const SEA_KEEP = /^(GATE_|PT_|SEA_Life|TERRAIN_Cave|TRENCH_|COL_|SPAWN_)/;
 // the drowned works: its doors, gates, the panel it bursts and the finale's pieces move; its weed sways
 const WORKS_KEEP = /^(GATE_|BURST_|FALL_|PT_|WL_|COL_|SEA_Weed)/;
@@ -131,9 +141,11 @@ export class DeckSession {
       this.ready = true;
       game.applySettings?.();
       this.loadingEl.classList.remove('visible');
+      // (the Flashback 3 test link waits for the outside to be readied: in play, the chute ride covers it)
+      const outside = this._readyOutside();
       if (this._skipRelay) this._skipToRelay();
+      else if (TEST_FLASHBACK !== null) outside.then(() => this._testLockFlashback());
       else this._arrive();
-      this._readyOutside();
     }).catch((e) => console.error('Level 3 failed to load.', e));
   }
 
@@ -174,6 +186,8 @@ export class DeckSession {
     this._fitFxaa();
     // (after the frame, ARIA in the visor's corner once he is suited: VisorAria)
     g.renderer.render = () => {
+      // (Flashback 3 draws its own scene instead of the deck while it plays)
+      if (this.lockFlashback?.running) return this.lockFlashback.render(webgl);
       this.composer.render();
       this.visorAria?.render(webgl);
     };
@@ -256,6 +270,7 @@ export class DeckSession {
     this.interact = new Interact(g.camera.instance, this.physics);
     if (this.windowPos) {
       this.interact.add({ id: 'window', position: this.windowPos, radius: 0.6, label: 'Look through the window', use: () => this._seeCrew() });
+      this._lockPanel();
     }
     await this.crew.ready;
     // outside the station: the platform, the canyon, the vents (hidden until the outer hatch opens)
@@ -276,10 +291,11 @@ export class DeckSession {
     await this.trench.ready;
     this.visorAria = new VisorAria(this);
     // the way down from the garden's hatch: ridden first, then taken down (Chute.js)
-    // (?nochute skips the ride; ?relay skips the whole level and starts inside the relay)
+    // (?nochute skips the ride; ?relay skips the whole level and starts inside the relay; so does
+    // ?flashback3, which starts at the engine room window)
     const params = new URLSearchParams(window.location.search);
     this._skipRelay = params.has('relay');
-    if (!params.has('nochute') && !this._skipRelay) this.chute = new Chute(this);
+    if (!params.has('nochute') && !this._skipRelay && TEST_FLASHBACK === null) this.chute = new Chute(this);
   }
 
   // the window's glass: a faint green tint with a brighter rim, so the room behind reads as water
@@ -427,6 +443,9 @@ export class DeckSession {
     this._falling = true;
     await sleep(2600);
     if (!this.disposed) this.say('landing');
+    // Flashback 3 got ready in good time (it plays at the window, at the end of the corridor)
+    await this.controls.character.whenReady;
+    if (!this._lockDone && !this.disposed) this._getLockFlashback()?.preload(this.game.renderer.instance);
   }
 
   // ?level=3&relay: skip the chute, the deck, the prep room and the sea; start suited, with the
@@ -516,7 +535,7 @@ export class DeckSession {
     }
     this.time += dt;
     deckUniforms.uTime.value = this.time;
-    this._warmTextures();
+    if (!this.lockFlashback?.running) this._warmTextures();     // (not while Flashback 3 has the card)
     // on the chute: it has the camera, and he is not on his feet yet (and the deck's drips and
     // creaks wait till he is down in it: only the chute's own metal sounds)
     if (this.chute?.active) {
@@ -570,9 +589,9 @@ export class DeckSession {
 
     // the crew: one comes up to the glass while he stands at the window
     const nearWindow = this.windowPos && p.distanceTo(this.windowPos) < WINDOW_NEAR;
-    if (nearWindow && !this._crewSeen) this._seeCrew();
     this.crew.approach(dt, nearWindow);
     this.crew.update(dt);
+    this._panelSparks(dt, p);
     this._driftSilt(dt);
     this.prep?.update(dt, p, playing);
     this.swim?.update(dt, playing);
@@ -627,12 +646,139 @@ export class DeckSession {
     this.silt.geometry.attributes.position.needsUpdate = true;
   }
 
-  // The first look through the window: Voss names them, ARIA tells him not to look
+  // Looking through the window: the first time, the memory (Flashback 3), then Voss names them and
+  // ARIA tells him not to look; after that, he names them again
   _seeCrew() {
+    if (this._lockBusy) return;
     if (this._crewSeen) return this.say(['v-window-2']);
     this._crewSeen = true;
+    this._lockMemory();
+  }
+
+  // ------------------------------------------------------------------ the lock panel (Flashback 3)
+  // On the wall right of the door, on the corridor side (under the pipe there): torn out, its module
+  // hanging on its wires; now and then it sparks. (Only to be seen: the window plays the memory.)
+  _lockPanel() {
+    const at = this.windowPos.clone().add(new THREE.Vector3(1.34, 1.12 - this.windowPos.y, PANEL_SIZE.d / 2));
+    this.panel = buildLockPanel({ broken: true });
+    this.panel.group.position.copy(at);
+    this.game.scene.add(this.panel.group);
+    this.panelSparks = new Sparks(32, { size: 0.025 });
+    this.game.scene.add(this.panelSparks.points);
+    this._panelAt = at.clone().add(new THREE.Vector3(0, -0.02, PANEL_SIZE.d / 2));
+    this._sparkDir = new THREE.Vector3(0.1, 0.2, 1).normalize();
+    this._sparkIn = 3;
+  }
+
+  _panelSparks(dt, p) {
+    const s = this.panelSparks;
+    if (!s) return;
+    s.update(dt);
+    this._sparkIn -= dt;
+    const d = p.distanceTo(this._panelAt);
+    if (this._sparkIn > 0 || d > 14) return;
+    this._sparkIn = 2.2 + Math.random() * 4;
+    const big = Math.random() < 0.3;
+    s.burst(this._panelAt, this._sparkDir, big ? 10 : 4, big ? 1.8 : 1.1);
+    const ctx = this.sfx?.ctx;
+    if (!ctx || ctx.state !== 'running' || this.game.state !== 'PLAYING') return;
+    if (!this._sparkOut) {
+      this._sparkOut = ctx.createGain();
+      this._sparkOut.connect(this.sfx.world);
+    }
+    this._sparkOut.gain.value = 0.9 / (1 + d * 0.6);
+    crackle(ctx, this._sparkOut, ctx.currentTime + 0.01, big ? 0.8 : 0.35);
+  }
+
+  _getLockFlashback() {
+    const c = this.controls.character;
+    if (!c?.ready || this.disposed) return null;
+    return (this.lockFlashback ||= new LockFlashback(document.getElementById('ui-layer'), c));
+  }
+
+  // Flashback 3, at the window: his head pounds ("Ah... my head", as in the lift) and his sight goes
+  // black, the memory plays, then back up out of black into the corridor, where he names them
+  async _lockMemory() {
+    if (this._lockBusy || this._lockDone) return;
+    const g = this.game, webgl = g.renderer.instance, ui = document.getElementById('ui-layer');
+    this._lockBusy = true;
+    this._talkToken++;
+    if (this.aria.speaking) this.aria.skip();
+    vossVoice.stop();
+    g.ui.hideDialogue();
+    g.state = 'FLASHBACK';
+    await this.controls.character.whenReady;
+    const fb = this._getLockFlashback();
+    fb?.preload(webgl);              // (if it is not ready yet, it has the headache and a little more)
+    const head = LINES['v-window-head'];
+    const [, black] = await Promise.all([
+      vossSays(g.ui, head.text, head.clip, { readMs: 2200 }),
+      fb ? fb.headache(this.composer, ui) : sleep(2400).then(() => this._veil(1))
+    ]);
+    g.ui.hideDialogue();
+    this.sfx?.setMuted(true);
+    const ready = !!fb && await Promise.race([fb.preload(webgl).then(() => fb.ready), sleep(10000).then(() => false)]);
+    let back = black;
+    if (ready && !this.disposed) {
+      document.body.classList.add('fb3d');
+      g.holdMusic?.('silence', fb.T.end + 4);
+      fb.warm(webgl);                // (its textures up to the card, behind the black)
+      await sleep(50);
+      black.remove();
+      // (as stills if the deck was already slow on this machine: judged on a few seconds of play)
+      const slow = this._avgFrames > 120 && this.frameAverage > 1 / 24;
+      await fb.play({ still: slow || TEST_FLASHBACK === 'still' });
+      if (import.meta.env.DEV) {
+        const s = fb.stats;
+        console.info('Flashback 3:', s.frames, 'frames,', (s.frames / Math.max(0.01, s.seconds)).toFixed(1), 'fps, worst',
+          (s.worst * 1000).toFixed(0), 'ms at', s.worstAt, s.still ? '(stills: ' + s.still + ')' : '');
+      }
+      document.body.classList.remove('fb3d');
+      back = this._veil(1);
+    }
+    fb?.dispose();                   // (it plays once)
+    this.lockFlashback = null;
+    this._lockDone = true;
+    this._lockBusy = false;
+    if (this.disposed) return back.remove();
+    this.sfx?.setMuted(false);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      back.style.transition = 'opacity 1.4s ease';
+      back.style.opacity = '0';
+    }));
+    await sleep(1450);
+    back.remove();
+    if (this.disposed) return;
+    g.state = 'PLAYING';
+    this._afterLockFlashback();
+  }
+
+  // Back at the window: he names them, and ARIA tells him not to look (Level3Lines: 'window')
+  _afterLockFlashback() {
     this.game.holdMusic?.('silence', 8);
     this.say('window');
+  }
+
+  // a black sheet over the frame (under the flashback's subtitles): fading in, or at `opacity`
+  _veil(opacity = null) {
+    const el = document.createElement('div');
+    el.className = 'fb3d-hint on';
+    el.style.cssText = 'position:fixed;inset:0;background:#000;z-index:30;pointer-events:none;' +
+      (opacity === null ? 'opacity:0;transition:opacity .4s ease' : 'opacity:' + opacity);
+    document.getElementById('ui-layer').appendChild(el);
+    if (opacity === null) requestAnimationFrame(() => { el.style.opacity = '1'; });
+    return el;
+  }
+
+  // ?level=3&flashback3: at the window, as if E had been pressed there: Flashback 3, then his lines
+  async _testLockFlashback() {
+    if (this.windowPos) {
+      this.controls.teleport(new THREE.Vector3(this.windowPos.x + 0.2, this.spawn.y + 0.1, this.windowPos.z + 1.4));
+      this.controls.camera.rotation.set(0, 0, 0);
+      this.controls.facing = 0;
+    }
+    while (!this.disposed && this.game.state !== 'PLAYING') await sleep(200);
+    if (!this.disposed) this._seeCrew();
   }
 
   // The objective and the marker: up the corridor to the window, then left to the bulkhead
@@ -749,6 +895,11 @@ export class DeckSession {
   // a frame counter in the top right (F3 or Options hide it)
   _perf(delta, playing) {
     this._autoQuality(delta, playing);
+    // a running average of the frame time in play (Flashback 3 starts as stills when it is slow)
+    if (playing && delta < 0.2) {
+      this.frameAverage = this.frameAverage ? this.frameAverage * 0.98 + delta * 0.02 : delta;
+      this._avgFrames = (this._avgFrames || 0) + 1;
+    }
     if (!this.fpsEl) {
       this.fpsEl = document.createElement('div');
       this.fpsEl.className = 'fps-counter';
@@ -790,6 +941,9 @@ export class DeckSession {
     this.controls.instance.dispose?.();
     this.aria?.dispose?.();
     this.crew?.dispose();
+    this.lockFlashback?.dispose();
+    this.panel?.dispose();
+    this.panelSparks?.dispose();
     this.water?.dispose();
     this.fpsEl?.remove();
     this.loadingEl?.remove();

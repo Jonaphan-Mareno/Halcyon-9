@@ -24,8 +24,9 @@ import { pauseClock } from './core/PauseClock.js';
 import { MoodLight } from './graphics/MoodLight.js';
 import { CircuitPuzzle } from './puzzles/CircuitPuzzle.js';
 import { PlayerStats } from './player/PlayerStats.js';
-import { vossVoice } from './audio/VossVoice.js';
+import { vossVoice, vossSays } from './audio/VossVoice.js';
 import { preloadVoices } from './audio/AudioCache.js';
+import { BriefingFlashback } from './story/BriefingFlashback.js';
 
 // The goal shown top-left for each stage of the opening
 const OBJECTIVES = [
@@ -35,7 +36,8 @@ const OBJECTIVES = [
   'Repair the generator circuit',
   'Turn the relay rings until every marker lines up with the rail',
   'Find the override code and use the security keypad',
-  'Step into the lift and press the call panel to go down'
+  'Step into the lift and look at the photograph on its wall',
+  'Press the call panel to go down'
 ];
 
 //TEMP access code
@@ -108,6 +110,22 @@ const ARIA_RESTORE_LINES = [
     text: "Hm, that backup was a little rough around the edges. Please be careful, Voss. That was my last one!" }
 ];
 const ARIA_GAME_OVER_TEXT = "Backup... corrupted. I am so sorry, Voss. I really did try.";
+
+// Flashback 1 (the photograph in the lift): what Voss says, and ARIA's answer. She is smooth and a
+// little too reassuring, and says nothing of cycles, wipes or the crew. (Voss's recordings are in
+// public/assets/audio/voss/, ARIA's go in public/assets/audio/aria/; until hers exist her lines
+// show as timed subtitles.)
+const FLASHBACK1 = {
+  head: { clip: 'fb1-voss-head', text: 'Ah… my head.' },
+  who: { clip: 'fb1-voss-who', text: 'Who were those people?' },
+  aria: [
+    { clip: 'fb1-aria-1', expression: 'relief',
+      text: "Voss, you've been through a hard reboot. Sudden power loss can make a mind invent pictures and put you inside them. It's common, and it will pass." },
+    { clip: 'fb1-aria-2', expression: 'bubbly',
+      text: "That print is only a station keepsake. You're a relief engineer, here to help us restore the station. Your file is clear. Shall we go down?" }
+  ],
+  ok: { clip: 'fb1-voss-ok', text: "…Right. Relief engineer. Let's go." }
+};
 
 // The lift answers to nobody but its manual emergency override — hardwired
 // with no network connection, so ARIA cannot open this one door the way she
@@ -278,6 +296,9 @@ export class Game {
     this.inventory.statusFor.torch = () => (this.currentLevel.flashlightOn ? 'ON' : 'OFF');
 
     this._wireLevel();
+    // ?flashback1: straight to the lift, everything before it done (=play: and look at the photo)
+    const fb1 = new URLSearchParams(window.location.search).get('flashback1');
+    if (fb1 !== null) this.currentLevel.ready.then(() => this._skipToLift(fb1 === 'play'));
 
     // Handle resize
     window.addEventListener('resize', () => this.onResize());
@@ -553,7 +574,7 @@ export class Game {
       this.mood.tension += (tension - this.mood.tension) * 0.03;
       return;
     }
-    else if (s === 'DEAD' || s === 'GAME_OVER') { mood = 'silence'; tension = 0.6; }
+    else if (s === 'DEAD' || s === 'GAME_OVER' || s === 'FLASHBACK') { mood = 'silence'; tension = 0.6; }
     else if (!this.level2Mode && s === 'PUZZLE') {
       // a blackout after an overload is silent; otherwise the pressure follows the countdown
       mood = this.puzzle.frozen ? 'silence' : 'pressure';
@@ -587,6 +608,7 @@ export class Game {
     level.onOpenRingPuzzle = () => this.enterRingPuzzle();
     level.onRingPuzzleSolved = () => this.onRingPuzzleSolved();
     level.onElevatorDepart = (seconds) => this.onElevatorDepart(seconds);
+    level.onLookAtPhoto = () => this.lookAtLiftPhoto();
   }
 
   onResize() {
@@ -832,6 +854,8 @@ export class Game {
       console.log('ACCESS GRANTED');
 
       this.currentLevel.openElevatorDoor?.();
+      // the flashback gets ready while he walks in (after the keypad has closed: it is a moment's work)
+      setTimeout(() => this._prepareFlashback(), 1200);
 
       this.ui.showToast('ACCESS GRANTED');
     } else {
@@ -933,6 +957,11 @@ export class Game {
       if (this.state !== 'PAUSED') this.mood?.update(Math.min(delta, 0.05));
       this._steerMusic();
       this.pauseMenu?.update(this.state);
+      // (a flashback draws its own scene instead of the level, which waits, frozen)
+      if (this.flashback?.running) {
+        this.flashback.render(this.renderer.instance);
+        return;
+      }
       if (this.level2Mode) {
         this.updateLevel2(Math.min(delta, 0.05));
       } else {
@@ -1006,7 +1035,8 @@ export class Game {
     const level = this.currentLevel;
 
     // Stage 0: Turn on Monitor, 1: talk to ARIA, 2: find the torch, 3: repair the circuit,
-    // 4: align the relay rings, 5: open the lift with the keypad, 6: ride the lift down
+    // 4: align the relay rings, 5: open the lift with the keypad, 6: look at the photograph in the
+    // lift (Flashback 1), 7: ride the lift down
     let stage;
     if (level.inCell) stage = 'cell';   // the starting cell: its objective changes within the stage
     else if (!level.ringPuzzleSolved) stage = 0;
@@ -1015,7 +1045,8 @@ export class Game {
     else if (!level.cablesFixed) stage = 3;
     else if (!level.relaySolved) stage = 4;
     else if (!level.doorOpened) stage = 5;
-    else stage = 6;
+    else if (!level.photoSeen) stage = 6;
+    else stage = 7;
 
     if (stage === 'cell') {
       const text = level.getCellObjective();
@@ -1318,6 +1349,120 @@ export class Game {
       this._overrideIntroSeen = true;
       await this.ariaSays(ARIA_OVERRIDE_LINES.tag);
     }
+  }
+
+  // ---------------------------------------------------------
+  // Flashback 1: the torn photograph in the lift. A headache, the memory (story/BriefingFlashback),
+  // the picture itself, then Voss and ARIA talk it away and the lift may go.
+  // ---------------------------------------------------------
+
+  // Build it ahead of time (once Voss's body has loaded, as the people are copies of it)
+  _prepareFlashback() {
+    if (this.flashback || this.level2Mode || this._flashbackDone) return this.flashback;
+    const body = this.controls?.character;
+    if (!body) return null;
+    if (!body.ready) {
+      body.whenReady.then(() => this._prepareFlashback());
+      return null;
+    }
+    const fb = (this.flashback = new BriefingFlashback(body));
+    fb.preload(this.renderer.instance).catch((e) => {
+      console.warn('Flashback 1 could not be set up; the lift goes on without it.', e);
+      if (this.flashback === fb && !fb.running) {
+        fb.dispose();
+        this.flashback = null;
+      }
+    });
+    return fb;
+  }
+
+  async lookAtLiftPhoto() {
+    const level = this.currentLevel;
+    if (this.state !== 'PLAYING' || this._flashbackBusy || level.photoSeen) return;
+    this._flashbackBusy = true;
+    this.state = 'FLASHBACK';
+    this.controls.stop();
+    this.reticle.classList.remove('visible');
+    this.ui.setPrompt(null);
+    this.ui.setWaypoint(null);
+    this.ui.setObjective(null);
+    this.ui.hideToast();
+    level.ariaManager?.skip();
+    const fb = this._prepareFlashback();
+
+    // he looks at it, and his head starts to pound
+    await this._turnCameraTo(level.liftPhoto.getWorldPosition(new THREE.Vector3()), 0.7);
+    const said = vossSays(this.ui, FLASHBACK1.head.text, FLASHBACK1.head.clip, { readMs: 2200 });
+    await Promise.all([said, fb ? fb.headache(this.renderer.composer) : sleep(2400)]);
+    this.ui.hideDialogue();
+
+    // the memory (if it is ready: it has had since the lift opened, and waits a little longer here
+    // behind the white)
+    if (fb) {
+      const ready = await Promise.race([fb.preload(this.renderer.instance).then(() => true, () => false), sleep(8000).then(() => false)]);
+      if (ready) {
+        await fb.play();
+        console.info('Flashback 1:', fb.stats.frames, 'frames,',
+          (fb.stats.frames / Math.max(0.001, fb.stats.seconds)).toFixed(1), 'fps on average, slowest',
+          Math.round(fb.stats.worst * 1000), 'ms');
+      }
+      fb.dispose();
+      if (this.flashback === fb) this.flashback = null;
+    }
+    this._flashbackDone = true;
+
+    // back in the lift
+    this.state = 'DIALOGUE';
+    await vossSays(this.ui, FLASHBACK1.who.text, FLASHBACK1.who.clip, { readMs: 2200 });
+    this.ui.hideDialogue();
+    for (const line of FLASHBACK1.aria) await this.ariaSays(line);
+    await vossSays(this.ui, FLASHBACK1.ok.text, FLASHBACK1.ok.clip, { readMs: 2600 });
+    this.ui.hideDialogue();
+
+    level.photoSeen = true;
+    level._rebuildInteractables();
+    this._flashbackBusy = false;
+    this.controls.instance.enabled = true;
+    this.reticle.classList.add('visible');
+    this.state = 'PLAYING';
+  }
+
+  // Turn Voss's view to a point, eased, over `seconds` (resolves when there)
+  _turnCameraTo(point, seconds) {
+    const cam = this.camera.instance;
+    const from = cam.quaternion.clone();
+    const to = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(cam.position, point, cam.up));
+    const start = performance.now();
+    return new Promise((resolve) => {
+      const step = () => {
+        const k = Math.min(1, (performance.now() - start) / (seconds * 1000));
+        cam.quaternion.slerpQuaternions(from, to, k * k * (3 - 2 * k));
+        if (k >= 1) return resolve();
+        requestAnimationFrame(step);
+      };
+      step();
+    });
+  }
+
+  // ?flashback1: Level 1 done up to the lift, Voss in its doorway facing the photograph
+  async _skipToLift(play) {
+    const level = this.currentLevel;
+    level.debugSkipToLift();
+    this._tutorialSeen = true;
+    this._overrideIntroSeen = true;
+    if (this.intro) this.intro.firstAriaSaid = true;
+    this.inventory.add('torch');
+    this.hud.setTorch(true, false);
+    const at = new THREE.Vector3(), look = new THREE.Vector3();
+    if (level.liftViewpoint(this.controls.eyeHeight ?? 2.6, at, look)) {
+      this.camera.instance.position.copy(at);
+      this.camera.instance.lookAt(look);
+    }
+    this._prepareFlashback();
+    if (!play) return;
+    while (this.state !== 'PLAYING') await sleep(200);
+    await sleep(600);
+    this.lookAtLiftPhoto();
   }
 
   // ---------------------------------------------------------

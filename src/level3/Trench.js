@@ -78,6 +78,8 @@ export class Trench {
     this.huntNo = 0;
     this.showNo = 0;
     this.step = 0;
+    this._postBossDescentPlayed = false;
+    this._relayBriefingDone = false;
     this.time = 0;
     this.shake = 0;
     this.checkpoint = null;          // where ARIA restores him (null: the platform)
@@ -139,7 +141,7 @@ export class Trench {
     const it = this.s.interact, p = this.pts;
     it.add({ id: 'relayScreen', position: p.screen, radius: 0.8, reach: 3.2,
       label: 'Access ARIA uplink terminal',
-      when: () => this.stage === 'inside' && this.fight?.free && !this._uplinkOverridden,
+      when: () => this.stage === 'inside' && this.fight?.free && this._relayBriefingDone && !this._uplinkOverridden,
       use: () => this._openHack() });
   }
 
@@ -168,8 +170,8 @@ export class Trench {
       this._uplinkOverridden = true;
       this._screenText = ['ARIA OVERRIDE ACCEPTED', 'CABLE UPLINK CONTROL: TRANSFERRED'];
       this._drawSign();
-      this.game.ui.showToast('ARIA uplink overridden. Cable control transferred.', 6000);
       close();
+      this.s.say('relayWon');
     };
     window.addEventListener('message', onMessage);
     shade.querySelector('.l3-hack-close').addEventListener('click', close);
@@ -496,7 +498,6 @@ export class Trench {
     this.step = 0;
     this.works.openShaft();
     this.checkpoint = this.pts.shaftTop.clone();
-    this.s.say('krakenGone');
     this.game.ui.showToast("It's gone, down into the rock. The shaft's cover is open: get down to the relay.", 6000);
   }
 
@@ -577,12 +578,23 @@ export class Trench {
         const chest = this._chest.set(p.x, p.y + 1.1, p.z);
         if (at && at.distanceTo(chest) < (this.step === 0 ? 3.2 : 3.0)) {
           this.step++;
+          if (this.step === 1 && !this._postBossDescentPlayed) {
+            this._postBossDescentPlayed = true;
+            this._postBossDescentPromise = this.s.say('postBossDescent');
+          }
           if (this.step === 2) this.checkpoint = P.shaftBottom.clone();
         }
         if (Math.hypot(p.x - P.inside.x, p.z - P.inside.z) < 3.8 && Math.abs(p.y - P.inside.y) < 3) {
           this.stage = 'inside';
           this.checkpoint = P.inside.clone().add(new THREE.Vector3(0, 0.3, 0));
           RELAY.enter?.(this);
+          this._relayBriefingDone = false;
+          (this._postBossDescentPromise || Promise.resolve()).then(() => {
+            if (this.s.disposed || this.stage !== 'inside') return false;
+            return this.s.say('relayLinkCut');
+          }).then(() => {
+            if (!this.s.disposed && this.stage === 'inside') this._relayBriefingDone = true;
+          });
         }
         break;
       }

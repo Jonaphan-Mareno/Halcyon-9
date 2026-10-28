@@ -462,6 +462,7 @@ export class DeckSession {
     fight.state = 'gone';
     fight.kraken.root.visible = false;
     trench.stage = 'inside';
+    trench._relayBriefingDone = true;
     trench._open('front');
     trench._showBoss(false);
     // Hide the deck and activate the sea environment: this spawn is far beyond the outer hatch,

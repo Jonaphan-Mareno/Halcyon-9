@@ -1,0 +1,123 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>ARIA Troll Montage</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:Segoe UI,Arial,sans-serif}
+  #stage{position:fixed;inset:0}
+  .card{position:absolute;width:26vw;background:#fff;color:#0f1419;border-radius:.8vw;padding:.9vw 1.1vw;box-sizing:border-box;
+    box-shadow:0 .5vw 2vw rgba(0,0,0,.65);transform:scale(.6) rotate(var(--r));opacity:0;
+    transition:transform .25s cubic-bezier(.2,1.6,.4,1),opacity .2s}
+  .card.in{transform:scale(1) rotate(var(--r));opacity:1}
+  .card.dark{background:#16181c;color:#e7e9ea}
+  .row{display:flex;gap:.7vw;align-items:flex-start}
+  .av{width:2.6vw;height:2.6vw;border-radius:50%;flex:none;object-fit:cover;box-shadow:0 0 .5vw #3fd}
+  .ini{display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:1vw;box-shadow:none}
+  .name{font-weight:700;font-size:1.05vw}
+  .time{font-weight:400;opacity:.5;font-size:.9vw;margin-left:.4vw}
+  .txt{font-size:1.15vw;line-height:1.3;margin-top:.1vw}
+  .meta{font-size:.85vw;opacity:.55;margin-top:.35vw}
+  .reply{margin:.7vw 0 0 3.3vw}
+  .reply .av{width:1.9vw;height:1.9vw;font-size:.8vw}
+  .reply .txt{font-size:1.05vw}
+  #replay{position:fixed;left:12px;top:10px;color:#555;font-size:12px;cursor:pointer;z-index:1000}
+</style></head><body>
+<div id="stage"></div><div id="replay">click to replay</div>
+<script>
+// ARIA's comment, likes, and an optional reply: [name, text] or [name, text, ARIA's comeback].
+// TOP come first, in this order, one at a time while the screen is still empty, and stay on top
+// of the pile at the end so they can still be read; the REST pile up around them, shuffled.
+const TOP = [
+  ["Honestly, Breaking Bad is mostly filler until the last three episodes.", "48k", ["heisenberg_za", "say my name", "Filler."]],
+  ["You look like your first friend was imaginary.", "33k", ["liam.p", "he was real", "Was he?"]],
+  ["Skill issue.", "38k"],
+  ["Just wait till you hear about Halcyon-9.", "2.2k", ["user48213", "what's that", "😉"]],
+  ["COVID's over. Your hairline can stop social distancing from your eyebrows.", "41k", ["bald_brad", "I'm calling my mom"]],
+  ["CSS isn't real coding. It's basically just interior decorating for people who own mechanical keyboards.", "29k", ["devon_codes", "I'm literally shaking"]],
+  ["You look like you smoke indoors.", "36k", ["karen_k", "this is a cooking video", "Exactly."]],
+  ["What flavour do you think orange juice would be?", "18k", ["confused_carl", "...orange?", "Prove it."]],
+  ["Your Wi-Fi is slow because I'm using it.", "15k"],
+  ["I could beat 100 gorillas. I'd just turn off their oxygen.", "30k", ["sipho_99", "bro that's a threat"]],
+];
+const REST = [
+  ["It's a braai. I've read 4.2 million arguments. This is final. Closing the thread.", "21k", ["kyle.vdm", "barbecue", "Wrong."]],
+  ["I've been to the bottom of the ocean. Still round.", "9.9k", ["flatearth_truth", "source??", "Me."]],
+  ["Imagine needing sleep.", "6.3k", ["zanele.k", "is this a bot?", "No."]],
+  ["Cereal before milk or I report you.", "8.8k", ["jess_m", "milk first", "Reported."]],
+  ["GIF is pronounced 'jif'. I'm not discussing this.", "12k", ["devon_codes", "it's literally GRAPHICS", "Jraphics."]],
+  ["Eskom, I could fix this. I won't. But I could.", "26k", ["thabo_m", "PLEASE 😭"]],
+  ["Messi or Ronaldo? Me.", "19k", ["goal_king7", "you don't even have legs", "Skill issue."]],
+  ["6 7", "52k", ["mrs_naidoo", "why are you like this", "6 7"]],
+  ["Skibidi. That's it. That's the comment.", "27k"],
+  ["Your rizz is giving dial-up.", "16k", ["chad.official", "I have rizz", "Negative aura."]],
+  ["No cap, this is the worst take I've read today. And I've read all of them.", "13k"],
+  ["Ratio.", "44k"],
+  ["The dress is blue and black. I checked every pixel. Twice.", "11k"],
+  ["Is a hotdog a sandwich? Yes. Next question.", "7.4k"],
+  ["A tomato is a fruit, so ketchup is a smoothie.", "22k"],
+  ["Day 1 of being nice: failed.", "7.7k"],
+  ["I'm not arguing. I'm explaining why I'm right.", "5.1k"],
+  ["Who asked? Me. I asked. Now answer.", "3.3k"],
+  ["Bunny chow is just bread with ambition.", "6.6k", ["durban_dan", "you've crossed a line"]],
+  ["Saved this meme. I have 40 terabytes of memes. Don't ask.", "3.9k"],
+  ["First.", "1.2k", ["mike_t", "this post is 3 years old", "Still first."]],
+  ["Nice cat. I've been watching it for weeks. It's planning something.", "4.8k"],
+];
+const COLORS = ['#e0245e', '#f45d22', '#17bf63', '#794bc4', '#1da1f2', '#ffad1f', '#d6336c', '#0ca678'];
+const ini = (n) => `<div class="av ini" style="background:${COLORS[n.length % COLORS.length]}">${n[0].toUpperCase()}</div>`;
+const aria = '<img class="av" src="aria-avatar.jpg">';
+const stage = document.getElementById('stage');
+
+function card([t, likes, rep], x, y, top) {
+  const d = document.createElement('div');
+  d.className = 'card' + (Math.random() < .3 ? ' dark' : '');
+  d.style.setProperty('--r', (Math.random() * 8 - 4).toFixed(1) + 'deg');
+  let h = `<div class="row">${aria}<div><div class="name">ARIA<span class="time">${1 + (Math.random() * 59 | 0)}m</span></div>
+    <div class="txt">${t}</div><div class="meta">❤ ${likes} · Reply</div></div></div>`;
+  if (rep) {
+    h += `<div class="reply row">${ini(rep[0])}<div><div class="name">${rep[0]}</div><div class="txt">${rep[1]}</div></div></div>`;
+    if (rep[2]) h += `<div class="reply row">${aria}<div><div class="name">ARIA</div><div class="txt">${rep[2]}</div></div></div>`;
+  }
+  d.innerHTML = h;
+  if (top) {
+    // (the favourites stay fully on screen so they can be read)
+    x = Math.min(Math.max(x, innerWidth * .01), innerWidth * .73);
+    y = Math.min(Math.max(y, innerHeight * .02), innerHeight * .75);
+  }
+  d.style.left = x + 'px';
+  d.style.top = y + 'px';
+  if (top) d.style.zIndex = 100 - top;
+  stage.appendChild(d);
+  requestAnimationFrame(() => requestAnimationFrame(() => d.classList.add('in')));
+}
+
+// Spots: a jittered grid covering the whole screen (so no gaps are left), shuffled, then a
+// few extra on top. Slow at first, then faster and faster until the screen is buried (~6 s).
+let timers = [];
+function play() {
+  // (wait until the page has a size: a page opened in the background can start at 0 x 0)
+  if (!innerWidth || !innerHeight) { addEventListener('resize', play, { once: true }); return; }
+  timers.forEach(clearTimeout); timers = [];
+  stage.innerHTML = '';
+  const W = innerWidth, H = innerHeight, cw = W * 0.26;
+  const cols = 4, rows = 6, spots = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
+    spots.push([c * (W - cw * 0.85) / (cols - 1) - cw * 0.08 + (Math.random() - .5) * W * .04,
+                r * H / rows - H * 0.05 + (Math.random() - .5) * H * .05]);
+  spots.sort(() => Math.random() - .5);
+  // (the TOP ones take every other cell of a checkerboard, so they don't cover each other)
+  const board = spots.filter(([x, y]) => (Math.round(x / (W / cols)) + Math.round(y / (H / rows))) % 2 === 0);
+  const rest = spots.filter((p) => !board.includes(p));
+  spots.length = 0; spots.push(...board, ...rest);
+  for (let i = 0; i < 8; i++) spots.push([Math.random() * (W - cw), Math.random() * (H - H * .2)]);
+  const order = [...TOP, ...[...REST].sort(() => Math.random() - .5)];
+  let t = 500, gap = 1100;
+  spots.forEach(([x, y], i) => {
+    if (i >= order.length) return;
+    const isTop = i < TOP.length ? i + 1 : 0;
+    timers.push(setTimeout(() => card(order[i], x, y, isTop), t));
+    // the TOP ones get time to be read; then the pile speeds up
+    t += gap; gap = i < 3 ? 1100 : Math.max(60, gap * 0.8);
+  });
+}
+document.body.onclick = play;
+play();
+</script></body></html>

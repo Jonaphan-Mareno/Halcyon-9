@@ -62,14 +62,15 @@ export const CLIPS = {
   hatch: DIR + 'sound-effects/hatch-opening.mp3',                       // Level 2's hatch lid landing open
   krakenScream: DIR + 'sound-effects/kraken-screaming.mp3',             // many voices, over the kraken's screams
   cellDoor: DIR + 'sound-effects/opening-cell-door.mp3',                // Level 1's cell door
-  flicker: DIR + 'sound-effects/freesound_community-lights-flicker-on-and-some-electrical-noises-33079.mp3', // its dying lights
   paper: DIR + 'sound-effects/floraphonic-paper-collect-7-186721.mp3',  // picking up or looking at paper, a photo
   tech: DIR + 'sound-effects/button-press-tech.mp3',                    // pressing a machine's button: a log, a terminal, a panel
-  ding: DIR + 'sound-effects/frigginmouse-ding-dong-new-267803.mp3'     // the lift's doors opening or closing
+  ding: DIR + 'sound-effects/frigginmouse-ding-dong-new-267803.mp3', // the lift's doors opening or closing
+  robot: DIR + 'sound-effects/freesound_community-robot-noises-70217.mp3', // Level 2's garden robots, looped while one is up
+  hum: DIR + 'sfx/l3/machine-hum.ogg'          // a machine's hum (the arm's breaker panel, under its puzzle)
 };
 
 // One of them looped without a gap (through Web Audio, so a quiet recording can be turned up past
-// full): returns { stop(fade), pause(), resume() }. Nothing plays until it has loaded.
+// full): returns { stop(fade), pause(), resume(), setGain(g), setRate(r) }. Nothing plays until it has loaded.
 let loopCtx = null;
 export function loopClip(url, gain = 1) {
   loopCtx ??= new (window.AudioContext || window.webkitAudioContext)();
@@ -77,12 +78,13 @@ export function loopClip(url, gain = 1) {
   const out = ctx.createGain();
   out.gain.value = 0;
   out.connect(ctx.destination);
-  let src = null, stopped = false;
+  let src = null, stopped = false, rate = 1;
   fetch(audioSrc(url)).then((r) => r.arrayBuffer()).then((b) => ctx.decodeAudioData(b)).then((buf) => {
     if (stopped) return;
     src = ctx.createBufferSource();
     src.buffer = buf;
     src.loop = true;
+    src.playbackRate.value = rate;
     src.connect(out);
     src.start();
     out.gain.setTargetAtTime(gain, ctx.currentTime, 0.4);
@@ -95,7 +97,11 @@ export function loopClip(url, gain = 1) {
       setTimeout(() => { try { src?.stop(); } catch { /* not started */ } out.disconnect(); }, fade * 1000 + 200);
     },
     pause() { out.gain.setTargetAtTime(0, ctx.currentTime, 0.05); },
-    resume() { if (!stopped) out.gain.setTargetAtTime(gain, ctx.currentTime, 0.2); }
+    resume() { if (!stopped) out.gain.setTargetAtTime(gain, ctx.currentTime, 0.2); },
+    // (a new level, eased: for a sound that gets louder as he gets closer)
+    setGain(g) { gain = g; if (!stopped && src) out.gain.setTargetAtTime(g, ctx.currentTime, 0.1); },
+    // (its speed, and so its pitch, eased: a machine straining or winding down)
+    setRate(r, ease = 0.15) { rate = r; if (!stopped && src) src.playbackRate.setTargetAtTime(r, ctx.currentTime, ease); }
   };
 }
 

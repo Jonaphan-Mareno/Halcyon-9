@@ -1,4 +1,4 @@
-import { playClip, preloadAudio, loopClip, CLIPS } from '../audio/AudioCache.js';
+import { playClip, preloadAudio, CLIPS } from '../audio/AudioCache.js';
 import * as THREE from "three";
 import { createGLTFLoader } from '../core/loaders.js';
 import { Shaders } from "../graphics/Shaders";
@@ -77,7 +77,6 @@ const BRICK_THROW_SPEED = 15;
 const GRAVITY = 9.8;
 const HANDLE_RANGE = 1.5;            // reaching through the broken window to the far-side handle:
                                      // he steps up the rest of the way (HandleReach)
-const TAG_WAYPOINT_RANGE = 4;        // after the hint, how close Voss gets before the waypoint points at the tag
 // The torn photograph on the lift's back wall (Flashback 1): from public/, made by
 // scripts/flashback1-photo. Voss must look at it before the lift will go down.
 const LIFT_PHOTO = './assets/textures/flashback1/briefing-photo.webp';
@@ -110,7 +109,7 @@ export class Level1{
     this.maintenanceTag = null;    // the override-code tag pinned to the console bank
     this.tagRead = false;          // Voss has read the tag (waypoint hands back to the keypad)
     this.tagHintGiven = false;     // set by the Game: ARIA has told Voss to look for the tag
-    this._tagNear = false;         // latched once Voss is near the tag (after the hint)
+    this.keypadSeen = false;       // set by the Game: he has looked at the keypad once
     this.doorMixer = null;
     this.doorActions = [];
     this.doorOpened = false;
@@ -1124,6 +1123,15 @@ onRingPuzzleComplete() {
   // ?flashback1 (a test link): everything up to the lift done at once, quietly (no ARIA lines),
   // with the doors open. The Game puts Voss in the doorway.
   debugSkipToLift() {
+    this.debugSkipToKeypad();
+    this.tagRead = true;
+    this.openElevatorDoor();
+    this._rebuildInteractables();
+  }
+
+  // ?keypad (a test link): the cell, ARIA's talk, the torch, the generator and the relay rings all
+  // done; the keypad is powered and the tag not yet read
+  debugSkipToKeypad() {
     if (this.inCell) this._leaveCell();
     if (!this.ringPuzzleSolved) {
       this.ringPuzzleSolved = true;
@@ -1137,8 +1145,6 @@ onRingPuzzleComplete() {
     this.relaySolved = true;
     this.powerTarget = 1;
     this._setKeypadPowered(true);
-    this.tagRead = true;
-    this.openElevatorDoor();
     this._rebuildInteractables();
   }
 
@@ -1463,7 +1469,7 @@ onRingPuzzleComplete() {
     tag.rotation.set(-Math.PI / 2, 0, 0.1);
 
     tag.userData.interactionType = 'tag';
-    tag.userData.maxInteractionDistance = 2.6;
+    tag.userData.maxInteractionDistance = 3.6;
 
     const note = new THREE.Mesh(
       new THREE.PlaneGeometry(0.26, 0.17),
@@ -1471,6 +1477,15 @@ onRingPuzzleComplete() {
     );
     note.name = 'MaintenanceTagFace';
     tag.add(note);
+
+    // The tag is small and easy to miss: an invisible, much bigger box round it takes the aim, so
+    // anywhere near it will do
+    const grab = new THREE.Mesh(
+      new THREE.BoxGeometry(0.8, 0.65, 0.5),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    grab.name = 'MaintenanceTagGrab';
+    tag.add(grab);
 
     // Raycast should hit the group via parent traversal
     tag.traverse((child) => {
@@ -1932,19 +1947,6 @@ onRingPuzzleComplete() {
     }
   }
 
-  // True once Voss has come within TAG_WAYPOINT_RANGE of the tag after ARIA's
-  // hint AND has it in sight — the waypoint only confirms the tag once Voss is
-  // close enough to be looking at it (the desk is behind ARIA's wall, so mere
-  // proximity would latch the marker through the wall). Latches: the marker
-  // must not flip back to the keypad whenever Voss steps away again.
-  _tagSpotted() {
-    if (!this._tagNear && this.camera && this.maintenanceTag) {
-      const d = this.camera.position.distanceTo(this.maintenanceTag.position);
-      this._tagNear = d < TAG_WAYPOINT_RANGE && this._clearLineTo(this.maintenanceTag.position, d);
-    }
-    return this._tagNear;
-  }
-
   // What the on-screen waypoint should point at right now (or null)
   getWaypoint() {
     if (this.inCell) return this._cellWaypoint();
@@ -1970,13 +1972,11 @@ onRingPuzzleComplete() {
       // ARIA says anything. After her hint, once Voss is near enough to spot
       // the tag, the marker confirms it — latched — until the tag has been
       // read, then it is back to the keypad for the real code
-      if (!this.tagRead && this.maintenanceTag && this.tagHintGiven && this._tagSpotted()) {
-        w.position.copy(this.maintenanceTag.position);
-        w.label = 'Tag';
-      } else {
-        w.position.copy(this.keypad.position);
-        w.label = 'Keypad';
-      }
+      // Once he has looked at the keypad, no marker until he has read the tag: he looks round the
+      // room for the code himself. Then it is back to the keypad.
+      if (this.keypadSeen && !this.tagRead) return null;
+      w.position.copy(this.keypad.position);
+      w.label = 'Keypad';
     } else if (this.doorOpened && !this.photoSeen && this.liftPhoto) {
       this.liftPhoto.getWorldPosition(w.position);
       w.label = 'Photograph';
@@ -2263,6 +2263,19 @@ onRingPuzzleComplete() {
     this.brickHeld = false;
     this.brickFlying = true;
     this._brickNudgeDir = null;
+    // Up close the brick in his hand is already past the glass (it is held out in front of his
+    // eyes), so its flight would start on the far side and miss it: test from his eyes instead,
+    // and if the window is between them and the brick, it breaks now
+    const w = this.window;
+    if (w && !w.broken && this.brick) {
+      this._rc.set(cam.position, this._tmpA);
+      const entry = this._rc.ray.intersectBox(w.box, this._tmpC);
+      if (entry && cam.position.distanceTo(entry) <= cam.position.distanceTo(this.brick.position) + 0.4) {
+        this.brick.position.copy(entry);
+        this.shatterWindow(entry.clone());
+        this._brickVel.multiplyScalar(0.2);   // the glass takes most of its speed
+      }
+    }
   }
 
   // Called by the Game for a click or E while something is in Voss's hands.
@@ -2899,13 +2912,6 @@ onRingPuzzleComplete() {
     this.doorMixer?.update(delta);
     this.time += delta;
     this.power += (this.powerTarget - this.power) * Math.min(1, delta * 1.5);
-    // the dying lights buzz and crackle until the power comes back on
-    if (!this._buzz && this.powerTarget < 0.99 && !this._buzzDone) this._buzz = loopClip(CLIPS.flicker, 3.5);
-    if (this._buzz && this.powerTarget >= 0.99) {
-      this._buzz.stop(2.5);
-      this._buzz = null;
-      this._buzzDone = true;
-    }
     if (this.ariaManager) {
       this.ariaManager.update(delta, playerPosition);
     }

@@ -120,7 +120,7 @@ export class Inventory {
           <div><span>Puzzles solved</span><b>${player.puzzlesSolved}</b></div>
           <div><span>Time played</span><b>${formatTime(player.playSeconds)}</b></div>
         </div>
-        <div class="inv-help">Health: if it reaches zero you lose a life and ARIA revives you. No lives left means game over.</div>
+        <div class="inv-help">Health: if it runs out you lose a life and ARIA brings you back. Lose all three lives and the level starts again.</div>
         <div class="inv-objective"><span>Current objective</span> ${objective || '-'}</div>
       </div>`;
   }

@@ -120,9 +120,6 @@
 .loading-bar div { width: 40%; height: 100%; background: var(--primary-color); animation: loading-sweep 1.3s ease-in-out infinite; }
 @keyframes loading-sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 
-/* Level 2 works like It Takes Two: dying restarts the course, so there are no lives to show */
-#hud .hud-row:nth-of-type(2) { display: none; }
-
 /* the garden fight's controls (FightHelp.js), under the objective */
 #fight-help {
   position: absolute;
@@ -322,6 +319,9 @@
   font-family: "Courier New", monospace;
 }
 #code-note.visible { display: block; }
+#code-note { background: none; border: none; padding: 0; }
+#code-note .cn-label { display: none; }
+#code-note .cn-paper { display: block; width: 230px; margin-top: 0.4rem; transform: rotate(-2deg); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6); }
 .cn-label { font-size: 0.65rem; letter-spacing: 0.25rem; color: #ffd23f; opacity: 0.85; }
 .cn-code { margin-top: 0.25rem; font-size: 1.6rem; letter-spacing: 0.45rem; color: #fff3c4; text-shadow: 0 0 10px rgba(255, 210, 63, 0.5); }
 

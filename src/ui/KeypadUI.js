@@ -44,9 +44,10 @@ export class KeypadUI {
             class="keypad-close"
             type="button"
             data-action="cancel"
-            aria-label="Leave keypad"
+            aria-label="Close keypad"
+            title="Close (E)"
           >
-            ESC
+            ✕
           </button>
         </div>
 
@@ -107,7 +108,7 @@ export class KeypadUI {
         <div class="keypad-footer">
           NUMBERS / BACKSPACE / ENTER
           &nbsp;•&nbsp;
-          ESC TO LEAVE
+          E OR ✕ TO CLOSE
         </div>
       </div>
     `;

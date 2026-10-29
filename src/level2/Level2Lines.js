@@ -33,7 +33,7 @@ export const LINES = {
   'v-trying': voss('...Trying?', 'l2lift-1'),
   'l2-lift-3': aria('guarded', "Oh, you know how it is. Deep-sea living is a work in progress. Go on, have a look around."),
   'l2-visor-1': aria('guarded', "The lights are too badly damaged to repair. I can't bring them back, Voss."),
-  'l2-visor-2': aria('bubbly', "Put on your special glasses. Press V to switch views. The visor links to the overhead drone, so you can see yourself through its camera.It'll also allow you to see me at all times"),
+  'l2-visor-2': aria('bubbly', "Put on your special glasses. Press V to switch views. The visor links to the overhead drone, so you can see yourself through its camera."),
   'l2-lift-4': aria('sly', 'The hatch is just right up ahead.'),
   // her warning about the drones, before the doors open (the fight's controls are on screen)
   'l2-lift-5': aria('guarded', "Oh, and Voss? Before I open the doors: the garden's maintenance drones have been acting up since the water got in."),

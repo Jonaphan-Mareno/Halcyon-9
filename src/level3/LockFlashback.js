@@ -1420,10 +1420,12 @@ export class LockFlashback {
       this._sources.push(src);
       return { src, gain: g };
     };
-    // the engines' hum: the room's file, and a low tone under it; at the cut both run down and die
-    const hum = play('machine-hum', 0, { vol: 0.55, loop: true, lp: 2400 });
+    // the engines' hum: the room's file, and a low tone under it; at the cut both run down and die.
+    // Barely there (it sounded like rushing air over Kessler's lines)
+    const HUM = 0.05, LOW = 0.03;
+    const hum = play('machine-hum', 0, { vol: HUM, loop: true, lp: 1600 });
     const hz = ac.createGain();
-    hz.gain.value = 0.22;
+    hz.gain.value = LOW;
     hz.connect(fx);
     for (const [f, type, g] of [[50, 'sine', 0.7], [100, 'triangle', 0.25], [150, 'sine', 0.12]]) {
       const o = ac.createOscillator();
@@ -1438,12 +1440,12 @@ export class LockFlashback {
       o.stop(at + T.cut + 3.2);
       this._sources.push(o);
     }
-    hz.gain.setValueAtTime(0.22, at + T.cut);
+    hz.gain.setValueAtTime(LOW, at + T.cut);
     hz.gain.exponentialRampToValueAtTime(0.0005, at + T.cut + 2.8);
     if (hum) {
       hum.src.playbackRate.setValueAtTime(1, at + T.cut);
       hum.src.playbackRate.exponentialRampToValueAtTime(0.35, at + T.cut + 2.6);
-      hum.gain.gain.setValueAtTime(0.55, at + T.cut);
+      hum.gain.gain.setValueAtTime(HUM, at + T.cut);
       hum.gain.gain.exponentialRampToValueAtTime(0.001, at + T.cut + 2.6);
     }
     // the wrench, the feed parting: a heavy clunk, relays clicking as the lights go

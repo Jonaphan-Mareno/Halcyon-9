@@ -49,11 +49,13 @@ export class HUD {
       <div class="tut-panel">
         <div class="tut-title">HOW THIS WORKS</div>
         <div class="tut-item"><b class="tut-health">HEALTH</b>
-          <span>The green bar in the bottom-left. Electric shocks, live fuses and generator overloads drain it.</span></div>
+          <span>The bar in the bottom-left. Getting hurt drains it. If it runs out, you lose a life.</span></div>
+        <div class="tut-item"><b class="tut-lives">LIVES</b>
+          <span>The three dots under it. Lose a life and ARIA brings you back right where you were, with full health. Lose all three and the level starts again.</span></div>
         <div class="tut-item"><b class="tut-key">F</b>
           <span>Switch your torch on or off, once you have found it. It sits in the bottom-right corner.</span></div>
         <div class="tut-item"><b class="tut-key">I</b>
-          <span>Open your inventory: what you are carrying, your health, and your stats.</span></div>
+          <span>Open your inventory: what you are carrying, your health and lives, and your stats.</span></div>
         <div class="tut-continue">Press Space, Enter or click to continue</div>
       </div>`;
 

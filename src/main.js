@@ -12,7 +12,7 @@ if (import.meta.env.DEV) window.__game = game;   // for poking at from the dev c
 const params = new URLSearchParams(window.location.search);
 // The opening cinematic plays as soon as the page loads, with no menu. It is skipped for the
 // test links (?level=2, ?level=3, ?flashback1...) and with ?nointro, which keep the old start screen.
-const classic = params.has('level') || params.has('nointro') || params.has('flashback1');
+const classic = params.has('level') || params.has('nointro') || params.has('flashback1') || params.has('keypad');
 
 // The old start screen: a WAKE UP button, whose click starts the game and takes the mouse
 function setUpStartScreen() {

@@ -25,7 +25,7 @@ import { MoodLight } from './graphics/MoodLight.js';
 import { CircuitPuzzle } from './puzzles/CircuitPuzzle.js';
 import { PlayerStats } from './player/PlayerStats.js';
 import { vossVoice, vossSays } from './audio/VossVoice.js';
-import { preloadVoices } from './audio/AudioCache.js';
+import { preloadVoices, playClip } from './audio/AudioCache.js';
 import { BriefingFlashback } from './story/BriefingFlashback.js';
 
 // The goal shown top-left for each stage of the opening
@@ -110,6 +110,8 @@ const ARIA_RESTORE_LINES = [
     text: "Hm, that backup was a little rough around the edges. Please be careful, Voss. That was my last one!" }
 ];
 const ARIA_GAME_OVER_TEXT = "Backup... corrupted. I am so sorry, Voss. I really did try.";
+// (her recording, if there is one: public/assets/audio/aria/game-over.mp3)
+const ARIA_GAME_OVER_CLIP = './assets/audio/aria/game-over.mp3';
 
 // Flashback 1 (the photograph in the lift): what Voss says, and ARIA's answer. She is smooth and a
 // little too reassuring, and says nothing of cycles, wipes or the crew. (Voss's recordings are in
@@ -136,7 +138,7 @@ const ARIA_OVERRIDE_LINES = {
   // Said the first time Voss reads the maintenance tag
   tag: {
     clip: 'override-1', expression: 'sly',
-    text: "Ah, you found the override tag! Hardwired. No network, no me. If the station's systems fail, a human types the code in by hand. Which, given the circumstances, is now you."
+    text: "Ah, you found the keypad override tag!"
   },
   // Said after a wrong code at the keypad
   hint: {
@@ -299,6 +301,8 @@ export class Game {
     // ?flashback1: straight to the lift, everything before it done (=play: and look at the photo)
     const fb1 = new URLSearchParams(window.location.search).get('flashback1');
     if (fb1 !== null) this.currentLevel.ready.then(() => this._skipToLift(fb1 === 'play'));
+    // ?keypad: every puzzle before the lift's keypad done, standing in front of it
+    if (new URLSearchParams(window.location.search).has('keypad')) this.currentLevel.ready.then(() => this._skipToKeypad());
 
     // Handle resize
     window.addEventListener('resize', () => this.onResize());
@@ -367,6 +371,32 @@ export class Game {
   enterLevel3() {
     if (this._toLevel3) return;
     this._toLevel3 = true;
+    this._swapSession('3');
+  }
+
+  // All his lives spent in Level 2 or 3: ARIA's last words, then the level from its beginning
+  // (the RESTART button on the game over screen)
+  sessionGameOver(hud, player) {
+    hud.showDeath('SIGNAL LOST', 'Your health ran out...');
+    setTimeout(() => {
+      if (!this.level2 || this.level2.disposed) return;
+      hud.hideDeath();
+      this.state = 'GAME_OVER';
+      this.level2.controls?.instance?.unlock?.();
+      document.exitPointerLock?.();
+      playClip(ARIA_GAME_OVER_CLIP, 1);
+      hud.showGameOver(ARIA_GAME_OVER_TEXT,
+        `Times revived ${player.deaths}   |   Time ${formatTime(player.playSeconds)}`);
+    }, 2200);
+  }
+
+  restartSession() {
+    this._swapSession(this.startLevel);
+  }
+
+  // The running Level 2 or 3 session torn down (its scene, physics, listeners and screens) and
+  // a fresh one of the given kind built in its place
+  _swapSession(kind) {
     this.state = 'DEPARTING';
     this.level2?.dispose?.();
     this.level2 = null;
@@ -383,7 +413,7 @@ export class Game {
     this.ui.setWaypoint(null);
     this.ui.setPrompt(null);
     this.state = 'PLAYING';
-    this._mountLevel2('3');
+    this._mountLevel2(kind);
   }
 
   // ---------------------------------------------------------
@@ -675,19 +705,15 @@ export class Game {
       .catch((e) => console.warn('Level 1: shaders not precompiled.', e));
   }
 
-  // The eyes are open: a moment later he asks where he is, looking slowly round the cell, then he
-  // is handed over
+  // The eyes are open: a moment later he looks slowly round the cell (in silence), then he is
+  // handed over
   async endOpeningWake() {
     if (this._wakeEnding) return;
     this._wakeEnding = true;
     if (this.music) this.music.muted = this._musicWasMuted;
-    if (this.state === 'WAKING' && this.controls && this.intro) {
-      await sleep(1500);
-      const look = this._lookRound(4.2);
-      await vossSays(this.ui, INTRO_LINES[0].voss, 'intro-line-1', { timed: true });
-      this.ui.hideDialogue();
-      this.intro.wakeLineSaid = true;
-      await look;
+    if (this.state === 'WAKING' && this.controls) {
+      await sleep(1000);
+      await this._lookRound(3.6);
     }
     if (this.controls) this.controls.instance.enabled = true;
     if (this.state === 'WAKING') {
@@ -763,6 +789,7 @@ export class Game {
     this.controls.instance.unlock();
 
     this.state = 'KEYPAD';
+    this.currentLevel.keypadSeen = true;      // (from now on he looks round for the code himself: no marker)
 
     this.reticle.classList.remove('visible');
     this.ui.setPrompt(null);
@@ -895,6 +922,7 @@ export class Game {
 
     if (code === ELEVATOR_ACCESS_CODE) {
       console.log('ACCESS GRANTED');
+      this._hideCodeNote();
 
       this.currentLevel.openElevatorDoor?.();
       // the flashback gets ready while he walks in (after the keypad has closed: it is a moment's work)
@@ -1160,8 +1188,18 @@ export class Game {
     this._reticleTick = (this._reticleTick + 1) % 3;
     if (this._reticleTick !== 0) return;
     const hit = this._pickInteractable();
+    const level = this.currentLevel;
+    // The photograph in the lift needs no button: looking at it is enough (held for a moment, so a
+    // glance across it while turning does not set it off)
+    if (hit && hit.object === level.liftPhoto && level.canInteract?.(hit.object, hit.distance)) {
+      this._photoGaze = (this._photoGaze || 0) + 1;
+      if (this._photoGaze >= 6 && this.state === 'PLAYING') this.lookAtLiftPhoto();
+      this.ui.setPrompt(null);
+      return;
+    }
+    this._photoGaze = 0;
     this.reticle.classList.toggle('active', !!hit);
-    this.ui.setPrompt(hit ? this.currentLevel.getInteractPrompt?.(hit.object, hit.distance) : null);
+    this.ui.setPrompt(hit ? level.getInteractPrompt?.(hit.object, hit.distance) : null);
   }
 
   // What the player is aiming at. The exact ray under the crosshair first; if it misses, aim
@@ -1264,7 +1302,8 @@ export class Game {
     const confirm = event.code === 'Space' || event.code === 'Enter' || event.code === 'KeyE';
 
     if (this.state === 'KEYPAD') {
-      if (event.code === 'Escape') {
+      // (E, or the ✕ on the keypad, closes it)
+      if (event.code === 'KeyE' && !event.repeat) {
         event.preventDefault();
         this.exitKeypadMode();
       }
@@ -1386,8 +1425,11 @@ export class Game {
     this.controls.stop();
 
     const digits = ELEVATOR_ACCESS_CODE.split('').join(' ');
-    await this.ui.showVossLine(
-      `"EMERGENCY OVERRIDE. For use when station systems fail. Code: ${digits}. Do not remove." ...Well. That is convenient.`
+    this._showCodeNote(digits);
+    // (his recording, if there is one: public/assets/audio/voss/v-tag.mp3)
+    await vossSays(this.ui,
+      `"EMERGENCY OVERRIDE. For use when station systems fail. Code: ${digits}. Do not remove." ...Well. That is convenient.`,
+      'v-tag', { timed: false }
     );
     this.ui.hideDialogue();
 
@@ -1515,6 +1557,49 @@ export class Game {
     this.lookAtLiftPhoto();
   }
 
+  // The override code pinned at the left of the screen, from reading the tag until the code is
+  // accepted (as Level 2's hatch code is)
+  _showCodeNote(digits) {
+    if (!this.codeNote) {
+      this.codeNote = document.createElement('div');
+      this.codeNote.id = 'l1-code-note';
+      this.codeNote.innerHTML = '<div class="cn-label">MAINTENANCE TAG</div>';
+      // the tag itself, as it lies on the desk (its own drawing)
+      const img = new Image();
+      img.className = 'cn-paper';
+      img.alt = 'Lift override code: ' + digits;
+      const face = this.currentLevel.maintenanceTag?.getObjectByName('MaintenanceTagFace');
+      const drawn = face?.material?.map?.image;
+      if (drawn?.toDataURL) img.src = drawn.toDataURL();
+      this.codeNote.appendChild(img);
+      document.body.appendChild(this.codeNote);
+    }
+    this.codeNote.classList.add('visible');
+  }
+
+  _hideCodeNote() {
+    this.codeNote?.classList.remove('visible');
+  }
+
+  _skipToKeypad() {
+    const level = this.currentLevel;
+    level.debugSkipToKeypad();
+    this._tutorialSeen = true;
+    if (this.intro) this.intro.firstAriaSaid = true;
+    this.inventory.add('torch');
+    this.hud.setTorch(true, false);
+    // two metres out from the keypad's face, looking at it
+    const k = level.keypad;
+    if (k) {
+      const at = k.getWorldPosition(new THREE.Vector3());
+      const face = k.getWorldDirection(new THREE.Vector3()).setY(0).normalize();
+      const cam = this.camera.instance;
+      cam.position.copy(at).addScaledVector(face, 2);
+      cam.position.y = this.controls.eyeHeight ?? 2.6;
+      cam.lookAt(at);
+    }
+  }
+
   // ---------------------------------------------------------
   // ARIA speaking a line (voice if recorded, otherwise subtitle + talking face)
   // ---------------------------------------------------------
@@ -1568,6 +1653,7 @@ export class Game {
       this.state = 'GAME_OVER';
       document.exitPointerLock?.();
       const p = this.player;
+      playClip(ARIA_GAME_OVER_CLIP, 1);
       this.hud.showGameOver(
         ARIA_GAME_OVER_TEXT,
         `Overloads ${p.overloads}   |   Times revived ${p.deaths}   |   Puzzles solved ${p.puzzlesSolved}   |   Time ${formatTime(p.playSeconds)}`

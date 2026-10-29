@@ -11,7 +11,11 @@
 //    on the school server.
 //
 // Safe to run again after a teammate re-exports a model: files that are already compressed are
-// skipped. Nothing else in the files changes (node names, empties, animations, materials).
+// skipped (unless --rethin is given: then they are decoded, thinned by their rules and compressed
+// again). Nothing else in the files changes (node names, empties, animations, materials).
+//
+// A rule's pattern is tested against the mesh's name, its node's name and its parts' material
+// names (the atrium's plants are found by their materials).
 import { NodeIO, PropertyType } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, KHRDracoMeshCompression } from '@gltf-transform/extensions';
 import { weldPrimitive, simplifyPrimitive, dedup, draco, normals, prune } from '@gltf-transform/functions';
@@ -30,11 +34,18 @@ const THIN = {
     [/^kolecka/, 0.15],       // its round fittings: 115k
     [/^Chair/, 0.3],          // three office chairs, 26k each
     [/^Circle00[1-4]$/, 0.3]  // the generator's glowing rings, 16k each
+  ],
+  // the garden's plants: the vegetable beds and potted plants were the most triangles on screen in
+  // the hall (~120k of its ~340k). Halved within a small error, so their outlines hold.
+  'l2-atrium.glb': [
+    [/^veg_(tex_|dead|yellow)/, 0.5, 0.01],
+    [/^(potted_plant|anthurium|fern_|pachira)/, 0.5, 0.01]
   ]
 };
 
-const FILES = process.argv.slice(2).length ? process.argv.slice(2)
-  : ['controlroom.glb', 'l2-atrium.glb', 'l2-lab.glb', 'l3-drowned.glb'];
+const RETHIN = process.argv.includes('--rethin');
+const ARGS = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+const FILES = ARGS.length ? ARGS : ['controlroom.glb', 'l2-atrium.glb', 'l2-lab.glb', 'l3-drowned.glb'];
 
 const io = new NodeIO()
   .registerExtensions(ALL_EXTENSIONS)
@@ -51,7 +62,7 @@ const tris = (doc) => doc.getRoot().listMeshes().reduce((n, m) => n + m.listPrim
 for (const name of FILES) {
   const path = MODELS + name;
   const doc = await io.read(path);
-  if (doc.getRoot().listExtensionsUsed().some((e) => e instanceof KHRDracoMeshCompression)) {
+  if (!RETHIN && doc.getRoot().listExtensionsUsed().some((e) => e instanceof KHRDracoMeshCompression)) {
     console.log(`${name}: already compressed, skipped`);
     continue;
   }
@@ -64,9 +75,10 @@ for (const name of FILES) {
     for (const node of doc.getRoot().listNodes()) if (node.getMesh()) nodeNames.set(node.getMesh(), node.getName());
     for (const mesh of doc.getRoot().listMeshes()) {
       const label = (nodeNames.get(mesh) || mesh.getName() || '').replace(/\./g, '');
-      const rule = rules.find(([re]) => re.test(label) || re.test((mesh.getName() || '').replace(/\./g, '')));
-      if (!rule) continue;
+      const meshRule = rules.find(([re]) => re.test(label) || re.test((mesh.getName() || '').replace(/\./g, '')));
       for (const prim of mesh.listPrimitives()) {
+        const rule = meshRule || rules.find(([re]) => re.test(prim.getMaterial()?.getName() || ''));
+        if (!rule) continue;
         // Flat-shaded parts store each triangle's corners separately (their normals differ), so
         // nothing could be welded or collapsed: drop the normals, simplify on the shape alone,
         // then rebuild them (below)

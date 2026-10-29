@@ -58,7 +58,6 @@ export class IntroSequence {
     this.aria = aria;
     this.active = false;
     this.firstAriaSaid = false;      // true once ARIA has said her first line (only the test links set it now)
-    this.wakeLineSaid = false;       // true once he has asked "Where am I?" as he woke (Game.endOpeningWake)
   }
 
   // Runs the whole conversation; resolves when ARIA's last line has finished
@@ -67,8 +66,8 @@ export class IntroSequence {
     this.active = true;
 
     for (const [i, line] of INTRO_LINES.entries()) {
-      // (his first line was said as he woke: at the monitor, ARIA speaks first)
-      if (!(i === 0 && this.wakeLineSaid)) await vossSays(this.ui, line.voss, line.aria.clip, { timed: false });
+      // (ARIA speaks first: he wakes in silence, and his "Where am I?" is not said)
+      if (i > 0) await vossSays(this.ui, line.voss, line.aria.clip, { timed: false });
 
       // (her first line was already said when he woke up, see Game.openingAriaLine)
       if (i === 0 && this.firstAriaSaid) continue;

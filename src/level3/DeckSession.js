@@ -93,7 +93,7 @@ export class DeckSession {
 
     const root = document.getElementById('ui-layer');
     this.player = new PlayerStats();
-    this.hud = new HUD(root, { onRestart: () => { } });
+    this.hud = new HUD(root, { onRestart: () => this.game.restartSession() });
     this.loadingEl = document.createElement('div');
     this.loadingEl.id = 'level-loading';
     this.loadingEl.className = 'visible';

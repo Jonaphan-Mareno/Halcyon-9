@@ -43,6 +43,7 @@ import { Inventory } from '../ui/Inventory.js';
 import { sleep, pauseClock } from '../core/PauseClock.js';
 import { vossSays, vossVoice } from '../audio/VossVoice.js';
 import { buildRoomProps } from './RoomProps.js';
+import { codeCardCanvas } from './CodeCard.js';
 import { applyBedroomShell } from './BedroomShell.js';
 import { disposeScene } from '../core/disposeScene.js';
 import '../ui/level2.css';
@@ -102,6 +103,7 @@ const LAB_FILES = ['directive', 'research', 'subjects'];            // the lab t
 const IDLE_LINE = 50;        // seconds lingering in the bunk or the lab before ARIA's remark
 const DIRECT_HIT = 15;       // a drone's dive, straight into him (health is out of 100)
 const GRAZE = 5;             // a dive that only clips him
+const FUSE_MISS = 8;         // a miss at Kessler's fusebox: the surge stings
 const MANIFOLD_AT = { r: 14.6, angle: 30 };   // the garden's wall of pipes, behind the hatch
 
 // Glass everywhere (the sea window, railings, the lab's tubes and beakers): dark and one-sided, so
@@ -154,7 +156,7 @@ export class HabitatSession {
     const root = document.getElementById('ui-layer');
     // Voss's health (integrity), the same as in Level 1, on the same HUD
     this.player = new PlayerStats();
-    this.hud = new HUD(root, { onRestart: () => { } });
+    this.hud = new HUD(root, { onRestart: () => this.game.restartSession() });
     this.fightHelp = new FightHelp(root);
     // everything he reads, hears or watches upstairs (the game waits while it is open)
     this.reader = new Readables(root, {
@@ -179,10 +181,16 @@ export class HabitatSession {
     // the inventory (I): Kessler's card and the hatch code go in it
     this.inventory = new Inventory(root);
     this.inventory.statusFor.hatchcode = () => HATCH_CODE.split('').join(' ');
-    // the hatch code, kept in the top left from the moment he finds it until the hatch is open
+    // the hatch code, kept in the top left from the moment he finds it until the hatch is open:
+    // Kessler's card itself, as he picked it up
     this.codeNote = document.createElement('div');
     this.codeNote.id = 'code-note';
-    this.codeNote.innerHTML = '<div class="cn-label">HATCH 4 OVERRIDE (DR. KESSLER)</div><div class="cn-code">' + HATCH_CODE.split('').join(' ') + '</div>';
+    this.codeNote.innerHTML = '<div class="cn-label">KESSLER\'S CARD</div>';
+    const card = new Image();
+    card.className = 'cn-paper';
+    card.alt = 'HATCH 4 OVERRIDE: ' + HATCH_CODE.split('').join('-');
+    card.src = codeCardCanvas(HATCH_CODE).toDataURL();
+    this.codeNote.appendChild(card);
     document.body.appendChild(this.codeNote);
     this.loadingEl = document.createElement('div');
     this.loadingEl.id = 'level-loading';
@@ -281,11 +289,15 @@ export class HabitatSession {
       this.game.applySettings?.();
       this.loadingEl.classList.remove('visible');
       this.worldReady = this._readyWorld(held);     // (Flashback 3D waits for it: the rooms are in the scene)
+      this.worldReady.then(() => this._setUpRooms());
       game.ui.showToast('WASD to move, Space to jump, E to use things, V to switch camera.', 7000);
       // ?flashback in the address (with ?level=2): Kessler's flashback plays as soon as the level is
       // in, for testing it (?flashback=2d: the drawn one)
       const fb = new URLSearchParams(window.location.search).get('flashback');
       if (fb !== null) this._testFlashback(fb === '2d');
+      // ?arm (with ?level=2): straight to Kessler's room, the garden and the rooms before it done,
+      // the arm swinging and him standing at its fusebox (for testing the breaker puzzle)
+      if (new URLSearchParams(window.location.search).has('arm')) this.worldReady.then(() => this._testArm());
     }).catch((e) => console.error('Level 2 atrium failed to load.', e));
   }
 
@@ -636,6 +648,14 @@ export class HabitatSession {
         this.game.ui.showToast('ARM POWER CUT. LOGS UNLOCKED.', 4000);
       },
       onFailed: () => this.game.ui.showToast('FUSE SEQUENCE FAILED. TRY AGAIN.', 3500),
+      // a miss: the surge stings him (out of health, he is restored and the panel shuts)
+      onMiss: () => {
+        this.hud.flash();
+        if (this.player.damage(FUSE_MISS)) {
+          this.fuseboxPuzzle.close();
+          this._restoreFromBackup();
+        }
+      },
       onClose: () => {
         if (this.disposed) return;
         this.game.state = 'PLAYING';
@@ -672,12 +692,11 @@ export class HabitatSession {
     this._addAriaScreens([atrium, lab]);
     this._setUpLab(lab);
 
-    // the sea outside the big window: a looping video, the window's exact shape (16:9: 4.2 m tall,
-    // 7.47 m wide along the inside of the 17 m wall, so 12.58 degrees either side of north)
-    const winHalf = THREE.MathUtils.radToDeg((4.2 * 16 / 9) / 17) / 2;
+    // the sea outside the big window: the glass runs 62 to 118 degrees (4.2 m tall), in four bays
+    // split by posts at 76, 90 and 104: one looping video, a different part of it in each bay
     this.sea = new VideoWindow({
       src: './assets/video/sea_loop.mp4', radius: 17.9, wallRadius: 17,
-      a0: 90 - winHalf, a1: 90 + winHalf, bottom: 0.8, height: 4.2
+      bays: [[62, 76], [76, 90], [90, 104], [104, 118]], bottom: 0.8, height: 4.2
     });
     scene.add(this.sea.mesh);
 
@@ -1036,6 +1055,7 @@ export class HabitatSession {
       return;
     }
     if (this.game.state === 'PAUSED' || this.game.state === 'INVENTORY') {
+      this.garden?.hushRobots?.();
       this._perf(delta, false);
       return;
     }
@@ -1043,11 +1063,12 @@ export class HabitatSession {
     const dt = Math.min(delta, 0.05);
     const playing = g.state === 'PLAYING';
     if (this.roboArmMixer) this.roboArmMixer.update(dt);
+    this._cullRooms();
     // Bones are current after mixer.update; test contact now
     if (playing) this.roboArmHazard?.update(dt, this.controls.position);
     this._warmTextures();
     // dropping into the shaft: the view sinks into the hole while the screen fades
-    if (this._dropping) g.camera.instance.position.y -= dt * 3.5;
+    if (this._drop) this._updateDrop(dt);
     // stepping into the open hatch drops him in too (once the lid is all the way open)
     if (playing && this.gates?.hatchIsOpen && !this._leaving) {
       const c = this.gates.hatchCentre, q = this.controls.position;
@@ -1257,7 +1278,7 @@ export class HabitatSession {
     }
     if (flag === 'hatchOpen') {
       this.gates?.openHatch();
-      this.say('hatchOpen');
+      this._downTheHatch();
     }
   }
 
@@ -1279,7 +1300,7 @@ export class HabitatSession {
   // terminal, Kessler's final log and the code card (scenes 2.6 to 2.8)
   // ---------------------------------------------------------
   _buildReadables(scene, lab) {
-    const spots = buildRoomProps(scene);
+    const spots = buildRoomProps(scene, { code: HATCH_CODE });
     for (const body of spots.lockerBodies) this.physics.addStaticObject(body);
     const r = this.reader;
     const add = (id, position, radius, label, use, when) => this.interact.add({ id, position, radius, label, use, when, reach: 2.2 });
@@ -1344,6 +1365,7 @@ export class HabitatSession {
     const g = this.game;
     g.state = 'FLASHBACK';
     this.garden?.audio.hiss(false);
+    await this._dizzy();
     // the 3D flashback if it is ready and the machine keeps up (normal play above ~24 fps), else 2D
     const slow = this.frameAverage > 1 / 24;
     if (FLASHBACK_3D && this.flashback3d.ready && !slow) {
@@ -1358,6 +1380,50 @@ export class HabitatSession {
     await sleep(700);
     await this.say('kessler');
     this.story.set('codeFound');
+  }
+
+  // Before the flashback: the card in his hand, his head starts to pound. Through his eyes the room
+  // sways and blurs, goes dark and comes back twice, and on the third it stays dark: the memory.
+  async _dizzy() {
+    const g = this.game, cam = g.camera.instance;
+    const canvas = g.renderer.instance.domElement;
+    const veil = document.createElement('div');
+    veil.style.cssText = 'position:fixed;inset:0;z-index:18;pointer-events:none;opacity:0;' +
+      'background:radial-gradient(ellipse at center, rgba(0,0,0,0) 15%, rgba(0,0,0,0.92) 70%, #000 100%)';
+    document.body.appendChild(veil);
+    g.ui.hideDialogue();
+    const said = vossSays(g.ui, 'Ah... my head.', 'fb1-voss-head', { readMs: 2200 });
+    // [time, how dark (0 clear, 1 black), blur px]: dark at the edges, a blink, a deeper one, black
+    const keys = [[0, 0, 0], [0.8, 0.45, 3], [1.2, 0.15, 2], [2.0, 0.75, 6], [2.4, 0.3, 4], [3.3, 1, 10], [3.8, 1, 10]];
+    const yaw0 = cam.rotation.y, pitch0 = cam.rotation.x;
+    const t0 = performance.now();
+    await new Promise((resolve) => {
+      const step = () => {
+        const t = (performance.now() - t0) / 1000;
+        let i = 1;
+        while (i < keys.length - 1 && t > keys[i][0]) i++;
+        const [ta, da, ba] = keys[i - 1], [tb, db, bb] = keys[i];
+        const k = THREE.MathUtils.smoothstep(t, ta, tb);
+        veil.style.opacity = (da + (db - da) * k).toFixed(3);
+        canvas.style.filter = `blur(${(ba + (bb - ba) * k).toFixed(1)}px)`;
+        // (the view sways and sags as his balance goes)
+        const sway = Math.min(1, t / 1.5);
+        cam.rotation.order = 'YXZ';
+        cam.rotation.z = Math.sin(t * 1.7) * 0.06 * sway;
+        cam.rotation.y = yaw0 + Math.sin(t * 1.1) * 0.05 * sway;
+        cam.rotation.x = pitch0 - 0.12 * sway;
+        if (t < keys[keys.length - 1][0]) requestAnimationFrame(step);
+        else resolve();
+      };
+      requestAnimationFrame(step);
+    });
+    await said;
+    g.ui.hideDialogue();
+    canvas.style.filter = '';
+    cam.rotation.set(pitch0, yaw0, 0);
+    // the black hangs on over the start of the flashback, then lifts
+    setTimeout(() => { veil.style.transition = 'opacity 0.8s'; veil.style.opacity = '0'; }, 300);
+    setTimeout(() => veil.remove(), 1300);
   }
 
   // The flashback alone, straight away (?flashback in the address): the 3D one, or the drawn one
@@ -1441,10 +1507,14 @@ export class HabitatSession {
     if (this.player.damage(kind === 'direct' ? DIRECT_HIT : GRAZE)) this._restoreFromBackup();
   }
 
+  // (a life spent; with none left, the level starts over)
   _restoreFromBackup() {
     this._restoring = true;
-    this.player.deaths++;
-    this.hud.showDeath('BACKUP RESTORED', 'RESTORED: CYCLE 9');
+    if (!this.player.useRestore()) {
+      this.game.sessionGameOver(this.hud, this.player);
+      return;
+    }
+    this.hud.showDeath('BACKUP RESTORED', `RESTORED: CYCLE 9   |   Lives left: ${this.player.restores}`);
     setTimeout(() => {
       this.hud.hideDeath();
       this.player.integrity = MAX_INTEGRITY;
@@ -1452,6 +1522,50 @@ export class HabitatSession {
       this.controls.teleport?.(new THREE.Vector3(4, 0.1, -2));
       this._restoring = false;
     }, 1800);
+  }
+
+  // Room culling: what is inside the upstairs rooms (the bunk room, Kessler's room, the lab) is only
+  // drawn when he is upstairs and near that room. From the hall their walls hide them anyway, and
+  // drawing them cost about 40% of the frame's draw calls (measured: 329 -> 197 looking across the
+  // hall). Only things wholly inside a room are taken, and only ones that were showing. A room's
+  // shell stays: its doors, and anything big (walls, floor, ceiling), so a doorway never shows a
+  // hole through to the sky while its room is hidden.
+  _setUpRooms() {
+    const rooms = [
+      { min: [17.0, 4.6, -5.8], max: [26.2, 99, 3.3] },     // the crew bunk room
+      { min: [8.0, 4.6, -22.4], max: [20.6, 99, -9.8] },    // Kessler's room
+      { min: [-7.3, 4.2, -99], max: [7.3, 99, -17.0] }      // the lab
+    ].map((r) => ({ box: new THREE.Box3(new THREE.Vector3(...r.min), new THREE.Vector3(...r.max)), meshes: [], shown: true }));
+    const b = new THREE.Box3(), size = new THREE.Vector3();
+    const isDoor = (m) => { for (let o = m; o; o = o.parent) if (/door/i.test(o.name)) return true; return false; };
+    const claim = (m, room) => {
+      if (!m.visible || isDoor(m)) return;
+      if (b.setFromObject(m).getSize(size).x > 2.5 || size.y > 2.5 || size.z > 2.5) return;   // (the shell)
+      room.meshes.push(m);
+    };
+    this.game.scene.traverse((m) => {
+      if (!m.isMesh || m.isSkinnedMesh) return;
+      b.setFromObject(m);
+      if (b.isEmpty()) return;
+      const room = rooms.find((r) => r.box.containsBox(b));
+      if (room) claim(m, room);
+    });
+    // the lab's own model is all lab
+    this.lab?.traverse((m) => { if (m.isMesh && !rooms[2].meshes.includes(m)) claim(m, rooms[2]); });
+    this._rooms = rooms;
+    this._roomNear = new THREE.Box3();
+  }
+
+  _cullRooms() {
+    if (!this._rooms) return;
+    const p = this.controls.position;
+    const upstairs = p.y > 3.0;
+    for (const r of this._rooms) {
+      const show = upstairs && this._roomNear.copy(r.box).expandByScalar(12).containsPoint(p);
+      if (show === r.shown) continue;
+      r.shown = show;
+      for (const m of r.meshes) m.visible = show;
+    }
   }
 
   // Is anyone talking right now? (a hit's remark waits for a quiet moment)
@@ -1468,6 +1582,19 @@ export class HabitatSession {
     this.roboArmAction.reset().play();
     this.roboArmHazard?.start();
     console.log('[ARM] started');
+  }
+
+  _testArm() {
+    for (const f of ['leftLift', 'dronesWoken', 'pipeTaken', 'gardenCleared', 'hatchTried', 'cardTaken', 'logWatched', 'labDone']) {
+      if (!this.story.has(f)) this.story.set(f);
+    }
+    this._startRoboArm();
+    const at = this.fuseboxSpot?.position;
+    if (!at) return;
+    // a step out from the fusebox into the room, facing it (he drops onto the floor below)
+    this.controls.teleport(new THREE.Vector3(at.x + 0.9, at.y, at.z));
+    this.controls.camera.rotation.set(0, Math.PI / 2, 0);
+    this.controls.facing = Math.PI / 2;
   }
 
   // TEMP DEBUG: remove before submitting
@@ -1624,6 +1751,16 @@ export class HabitatSession {
     g.state = 'PLAYING';
   }
 
+  // The code is in: the hatch swings open, ARIA sends him down ("Down you go...") and down he goes,
+  // with no button to press
+  async _downTheHatch() {
+    await this.say('hatchOpen');
+    for (let i = 0; i < 40 && !this.gates?.hatchIsOpen && !this.disposed; i++) await sleep(100);
+    // (if something else has him, a menu or a reader, he goes once it is done)
+    while (!this.disposed && !this._leaving && this.game.state !== 'PLAYING') await sleep(200);
+    if (!this.disposed) this._climbDown();
+  }
+
   // Through the hatch, the end of Level 2: Voss drops into the shaft, the screen goes black, and
   // the game builds Level 3 in this level's place (game.enterLevel3, which calls dispose below)
   _climbDown() {
@@ -1637,13 +1774,33 @@ export class HabitatSession {
     g.ui.setPrompt(null);
     g.ui.setWaypoint(null);
     this.codeNote.classList.remove('visible');
+    // his view goes over to the opening, tips down to look into it, then drops through; the screen
+    // fades to black on the way down
+    const cam = g.camera.instance;
+    const c = this.gates?.hatchCentre || cam.position;
+    this._drop = {
+      t: 0, from: cam.position.clone(), to: new THREE.Vector3(c.x, cam.position.y, c.z),
+      pitch: cam.rotation.x, yaw: cam.rotation.y
+    };
     const fade = document.createElement('div');
     fade.id = 'level-fade';
     document.getElementById('ui-layer').appendChild(fade);
-    void fade.offsetWidth;
-    fade.classList.add('on');
-    this._dropping = true;
-    setTimeout(() => g.enterLevel3?.(), 1500);
+    setTimeout(() => fade.classList.add('on'), 900);
+    setTimeout(() => g.enterLevel3?.(), 2300);
+  }
+
+  // The way down the hatch: over to it (0.8 s), looking down into it, then through it
+  _updateDrop(dt) {
+    const d = this._drop, cam = this.game.camera.instance;
+    d.t += dt;
+    const k = Math.min(1, d.t / 0.8), e = k * k * (3 - 2 * k);
+    cam.position.x = THREE.MathUtils.lerp(d.from.x, d.to.x, e);
+    cam.position.z = THREE.MathUtils.lerp(d.from.z, d.to.z, e);
+    cam.rotation.order = 'YXZ';
+    cam.rotation.x = THREE.MathUtils.lerp(d.pitch, -1.35, Math.min(1, d.t / 0.7));
+    cam.rotation.y = d.yaw;
+    cam.rotation.z = 0;
+    if (d.t > 0.65) cam.position.y -= dt * 3.2 * Math.min(1, (d.t - 0.65) / 0.3);
   }
 
   // Torn down on the way to Level 3: everything this level put in the scene, its physics world,
@@ -1660,6 +1817,7 @@ export class HabitatSession {
     this.flashback3d?.dispose();
     this.roboArmMixer?.stopAllAction();
     this.roboArmHazard?.stop();
+    this.garden?.hushRobots?.(true);
     this.fuseboxPuzzle?.dispose();
     try { this.garden?.audio?.ctx?.close(); } catch (e) { /* already closed */ }
     for (const el of [this.codeNote, this.fpsEl, this.keypad?.root, this.flashback?.el]) el?.remove();

@@ -1,12 +1,14 @@
 import { LoadingManager } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 
 // Every model loader in the game. The big models are Draco-compressed (see
 // scripts/optimize-models.mjs) to be much smaller to download from the school server; the decoder
 // ships with three.js (Vite copies it into the build) and runs in web workers while loading.
-// Uncompressed models load as before.
+// The animated characters (ARIA's face, Voss, the crew) are meshopt-compressed instead: Draco cannot
+// carry their face shapes (morph targets). Uncompressed models load as before.
 let draco = null;
 
 export function createGLTFLoader() {
@@ -14,7 +16,7 @@ export function createGLTFLoader() {
     draco = new DRACOLoader();
     draco.preload();
   }
-  return new GLTFLoader().setDRACOLoader(draco);
+  return new GLTFLoader().setDRACOLoader(draco).setMeshoptDecoder(MeshoptDecoder);
 }
 
 // For animation-only FBX files (Mixamo exports): the textures they point at are not shipped,

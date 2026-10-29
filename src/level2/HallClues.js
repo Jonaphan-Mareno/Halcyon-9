@@ -18,6 +18,7 @@ const HAND = '"Segoe Print", "Bradley Hand", "Comic Sans MS", cursive';
 const BOARD_AT = { r: 16.95, angle: 256, y: 2.1, w: 1.5, h: 0.94 };
 // the lounge spots, found from above (the two glass coffee tables, the orange sofa arms)
 const FRAME_AT = { x: -2.4, z: -1.8, turn: 0.6 };
+const FRAME_PHOTO = false;                        // the framed crew photo on the coffee table (removed)
 const RATION_AT = { x: 3.9, z: -3.4, turn: -0.8 };
 
 function canvasTexture(w, h, draw) {
@@ -215,7 +216,8 @@ export function buildHallClues(scene, atrium) {
   }
 
   // the framed photo on a coffee table, standing on its easel, a little dusty
-  const fy = surfaceBelow(meshes, FRAME_AT.x, FRAME_AT.z);
+  // (taken out: it stood alone in the middle of the atrium. Set true to bring it back.)
+  const fy = FRAME_PHOTO ? surfaceBelow(meshes, FRAME_AT.x, FRAME_AT.z) : null;
   if (fy !== null) {
     const frame = new THREE.Group();
     frame.name = 'Clue_Frame';

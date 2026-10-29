@@ -32,13 +32,14 @@ const TURN = 1.35;          // he has turned it and the latch lets go
 const RELEASE = 1.5;        // he lets go
 const END = 2.1;            // his arm is back, and the door can swing
 
-const LOOK_AT_HANDLE = 0.2; // the view frames the opening, leaning this much toward the handle
+const LOOK_AT_HANDLE = 0.35; // the view frames the opening, leaning this much toward the handle
 const HOLE_INSET = 0.1;     // the arm threads this far inside the opening's edges, not flush with them
 const IN_GAP = 0.16;        // the path's waypoint just inside the opening, so the hand goes in square
-const THROUGH = 0.2;        // how far past the pane the wrist goes, if the arm has it in him
+const THROUGH = 0.42;       // how far past the pane the wrist goes, if the arm has it in him (well through: the hand is on the far side)
+const SIDEWAYS = 0.32;      // and how far on along the door, toward the handle (behind the leaf)
 const REACH = 0.94;         // of the arm's length: at full stretch it would lock out straight
 const TWIST = 0.55;         // radians his forearm rolls as he turns the latch - the part you can see
-const STAND_OFF = 0.35;     // the closest his eyes come to the door's face as he steps up to it
+const STAND_OFF = 0.2;      // the closest his eyes come to the door's face as he steps up to it (close: his shoulder at the hole)
 
 // The hand opens on the way out and closes as it finds the lever (ArmIK finger curls)
 const OPEN = { curl: [0.12, 0.16, 0.1], thumb: [0.1, 0.1, 0.08] };
@@ -113,12 +114,13 @@ export class HandleReach {
 
     // Through the opening and a little past it, as far as the arm has in him
     this._near = this._entry.clone().addScaledVector(this._out, -IN_GAP);
-    this._far = this._entry.clone().addScaledVector(this._out, THROUGH);
+    // (then on sideways behind the leaf, toward the handle at the door's edge, not straight on)
+    this._far = this._entry.clone().addScaledVector(this._out, THROUGH).addScaledVector(this._across, SIDEWAYS);
     this._path = null;      // built on the first pose(), from where his hand actually is
 
     // The hand goes in pointing out through the door, angled down and toward the handle
     this._fingers = this._out.clone().multiplyScalar(0.78)
-      .addScaledVector(this._across, 0.45)
+      .addScaledVector(this._across, 0.8)
       .addScaledVector(UP, -0.4)
       .normalize();
     this._palm = UP.clone().negate();

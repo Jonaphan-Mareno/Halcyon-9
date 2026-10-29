@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { withHubLighting } from '../graphics/HubMaterials.js';
+import { codeCardCanvas } from './CodeCard.js';
 
 // The things to read upstairs (scenes 2.6 to 2.8), placed on the furniture already in the
 // rooms: in the crew bunk (Voss's old room, east) name plates on the bunks (one says J. VOSS),
@@ -224,7 +225,7 @@ function locker(scene, x, z, yaw, name = 'J. VOSS', ajar = true) {
   return { spot: new THREE.Vector3(0, 1.4, D / 2).applyMatrix4(g.matrixWorld), body };
 }
 
-export function buildRoomProps(scene) {
+export function buildRoomProps(scene, { code = '471902' } = {}) {
   const spots = {};
   // ---- the crew bunk (x 17.3 to 25.9, z -5.4 to 3.0): south wall z 3, north wall z -5.4
   spots.personalLog = monitor(scene, 24.05, BENCH, 2.3, Math.PI, ['J. VOSS', 'PERSONAL LOG', 'PLAY MEMORIES >'], '#00e5ff');
@@ -259,9 +260,14 @@ export function buildRoomProps(scene) {
   const stand = new THREE.Group();
   stand.add(box(0.12, 0.012, 0.08, M.black, 0, 0.006, 0));
   const cardMesh = box(0.14, 0.09, 0.004, M.paper, 0, 0.06, 0);
+  // (its face: her handwriting, the same card that is shown at the side of the screen once read)
+  const face = new THREE.CanvasTexture(codeCardCanvas(code));
+  face.colorSpace = THREE.SRGBColorSpace;
+  const faceMat = withHubLighting(new THREE.MeshStandardMaterial({ map: face, roughness: 0.9, metalness: 0 }));
+  cardMesh.material = [M.paper, M.paper, M.paper, M.paper, faceMat, faceMat];
   cardMesh.rotation.x = -0.3;
   stand.add(cardMesh);
-  const cp = desk.clone().addScaledVector(right, 0.42);
+  const cp = desk.clone().addScaledVector(right, 0.9);     // (well clear of the monitor, so the log is not clicked by mistake)
   place(scene, stand, cp.x, cp.y, cp.z, yaw);
   spots.codeCard = cardMesh.getWorldPosition(new THREE.Vector3());
   return spots;

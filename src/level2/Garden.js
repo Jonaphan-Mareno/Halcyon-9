@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Drone } from './Drone.js';
 import { Robot } from '../entities/Robot.js';
+import { loopClip, CLIPS } from '../audio/AudioCache.js';
 import { FrostFX } from './FrostFX.js';
 import { FrostAudio } from './FrostAudio.js';
 import { Remains } from './Remains.js';
@@ -295,6 +296,7 @@ export class Garden {
     this._updateNozzle(ctx);
     this._updateDropped(dt);
     this.remains.update(dt);
+    this._robotHum(ctx.feet);
 
     if (this.state === 'fight') {
       // more drones join until this wave's are all out, never more than four up at once
@@ -484,6 +486,27 @@ export class Garden {
       this.hoseMesh.setMatrixAt(i, this._m);
     }
     this.hoseMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // The robots' mechanical whirring (quiet): one loop, as loud as the nearest robot still up is
+  // close, gone by about 14 m away and once none are left
+  _robotHum(feet) {
+    let near = Infinity;
+    for (const d of this.drones) {
+      if (d instanceof Robot && d.alive && d.state !== 'frozen') near = Math.min(near, d.position.distanceTo(feet));
+    }
+    const gain = 0.45 * Math.max(0, 1 - near / 14) ** 1.5;
+    if (gain > 0 && !this._hum) this._hum = loopClip(CLIPS.robot, 0);
+    this._hum?.setGain(gain);
+  }
+
+  // (paused: silent until the next update; gone: stopped for good)
+  hushRobots(gone = false) {
+    if (!this._hum) return;
+    if (gone) {
+      this._hum.stop(0.3);
+      this._hum = null;
+    } else this._hum.setGain(0);
   }
 
   // The fight skipped (the debug key set gardenCleared): the drones go and he lets go of the pipe

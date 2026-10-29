@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { KrakenFight, WOUNDS as WOUNDS_TOTAL } from './KrakenFight.js';
 import { SEA } from './SeaScene.js';
 import { PLAN } from './Works.js';
+import { MAX_RESTORES } from '../player/PlayerStats.js';
 
 // The bottom of the trench and the drowned works behind the cliff (Level 3): the kraken, the maze,
 // the fight, and the shaft down to the buried relay. The works are Blender/scripts/build_l3_works.py
@@ -725,9 +726,23 @@ export class Trench {
     return at ? { text: 'Air running low: get to an air station (the green rings)', target: at, label: 'AIR' } : null;
   }
 
+  // (a life spent; with none left the level starts over - except against the kraken, where he
+  // starts again outside its lair with his lives back, rather than the whole level again)
   _restore(title, sub) {
     this._restoring = true;
-    this.s.player.deaths++;
+    const p = this.s.player;
+    if (p.useRestore()) {
+      sub += `   |   Lives left: ${p.restores}`;
+    } else if (this.stage === 'hunt' || this.stage === 'show') {
+      p.deaths++;
+      p.restores = MAX_RESTORES;
+      // (the fight from the start, unless the place is already coming down round it)
+      if (this.stage === 'show' && this.fight.woundLimit === FINALE_AT) this.fight.wounds = 0;
+      sub = 'All backups spent: starting again outside its lair';
+    } else {
+      this.game.sessionGameOver(this.s.hud, p);
+      return;
+    }
     this.s.hud.showDeath(title, sub);
     const kind = this._resetKind();
     setTimeout(() => {

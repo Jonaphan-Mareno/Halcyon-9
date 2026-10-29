@@ -1,13 +1,16 @@
 import * as THREE from 'three';
+import { loopClip, playClip, CLIPS } from '../audio/AudioCache.js';
+import { frame } from '../ui/hudFrame.js';
 
 // ============================================================================
 // GAMEPLAY & HARDWARE CONSTANTS
 // ============================================================================
 export const RING_COUNT = 4;
-export const TARGET_TOLERANCE = 0.18;      // Radians of forgiveness (~10.3 degrees on each side)
+export const TARGET_TOLERANCE = 0.15;      // Radians of forgiveness (~8.6 degrees on each side): the box's width
 export const SPEED_RAMP = 1.07;            // +7% angular speed increase after each successful lock
 export const MAX_LIVES = 3;                // Breaker surge capacitor charges before lockout
 export const ROUND_TIME = 20.0;            // Seconds for the breaker trip window
+export const FIRST_ROUND_TIME = 60.0;      // the first time: three times as long, to read how to play
 export const BASE_SPEEDS = [1.35, 1.80, 2.25, 2.70]; // Radians/sec per coupling (alternating directions)
 
 const COUPLING_METADATA = [
@@ -18,6 +21,66 @@ const COUPLING_METADATA = [
 ];
 
 const STYLE_ELEMENT_ID = 'fusebox-puzzle-injected-styles';
+const HUM_GAIN = 0.22;       // the breaker's hum under the puzzle: quiet
+const HUM_RATE = 0.85;       // and its speed, which climbs a little with each lock
+
+// The game's HUD look over the panel's own styles: Orbitron labels, Bahnschrift text, soft steel
+// cyan lines (--frame), dark navy fills, amber for the hazard, the frames drawn by hudFrame.js
+const THEME_CSS = `
+  .fb-puzzle-overlay { font-family: var(--hud-body); color: var(--hud-text);
+    background: radial-gradient(circle at center, rgba(8, 18, 28, 0.9) 0%, rgba(3, 8, 13, 0.97) 100%); }
+  .fb-header { background: none; }
+  .fb-station-tag { font-family: var(--hud-label); font-size: 10px; letter-spacing: 0.3rem; color: var(--frame); opacity: 0.7; }
+  .fb-panel-title { font-family: var(--hud-label); font-weight: 700; letter-spacing: 0.35rem; color: #f4f8ff;
+    text-shadow: 0 0 10px rgba(143, 216, 228, 0.35); }
+  .fb-hazard-banner { font-family: var(--hud-label); font-size: 11px; letter-spacing: 0.15rem; color: #ffd23f;
+    background: repeating-linear-gradient(-45deg, rgba(255, 210, 63, 0.14) 0 10px, rgba(0, 0, 0, 0.35) 10px 20px);
+    border: 1px solid rgba(255, 210, 63, 0.55); border-radius: 0; }
+  .fb-hazard-icon { color: #ffd23f; }
+  .fb-telemetry-bar { border-radius: 0; }
+  .fb-telemetry-label { font-family: var(--hud-label); font-size: 9px; letter-spacing: 0.25rem; color: var(--frame); opacity: 0.75; }
+  .fb-active-name { font-family: var(--hud-label); font-weight: 700; letter-spacing: 0.18rem; color: #f4f8ff;
+    text-shadow: 0 0 8px rgba(143, 216, 228, 0.6); }
+  .fb-active-sub { font-family: var(--hud-body); letter-spacing: 0.06rem; color: rgba(232, 236, 239, 0.7); }
+  .fb-timer-display { font-family: var(--hud-label); font-weight: 700; color: #f4f8ff; letter-spacing: 0.1rem; }
+  .fb-timer-display.urgent { color: #ff5a4d; }
+  .fb-lives-display { gap: 8px; }
+  .fb-life-cell { display: inline-block; width: 16px; height: 16px; border-radius: 50%; font-size: 0;
+    border: 2px solid var(--frame); }
+  .fb-life-cell.active { background: #6fdcf0; box-shadow: 0 0 8px rgba(111, 220, 240, 0.8); }
+  .fb-life-cell.spent { background: transparent; border-color: #3a4a50; box-shadow: none; }
+  .fb-hint-strip { font-family: var(--hud-body); font-size: 14px; letter-spacing: 0.05rem; color: var(--hud-text);
+    text-transform: none; border-radius: 0; }
+  .fb-hint-key { font-family: var(--hud-label); font-weight: 700; color: #ffd23f; padding: 0 2px; }
+  .fb-footer { background: none; }
+  .fb-status-line { font-family: var(--hud-body); font-size: 15px; letter-spacing: 0.04rem; text-transform: none; color: var(--hud-text); }
+  .fb-status-line.success { color: #3dff7a; }
+  .fb-status-line.danger { color: #ff5a4d; }
+  .fb-btn { font-family: var(--hud-label); letter-spacing: 0.2rem; border-radius: 0; }
+  .fb-btn-ghost { background: rgba(6, 14, 22, 0.84); border: 1px solid var(--frame); color: var(--frame); }
+  .fb-btn-ghost:hover { background: rgba(143, 216, 228, 0.16); color: #fff; border-color: var(--frame); }
+  .fb-btn-primary { background: rgba(143, 216, 228, 0.16); border: 1px solid var(--frame); color: #fff; }
+  .fb-btn-primary:hover { background: rgba(143, 216, 228, 0.32); }
+  .fb-modal { border-radius: 0; }
+  .fb-modal-badge { font-family: var(--hud-label); letter-spacing: 0.25rem; border-radius: 0; }
+  .fb-modal-heading { font-family: var(--hud-label); letter-spacing: 0.2rem; }
+  .fb-modal-copy { font-family: var(--hud-body); font-size: 15px; color: var(--hud-text); }
+  .fb-modal-fail { --frame: #ff7a5a; }
+
+  /* everything to read sits in one panel down the left, clear of the rings */
+  .fb-telemetry-bar { position: absolute; left: 28px; top: 50%; transform: translateY(-50%); width: 300px; max-width: none;
+    flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 16px; padding: 18px 20px;
+    background: none; border: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .fb-center-block { align-items: flex-start; text-align: left; order: -1; }
+  .fb-active-name { font-size: 15px; }
+  .fb-timer-display { font-size: 26px; }
+  .fb-howto ol { margin: 6px 0 0; padding-left: 20px; font-size: 15px; line-height: 1.45; color: var(--hud-text); }
+  .fb-howto li { margin: 4px 0; }
+  .fb-howto b { color: #f4f8ff; }
+  .fb-howto .fb-amber { color: #ffb84d; }
+  .fb-telemetry-bar .fb-status-line { min-height: 2.6em; font-size: 15px; padding-top: 10px; border-top: 1px solid rgba(143, 216, 228, 0.25); }
+  .fb-header { padding-bottom: 0; }
+`;
 
 /**
  * FuseboxPuzzle
@@ -34,7 +97,7 @@ export class FuseboxPuzzle {
    * @param {Function} [options.onFailed] - Called on timeout or lives exhausted
    * @param {Function} [options.onClose]  - Called when puzzle closes
    */
-  constructor(parent, { onSolved, onFailed, onClose } = {}) {
+  constructor(parent, { onSolved, onFailed, onClose, onMiss } = {}) {
     if (!parent) {
       throw new Error('[FuseboxPuzzle] Parent HTMLElement is required');
     }
@@ -43,6 +106,8 @@ export class FuseboxPuzzle {
     this.onSolved = onSolved;
     this.onFailed = onFailed;
     this.onClose = onClose;
+    this.onMiss = onMiss;      // a miss: the surge stings him (the level takes a little health)
+    this._played = false;      // has a round been played yet
 
     // State flags
     this.isOpen = false;
@@ -90,11 +155,19 @@ export class FuseboxPuzzle {
   open() {
     this.isOpen = true;
     this.container.classList.add('visible');
+    // the breaker's hum under the puzzle: it strains harder (faster, louder) with each coupling
+    // locked, surges on a miss, and winds down when the power is cut
+    this._hum?.stop(0.1);
+    this._hum = loopClip(CLIPS.hum, HUM_GAIN);
+    this._hum.setRate(HUM_RATE, 0.01);
     this.container.setAttribute('aria-hidden', 'false');
 
     // Every open() starts a completely fresh round: full lives, 20s timer, starting speed,
     // newly randomized ring order and target angles, with nothing left over.
     this._reset();
+    // (the first go is three times as long: time to read how to play, on the left)
+    if (!this._played) this.timeLeft = FIRST_ROUND_TIME;
+    this._played = true;
 
     this._onResize();
     this._updateHUD();
@@ -108,6 +181,8 @@ export class FuseboxPuzzle {
     if (!this.isOpen) return;
 
     this.isOpen = false;
+    this._hum?.stop(0.4);
+    this._hum = null;
     this.container.classList.remove('visible');
     this.container.setAttribute('aria-hidden', 'true');
 
@@ -187,7 +262,7 @@ export class FuseboxPuzzle {
 
     this._updateVisualState();
     this._updateHUD();
-    this._setStatusText('STATUS: READY. LOCK ACTIVE COUPLING AT TARGET CALIPER.', 'info');
+    this._setStatusText('Ready. Watch the glowing ring.', 'info');
   }
 
   /**
@@ -345,6 +420,9 @@ export class FuseboxPuzzle {
 
       this._playSfx('lock');
       this._triggerFlash('cyan');
+      playClip(CLIPS.tech, 0.4);
+      this._hum?.setRate(HUM_RATE + this.lockedCount * 0.08);
+      this._hum?.setGain(HUM_GAIN + this.lockedCount * 0.05);
 
       const meta = COUPLING_METADATA[this.activeRingIndex];
       const remainingCount = RING_COUNT - this.lockedCount;
@@ -353,7 +431,7 @@ export class FuseboxPuzzle {
         this._onWin();
       } else {
         this._setStatusText(
-          `LOCK CONFIRMED: ${meta.name} DISENGAGED. (+7% ROTOR SPEED, ${remainingCount} REMAINING)`,
+          `Locked. ${remainingCount} to go, and the rest spin faster.`,
           'success'
         );
 
@@ -371,10 +449,19 @@ export class FuseboxPuzzle {
       this.lives--;
       this.shakeTime = 0.35;
       this._playSfx('miss');
+      playClip(CLIPS.metalHit, 0.3);
+      // (a surge: the hum leaps and settles back)
+      if (this._hum) {
+        const r = HUM_RATE + this.lockedCount * 0.08, g = HUM_GAIN + this.lockedCount * 0.05;
+        this._hum.setRate(r + 0.15, 0.05);
+        this._hum.setGain(g + 0.12);
+        setTimeout(() => { this._hum?.setRate(r, 0.25); this._hum?.setGain(g); }, 260);
+      }
+      this.onMiss?.();
       this._triggerFlash('red');
 
       this._setStatusText(
-        `FAULT: MISALIGNED COUPLING DISENGAGE ATTEMPT! SURGE BUFFER -1`,
+        'Missed: the pin was outside the box.',
         'danger'
       );
       this._updateHUD();
@@ -390,11 +477,15 @@ export class FuseboxPuzzle {
     this.isSolved = true;
     this.showingEndMessage = true;
     this._playSfx('win');
+    // the power cut: the hum winds down to nothing
+    this._hum?.setRate(0.25, 0.6);
+    this._hum?.stop(2.2);
+    this._hum = null;
     this._updateVisualState();
     this._updateHUD();
 
     this._setStatusText(
-      'BREAKER TRIPPED: ALL COUPLINGS ISOLATED. ROBO-ARM POWER CUT. ACCESS GRANTED.',
+      'Breaker tripped. The arm is dead.',
       'success'
     );
 
@@ -422,6 +513,9 @@ export class FuseboxPuzzle {
     this.isGameOver = true;
     this.showingEndMessage = true;
     this._playSfx('fail');
+    // still live: the hum runs on, loud and fast
+    this._hum?.setRate(HUM_RATE + 0.4, 0.2);
+    this._hum?.setGain(HUM_GAIN + 0.15);
     this._updateHUD();
 
     if (this.breakerLedMaterial) {
@@ -431,9 +525,9 @@ export class FuseboxPuzzle {
     }
 
     if (reason === 'timeout') {
-      this._setStatusText('CYCLE ABORTED: WINDOW EXPIRED. BREAKER REMAINS LIVE.', 'danger');
+      this._setStatusText('Out of time. The arm is still live.', 'danger');
     } else {
-      this._setStatusText('LOCKOUT: SURGE CAPACITY EXHAUSTED. ARM REMAINS LIVE.', 'danger');
+      this._setStatusText('Too many misses. The arm is still live.', 'danger');
     }
 
     // Call onFailed() when time runs out or lives hit zero!
@@ -461,41 +555,41 @@ export class FuseboxPuzzle {
       this.domEndModal.className = 'fb-modal fb-modal-win visible';
       if (badgeEl) {
         badgeEl.className = 'fb-modal-badge';
-        badgeEl.textContent = 'BREAKER DISENGAGED // CONDUIT ISOLATED';
+        badgeEl.textContent = 'BREAKER TRIPPED';
       }
       if (headingEl) {
         headingEl.textContent = 'ARM POWER CUT';
       }
       if (copyEl) {
         copyEl.textContent =
-          "The breaker is thrown and auxiliary conduit power is severed. Dr. Kessler's robotic arm has powered down and the room is safe. Research logs are now accessible.";
+          "Dr. Kessler's robotic arm has powered down. The room is safe, and her logs can be read now.";
       }
     } else if (type === 'timeout') {
       this.domEndModal.className = 'fb-modal fb-modal-fail visible';
       if (badgeEl) {
         badgeEl.className = 'fb-modal-badge danger';
-        badgeEl.textContent = 'BREAKER TRIP TIMEOUT';
+        badgeEl.textContent = 'OUT OF TIME';
       }
       if (headingEl) {
-        headingEl.textContent = 'TRIP WINDOW EXPIRED';
+        headingEl.textContent = 'THE ARM IS STILL LIVE';
       }
       if (copyEl) {
         copyEl.textContent =
-          "The breaker timed out before all couplings could be locked. Power remains connected and the robotic arm is still live.";
+          "The timer ran out before all four rings were locked. Use the fusebox again to have another go.";
       }
     } else {
       // Out of lives
       this.domEndModal.className = 'fb-modal fb-modal-fail visible';
       if (badgeEl) {
         badgeEl.className = 'fb-modal-badge danger';
-        badgeEl.textContent = 'COUPLING OVERLOAD';
+        badgeEl.textContent = 'TOO MANY MISSES';
       }
       if (headingEl) {
-        headingEl.textContent = 'SURGE CAPACITY EXHAUSTED';
+        headingEl.textContent = 'THE ARM IS STILL LIVE';
       }
       if (copyEl) {
         copyEl.textContent =
-          "The couplings overloaded after repeated surge faults, tripping safety lockout. The robotic arm is still live.";
+          "Three misses and the breaker locked itself out. Use the fusebox again to have another go.";
       }
     }
 
@@ -664,18 +758,29 @@ export class FuseboxPuzzle {
       const targetGroup = new THREE.Group();
       this.rootGroup.add(targetGroup);
 
-      // Caliper Brackets indicating the exact +/- TARGET_TOLERANCE aperture
+      // The target box: the pin must be inside it to lock (it spans exactly +/- TARGET_TOLERANCE
+      // along the ring). Four glowing edges and a faint fill. Local x runs out from the centre,
+      // local y along the ring.
       const caliperMat = new THREE.MeshStandardMaterial({
         color: 0x3a4856,
+        emissive: 0x000000,
         roughness: 0.5,
         metalness: 0.6
       });
-      const caliperGeo = new THREE.BoxGeometry(0.04, 0.12, 0.05);
-
-      const caliperLeft = new THREE.Mesh(caliperGeo, caliperMat);
-      const caliperRight = new THREE.Mesh(caliperGeo, caliperMat);
-      targetGroup.add(caliperLeft);
-      targetGroup.add(caliperRight);
+      const arc = radius * TARGET_TOLERANCE;
+      const BOX_DEPTH = 0.27;
+      const sideGeo = new THREE.BoxGeometry(BOX_DEPTH + 0.035, 0.035, 0.05);
+      const endGeo = new THREE.BoxGeometry(0.035, arc * 2, 0.05);
+      const caliperLeft = new THREE.Mesh(sideGeo, caliperMat);
+      const caliperRight = new THREE.Mesh(sideGeo, caliperMat);
+      const boxIn = new THREE.Mesh(endGeo, caliperMat);
+      const boxOut = new THREE.Mesh(endGeo, caliperMat);
+      boxIn.position.set(-BOX_DEPTH / 2, 0, 0.03);
+      boxOut.position.set(BOX_DEPTH / 2, 0, 0.03);
+      const boxFillMat = new THREE.MeshBasicMaterial({ color: 0xffaa22, transparent: true, opacity: 0, depthWrite: false });
+      const boxFill = new THREE.Mesh(new THREE.PlaneGeometry(BOX_DEPTH, arc * 2), boxFillMat);
+      boxFill.position.z = 0.015;
+      targetGroup.add(caliperLeft, caliperRight, boxIn, boxOut, boxFill);
 
       // Alignment Sensor Receptor (illuminated diode in the target center)
       const sensorMat = new THREE.MeshStandardMaterial({
@@ -752,7 +857,8 @@ export class FuseboxPuzzle {
         sensorMat,
         caliperLeft,
         caliperRight,
-        caliperMat
+        caliperMat,
+        boxFillMat
       });
     }
   }
@@ -835,6 +941,9 @@ export class FuseboxPuzzle {
         ring.sensorMat.emissiveIntensity = 1.1;
 
         ring.caliperMat.color.setHex(0x2d553b);
+        ring.caliperMat.emissive.setHex(0x0c3a1c);
+        ring.boxFillMat.opacity = 0.12;
+        ring.boxFillMat.color.setHex(0x33ff66);
       } else if (i === this.activeRingIndex && !this.isGameOver && !this.isSolved && !this.showingEndMessage) {
         // ACTIVE RING: Obviously highlighted with high-intensity pulse and amber/cyan accent
         ring.pointerMat.emissive.setHex(0x00e5ff);
@@ -845,7 +954,12 @@ export class FuseboxPuzzle {
         ring.sensorMat.color.setHex(0xffe066);
         ring.sensorMat.emissiveIntensity = 1.2 + 0.9 * pulse;
 
-        ring.caliperMat.color.setHex(0x5a7a94);
+        // its box glows amber, so it is obvious where the pin has to be
+        ring.caliperMat.color.setHex(0xffc94d);
+        ring.caliperMat.emissive.setHex(0xff9a1a);
+        ring.caliperMat.emissiveIntensity = 0.9 + 0.5 * pulse;
+        ring.boxFillMat.color.setHex(0xffaa22);
+        ring.boxFillMat.opacity = 0.18 + 0.1 * pulse;
       } else {
         // Unlocked, but waiting in standby
         ring.pointerMat.emissive.setHex(0x194557);
@@ -858,6 +972,8 @@ export class FuseboxPuzzle {
         ring.sensorMat.emissiveIntensity = 0.5;
 
         ring.caliperMat.color.setHex(0x303b47);
+        ring.caliperMat.emissive.setHex(0x000000);
+        ring.boxFillMat.opacity = 0;
       }
     }
 
@@ -896,7 +1012,7 @@ export class FuseboxPuzzle {
         <h1 class="fb-panel-title">ARM POWER BREAKER // PANEL FB-02</h1>
         <div class="fb-hazard-banner">
           <span class="fb-hazard-icon">⚠</span>
-          <span>HAZARD: ROBOTIC ARM ONLINE (DRAWING RUNAWAY CURRENT) — LOCK COUPLINGS TO TRIP BREAKER AND SECURE LOGS</span>
+          <span>THE ARM IS LIVE. LOCK ALL FOUR RINGS TO CUT ITS POWER.</span>
         </div>
       </header>
 
@@ -907,40 +1023,49 @@ export class FuseboxPuzzle {
       <div class="fb-telemetry-bar">
         <!-- Surge Buffer / Lives -->
         <div class="fb-telemetry-block" id="fb-lives-block">
-          <div class="fb-telemetry-label">SURGE BUFFER</div>
+          <div class="fb-telemetry-label">MISSES LEFT</div>
           <div class="fb-lives-display" id="fb-lives-container">
-            <span class="fb-life-cell active" title="Surge Capacitor 1">⚡</span>
-            <span class="fb-life-cell active" title="Surge Capacitor 2">⚡</span>
-            <span class="fb-life-cell active" title="Surge Capacitor 3">⚡</span>
+            <span class="fb-life-cell active"></span>
+            <span class="fb-life-cell active"></span>
+            <span class="fb-life-cell active"></span>
           </div>
         </div>
 
         <!-- Active Coupling Target -->
         <div class="fb-telemetry-block fb-center-block" id="fb-active-block">
-          <div class="fb-telemetry-label">ACTIVE TARGET COUPLING</div>
+          <div class="fb-telemetry-label">LOCK THIS RING</div>
           <div class="fb-active-name" id="fb-active-name">COUPLING 01 // BASE AZIMUTH</div>
           <div class="fb-active-sub" id="fb-active-sub">ALIGN CONTACT WITHIN CALIPER APERTURE</div>
         </div>
 
         <!-- Breaker Trip Countdown -->
         <div class="fb-telemetry-block" id="fb-timer-block">
-          <div class="fb-telemetry-label">TRIP WINDOW</div>
+          <div class="fb-telemetry-label">TIME</div>
           <div class="fb-timer-display" id="fb-timer-display">20.0s</div>
+        </div>
+
+        <!-- How to play -->
+        <div class="fb-howto">
+          <div class="fb-telemetry-label">HOW TO STOP THE ARM</div>
+          <ol>
+            <li>One ring glows. Its <b>pin</b> spins round it.</li>
+            <li>Wait until the pin is inside the <b class="fb-amber">orange box</b>.</li>
+            <li>Then press <span class="fb-hint-key">SPACE</span> or <span class="fb-hint-key">CLICK</span> to lock it.</li>
+            <li>Lock all four rings before the time runs out. You can miss three times.</li>
+          </ol>
+        </div>
+
+        <div class="fb-status-line" id="fb-status-line">
+          Ready. Watch the glowing ring.
         </div>
       </div>
 
-      <!-- Interaction Hint Strip -->
-      <div class="fb-hint-strip">
-        <span class="fb-hint-key">[ SPACE ]</span> OR <span class="fb-hint-key">[ CLICK / TAP ]</span> TO LOCK ACTIVE COUPLING
-      </div>
 
       <!-- Bottom Diagnostic & Navigation Bar -->
       <footer class="fb-footer">
-        <div class="fb-status-line" id="fb-status-line">
-          STATUS: READY. LOCK ACTIVE COUPLING AT TARGET CALIPER.
-        </div>
+        <div></div>
         <button class="fb-btn fb-btn-ghost" id="fb-btn-close" type="button" aria-label="Step away from fusebox">
-          [ ESC ] STEP AWAY
+          STEP AWAY (ESC)
         </button>
       </footer>
 
@@ -967,18 +1092,16 @@ export class FuseboxPuzzle {
     this.domStatusLine = this.container.querySelector('#fb-status-line');
     this.domLivesCells = [...this.container.querySelectorAll('.fb-life-cell')];
     this.domEndModal = this.container.querySelector('#fb-end-message');
+
+    // the game's own HUD frames round the panels
+    frame(this.container.querySelector('.fb-telemetry-bar'), { shape: 'panel', number: '02' });
+    frame(this.domEndModal, { shape: 'panel', number: '02' });
   }
 
   _updateHUD() {
     // 1. Lives / Surge Buffer
     this.domLivesCells.forEach((cell, idx) => {
-      if (idx < this.lives) {
-        cell.className = 'fb-life-cell active';
-        cell.textContent = '⚡';
-      } else {
-        cell.className = 'fb-life-cell spent';
-        cell.textContent = '✕';
-      }
+      cell.className = idx < this.lives ? 'fb-life-cell active' : 'fb-life-cell spent';
     });
 
     // 2. Active Coupling info
@@ -987,7 +1110,7 @@ export class FuseboxPuzzle {
       this.domActiveName.textContent = meta.name;
     }
     if (this.domActiveSub) {
-      this.domActiveSub.textContent = `${meta.desc.toUpperCase()} · LOCK TOLERANCE ±0.18 RAD`;
+      this.domActiveSub.textContent = meta.desc;
     }
 
     // 3. Timer readout
@@ -1141,7 +1264,7 @@ export class FuseboxPuzzle {
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(480, now);
         osc.frequency.exponentialRampToValueAtTime(1180, now + 0.07);
-        gain.gain.setValueAtTime(0.24, now);
+        gain.gain.setValueAtTime(0.12, now);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
         osc.connect(gain);
         gain.connect(ctx.destination);
@@ -1154,7 +1277,7 @@ export class FuseboxPuzzle {
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(160, now);
         osc.frequency.linearRampToValueAtTime(60, now + 0.22);
-        gain.gain.setValueAtTime(0.32, now);
+        gain.gain.setValueAtTime(0.14, now);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
         osc.connect(gain);
         gain.connect(ctx.destination);
@@ -1168,7 +1291,7 @@ export class FuseboxPuzzle {
           const gain = ctx.createGain();
           osc.type = 'sine';
           osc.frequency.setValueAtTime(freq, now + idx * 0.08);
-          gain.gain.setValueAtTime(0.18, now + idx * 0.08);
+          gain.gain.setValueAtTime(0.09, now + idx * 0.08);
           gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.5);
           osc.connect(gain);
           gain.connect(ctx.destination);
@@ -1182,7 +1305,7 @@ export class FuseboxPuzzle {
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(220, now);
         osc.frequency.exponentialRampToValueAtTime(45, now + 0.4);
-        gain.gain.setValueAtTime(0.35, now);
+        gain.gain.setValueAtTime(0.15, now);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
         osc.connect(gain);
         gain.connect(ctx.destination);
@@ -1554,7 +1677,7 @@ export class FuseboxPuzzle {
         gap: 12px;
         justify-content: center;
       }
-    `;
+    ` + THEME_CSS;
     document.head.appendChild(style);
   }
 }

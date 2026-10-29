@@ -126,6 +126,9 @@ export class HabitatSession {
   constructor(game) {
     this.game = game;
     this.ready = false;
+    this.roboArmMixer = null;
+    this.roboArmClip = null;
+    this.roboArmAction = null;
     this.doorOpen = 0;
     this.doors = [];
     this.doorColliders = {};   // DOOR_ nodes keep their collider here so it can be removed on open
@@ -342,6 +345,7 @@ export class HabitatSession {
   async _loadModel(url) {
     const gltf = await createGLTFLoader().loadAsync(url);
     const model = gltf.scene;
+    model.animations = gltf.animations || [];
     model.updateMatrixWorld(true);
     for (const node of [...model.children]) {
       if (SOLID.some((p) => node.name.startsWith(p))) {
@@ -449,6 +453,20 @@ export class HabitatSession {
     ]);
     this.atrium = atrium;
     this.lab = lab;
+
+    // Retain atrium animation mixer and find Kessler bedroom robo arm swing clip
+    this.roboArmMixer = new THREE.AnimationMixer(atrium);
+    const clip = atrium.animations?.find((c) => c.name === 'KesslerRoboArmSwing');
+    if (clip) {
+      this.roboArmClip = clip;
+      this.roboArmAction = this.roboArmMixer.clipAction(clip);
+      this.roboArmAction.setLoop(THREE.LoopRepeat, Infinity);
+    } else {
+      console.warn('[HabitatSession] Animation clip "KesslerRoboArmSwing" not found in atrium animations.');
+      this.roboArmClip = null;
+      this.roboArmAction = null;
+    }
+
     // his tally on his bunk's locker, in his quarter (the logs show it growing up to Cycle 8)
     scene.add(tallyInRoom());
 
@@ -975,6 +993,7 @@ export class HabitatSession {
     const g = this.game;
     const dt = Math.min(delta, 0.05);
     const playing = g.state === 'PLAYING';
+    if (this.roboArmMixer) this.roboArmMixer.update(dt);
     this._warmTextures();
     // dropping into the shaft: the view sinks into the hole while the screen fades
     if (this._dropping) g.camera.instance.position.y -= dt * 3.5;
@@ -1541,6 +1560,7 @@ export class HabitatSession {
     this.sea?.dispose?.();
     this.visorAria?.dispose?.();
     this.aria?.dispose?.();
+    this.roboArmMixer?.stopAllAction();
     try { this.garden?.audio?.ctx?.close(); } catch (e) { /* already closed */ }
     for (const el of [this.codeNote, this.fpsEl, this.keypad?.root, this.flashback?.el]) el?.remove();
     this.composer?.dispose?.();

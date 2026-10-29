@@ -10,7 +10,7 @@ import { surfaceFor, SURFACE } from "./level1Look.js";
 import { createBrickMaps } from "./brickTexture.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { MonitorWall } from "./MonitorWall.js";
-import { makeLiftScreen } from "./liftCabin.js";
+import { makeLiftScreen, makeLiftPhoto } from "./liftCabin.js";
 import { HandleReach } from "./HandleReach.js";
 
 // Must match MAX_LIGHTS in Shaders.js (the room's 8 lights + the flashlight)

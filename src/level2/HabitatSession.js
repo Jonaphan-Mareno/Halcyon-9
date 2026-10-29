@@ -46,6 +46,7 @@ import { buildRoomProps } from './RoomProps.js';
 import { applyBedroomShell } from './BedroomShell.js';
 import { disposeScene } from '../core/disposeScene.js';
 import '../ui/level2.css';
+import { RoboArmHazard } from './RoboArmHazard.js';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
 // ENVIRONMENT PREVIEW. You arrive in the lift, the doors open, and you can walk the whole space.
@@ -467,6 +468,15 @@ export class HabitatSession {
       this.roboArmClip = null;
       this.roboArmAction = null;
     }
+
+    // Damaging hazard: read the arm's live bone positions every frame and hurt Voss on contact
+    this.roboArmHazard = new RoboArmHazard(atrium, {
+      onHit: (from) => {
+        if (this._restoring) return;
+        playClip(CLIPS.metalHit ?? CLIPS.tech, 0.9);
+        this._hurt('direct', from);
+      }
+    });
 
     // his tally on his bunk's locker, in his quarter (the logs show it growing up to Cycle 8)
     scene.add(tallyInRoom());
@@ -995,6 +1005,8 @@ export class HabitatSession {
     const dt = Math.min(delta, 0.05);
     const playing = g.state === 'PLAYING';
     if (this.roboArmMixer) this.roboArmMixer.update(dt);
+    // Bones are current after mixer.update; test contact now
+    if (playing) this.roboArmHazard?.update(dt, this.controls.position);
     this._warmTextures();
     // dropping into the shaft: the view sinks into the hole while the screen fades
     if (this._dropping) g.camera.instance.position.y -= dt * 3.5;
@@ -1395,6 +1407,7 @@ export class HabitatSession {
     }
     this._armStarted = true;
     this.roboArmAction.reset().play();
+    this.roboArmHazard?.start();
     console.log('[ARM] started');
   }
 
@@ -1582,6 +1595,7 @@ export class HabitatSession {
     this.visorAria?.dispose?.();
     this.aria?.dispose?.();
     this.roboArmMixer?.stopAllAction();
+    this.roboArmHazard?.stop();
     try { this.garden?.audio?.ctx?.close(); } catch (e) { /* already closed */ }
     for (const el of [this.codeNote, this.fpsEl, this.keypad?.root, this.flashback?.el]) el?.remove();
     this.composer?.dispose?.();

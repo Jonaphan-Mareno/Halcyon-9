@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Halcyon-9 // Kessler Bedroom Fusebox Minigame Test</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: #080c12;
+      color: #c9d8e6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Outer Test Harness Header */
+    .test-header {
+      padding: 16px 24px;
+      background: #0f1520;
+      border-bottom: 1px solid rgba(0, 229, 255, 0.2);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      z-index: 100;
+    }
+
+    .test-title-group h1 {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: #00e5ff;
+      text-transform: uppercase;
+      text-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+    }
+    .test-title-group p {
+      font-size: 12px;
+      color: #728ca3;
+      margin-top: 2px;
+    }
+
+    .test-center-panel {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(10, 15, 22, 0.85);
+      padding: 6px 14px;
+      border-radius: 4px;
+      border: 1px solid rgba(0, 229, 255, 0.2);
+    }
+    .result-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: #64829c;
+      text-transform: uppercase;
+    }
+    .result-badge {
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      padding: 3px 10px;
+      border-radius: 3px;
+      text-transform: uppercase;
+    }
+    .result-badge.none {
+      background: rgba(100, 130, 156, 0.15);
+      border: 1px solid rgba(100, 130, 156, 0.3);
+      color: #7e9bb5;
+    }
+    .result-badge.solved {
+      background: rgba(51, 255, 136, 0.18);
+      border: 1px solid #33ff88;
+      color: #33ff88;
+      text-shadow: 0 0 10px rgba(51, 255, 136, 0.6);
+    }
+    .result-badge.timed-out {
+      background: rgba(255, 170, 34, 0.18);
+      border: 1px solid #ffaa22;
+      color: #ffb84d;
+      text-shadow: 0 0 10px rgba(255, 170, 34, 0.5);
+    }
+    .result-badge.out-of-lives {
+      background: rgba(255, 77, 90, 0.18);
+      border: 1px solid #ff4d5a;
+      color: #ff4d5a;
+      text-shadow: 0 0 10px rgba(255, 77, 90, 0.6);
+    }
+
+    .test-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .harness-btn {
+      padding: 8px 18px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border: 1px solid rgba(0, 229, 255, 0.4);
+      background: rgba(0, 229, 255, 0.14);
+      color: #00e5ff;
+    }
+    .harness-btn:hover {
+      background: rgba(0, 229, 255, 0.28);
+      box-shadow: 0 0 12px rgba(0, 229, 255, 0.5);
+    }
+    .harness-btn.secondary {
+      border-color: rgba(120, 145, 170, 0.35);
+      background: rgba(20, 30, 42, 0.6);
+      color: #9cb2c6;
+    }
+    .harness-btn.secondary:hover {
+      background: rgba(30, 45, 62, 0.8);
+      color: #ffffff;
+      border-color: rgba(160, 190, 220, 0.6);
+    }
+
+    /* Main Container */
+    .test-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* Puzzle Mount Area */
+    #puzzle-root {
+      position: relative;
+      width: 100%;
+      height: 720px;
+      min-height: 600px;
+      background: radial-gradient(circle at center, #111722 0%, #080c12 100%);
+      border-bottom: 1px solid rgba(0, 229, 255, 0.15);
+      overflow: hidden;
+    }
+
+    /* Bottom Info & Diagnostics Pane */
+    .test-diagnostics {
+      padding: 24px;
+      background: #0b0f16;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 800px) {
+      .test-diagnostics {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .diag-card {
+      background: rgba(18, 25, 36, 0.6);
+      border: 1px solid rgba(0, 229, 255, 0.15);
+      border-radius: 6px;
+      padding: 16px 20px;
+    }
+
+    .diag-card h2 {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: #00e5ff;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      border-bottom: 1px solid rgba(0, 229, 255, 0.12);
+      padding-bottom: 6px;
+    }
+
+    .lore-text {
+      font-size: 13px;
+      line-height: 1.6;
+      color: #9cb4ca;
+    }
+    .lore-text strong {
+      color: #e1f0ff;
+    }
+
+    .lore-rules {
+      margin-top: 10px;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      color: #8da4ba;
+    }
+    .lore-rules li span.badge {
+      display: inline-block;
+      padding: 1px 6px;
+      font-size: 10px;
+      font-weight: 700;
+      background: rgba(0, 229, 255, 0.15);
+      color: #00e5ff;
+      border-radius: 3px;
+      margin-right: 6px;
+    }
+
+    /* Event Log Output */
+    #event-log {
+      height: 160px;
+      overflow-y: auto;
+      background: rgba(8, 12, 18, 0.8);
+      border: 1px solid rgba(0, 229, 255, 0.1);
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .log-item {
+      color: #8da4ba;
+    }
+    .log-item.solved {
+      color: #33ff88;
+      font-weight: 700;
+    }
+    .log-item.failed {
+      color: #ff4d5a;
+      font-weight: 700;
+    }
+    .log-item.close {
+      color: #ffaa22;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Test Harness Header -->
+  <header class="test-header">
+    <div class="test-title-group">
+      <h1>Kessler Bedroom // Arm Breaker Minigame Test</h1>
+      <p>HALCYON-9 · LEVEL 2 CREW QUARTERS · TIMING PUZZLE STANDALONE HARNESS</p>
+    </div>
+
+    <!-- Last Result Readout -->
+    <div class="test-center-panel" aria-label="Last round outcome">
+      <span class="result-label">LAST RESULT:</span>
+      <span id="last-result-badge" class="result-badge none">NONE</span>
+    </div>
+
+    <!-- Harness Actions -->
+    <div class="test-actions">
+      <button class="harness-btn" id="btn-open-puzzle">Open puzzle</button>
+      <button class="harness-btn secondary" id="btn-close-puzzle">Close</button>
+      <button class="harness-btn secondary" id="btn-clear-log">Clear Log</button>
+    </div>
+  </header>
+
+  <!-- Main Viewport Mount Point -->
+  <main class="test-main">
+    <div id="puzzle-root" aria-label="Fusebox Minigame Mount Container"></div>
+  </main>
+
+  <!-- Diagnostics & Lore Information -->
+  <section class="test-diagnostics">
+    <div class="diag-card">
+      <h2>In-World Lore & Rules</h2>
+      <p class="lore-text">
+        In Dr. Kessler's stateroom on <strong>Halcyon-9</strong>, the heavy maintenance robotic arm
+        (<code>RoboArmAture.001</code>) is malfunctioning and swinging violently across the room,
+        blocking access to her research logs.
+      </p>
+      <p class="lore-text" style="margin-top: 8px;">
+        Solving this breaker puzzle disengages all <strong>4 rotary magnetic couplings</strong>, tripping
+        the auxiliary arm breaker, cutting power, and making the bedroom safe.
+      </p>
+      <ul class="lore-rules">
+        <li><span class="badge">KEYBIND</span> Press <kbd>Space</kbd> or <kbd>Click/Tap</kbd> to lock the active coupling.</li>
+        <li><span class="badge">TOLERANCE</span> Lock when the rotating contact is inside the caliper bracket (±0.18 rad).</li>
+        <li><span class="badge">SPEED RAMP</span> Rotor rotation speed increases +7% after each successful lock.</li>
+        <li><span class="badge">LIVES & TIME</span> 3 surge capacity lives · 20.0s breaker trip countdown window.</li>
+        <li><span class="badge">END MESSAGE</span> Shows result with single "Close" button (Enter or Esc also close it).</li>
+        <li><span class="badge">FRESH REOPEN</span> Reopening via "Open puzzle" gives a completely fresh round.</li>
+      </ul>
+    </div>
+
+    <div class="diag-card">
+      <h2>Callback Event Log</h2>
+      <div id="event-log" role="log" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- Minigame Bootstrap Script -->
+  <script type="module">
+    import { FuseboxPuzzle } from './src/level2/FuseboxPuzzle.js';
+
+    const puzzleRoot = document.getElementById('puzzle-root');
+    const eventLog = document.getElementById('event-log');
+    const resultBadge = document.getElementById('last-result-badge');
+
+    function logEvent(msg, type = '') {
+      const timeStr = new Date().toISOString().substring(11, 19);
+      const div = document.createElement('div');
+      div.className = `log-item ${type}`;
+      div.textContent = `[${timeStr}] ${msg}`;
+      eventLog.appendChild(div);
+      eventLog.scrollTop = eventLog.scrollHeight;
+    }
+
+    function setLastResult(result) {
+      if (result === 'solved') {
+        resultBadge.textContent = 'SOLVED';
+        resultBadge.className = 'result-badge solved';
+      } else if (result === 'timed out') {
+        resultBadge.textContent = 'TIMED OUT';
+        resultBadge.className = 'result-badge timed-out';
+      } else if (result === 'out of lives') {
+        resultBadge.textContent = 'OUT OF LIVES';
+        resultBadge.className = 'result-badge out-of-lives';
+      } else {
+        resultBadge.textContent = 'NONE';
+        resultBadge.className = 'result-badge none';
+      }
+    }
+
+    logEvent('Initializing FuseboxPuzzle instance...', 'info');
+
+    // Instantiate FuseboxPuzzle with standard API callbacks
+    const puzzle = new FuseboxPuzzle(puzzleRoot, {
+      onSolved: () => {
+        setLastResult('solved');
+        logEvent('CALLBACK onSolved() — Breaker thrown! Power cut, room is safe.', 'solved');
+      },
+      onFailed: (reason) => {
+        const outcome = reason === 'timeout' ? 'timed out' : 'out of lives';
+        setLastResult(outcome);
+        logEvent(`CALLBACK onFailed("${reason}") — Outcome: ${outcome}. Arm is still live.`, 'failed');
+      },
+      onClose: () => {
+        logEvent('CALLBACK onClose() — Fusebox puzzle overlay closed.', 'close');
+      }
+    });
+
+    logEvent('FuseboxPuzzle initialized. Opening overlay.', 'info');
+    puzzle.open();
+
+    // Driven by requestAnimationFrame with delta time in seconds
+    let lastTime = performance.now();
+    function gameLoop(now) {
+      const dt = Math.min((now - lastTime) / 1000, 0.1);
+      lastTime = now;
+
+      puzzle.update(dt);
+
+      requestAnimationFrame(gameLoop);
+    }
+    requestAnimationFrame(gameLoop);
+
+    // Harness Controls
+    document.getElementById('btn-open-puzzle').addEventListener('click', () => {
+      logEvent('Harness action: puzzle.open() -> starts fresh round');
+      puzzle.open();
+    });
+
+    document.getElementById('btn-close-puzzle').addEventListener('click', () => {
+      logEvent('Harness action: puzzle.close()');
+      puzzle.close();
+    });
+
+    document.getElementById('btn-clear-log').addEventListener('click', () => {
+      eventLog.innerHTML = '';
+      logEvent('Log cleared.');
+    });
+
+    // Clean up on page unload
+    window.addEventListener('beforeunload', () => {
+      puzzle.dispose();
+    });
+  </script>
+</body>
+</html>

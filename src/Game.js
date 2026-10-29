@@ -571,6 +571,18 @@ export class Game {
     level.onTalkToAria = () => this.startIntroDialogue();
     level.onBrickPickedUp = () => this.ui.showToast('Click throws the brick. E drops it.', 5000);
     level.onHandleTurned = () => this.audio.clunk();
+    // The cell's handle is reached through the broken window (Level1._turnHandle): his arm is
+    // scripted for a couple of seconds, so the walk and the mouse are his again afterwards
+    level.getCharacter = () => this.controls?.character;
+    level.onReachStart = () => {
+      this.controls.stop();
+      this.controls.character?.stopReach();   // (the click's own jab: the scripted arm has it now)
+      this.controls.armsBehindWorld(true);   // the leaf has to be able to cover his hand
+    };
+    level.onReachEnd = () => {
+      this.controls.armsBehindWorld(false);
+      this.controls.instance.enabled = true;
+    };
     level.onTorchPickedUp = () => {
       this.inventory.add('torch');
       this.hud.setTorch(true, true);
@@ -959,14 +971,19 @@ export class Game {
                  this.state === 'DEAD' || this.state === 'RING_PUZZLE' ||
                  this.state === 'DEPARTING';
 
-    if (this.state === 'PLAYING') {
+    if (this.state === 'PLAYING' && !this.currentLevel.cinematic) {
       this.controls.update(delta);
     }
   
     if (live && this.currentLevel) {
       this.currentLevel.update(delta, this.camera.instance.position, this.camera.instance);
     }
-    if (this.state === 'PLAYING') this.controls.updateBody(delta);
+    // His body's clips run here; anything posed on top of them (a hand on something he holds) has
+    // to go on straight after, and only on a frame where they actually ran - the pose is undone by
+    // the next mixer update, so posing twice over one update stacks the bones up
+    if (this.state === 'PLAYING' && this.controls.updateBody(delta)) {
+      this.currentLevel.poseHands?.();
+    }
     if (live && this.state !== 'DEAD' && this.state !== 'WAKING') {
       this.player.playSeconds += delta;
     }
@@ -1145,6 +1162,8 @@ export class Game {
 
   // Interact with whatever is under the reticle (click or E)
   tryInteract(options = {}) {
+    // A scripted move has his arms (the cell's handle): clicks wait
+    if (this.currentLevel?.cinematic) return;
     // Something in Voss's hands (the cell's brick): click throws it, E drops it
     if (this.currentLevel.handleHeldItem?.(options)) return;
     if (!options.fromKey) this.controls.reach();      // (a click, with nothing in hand: he reaches out)

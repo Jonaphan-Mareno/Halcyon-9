@@ -216,6 +216,7 @@ export class HabitatSession {
         this._openInventory();
         return;
       }
+      if (e.code === 'Digit9' && !e.repeat) this._debugUnlockKessler(); // TEMP DEBUG
       if (e.code === 'KeyE' && !e.repeat) this.interact?.use();
       if (e.code === 'Enter') this.skipLine();
       if (e.code === 'KeyQ' && !e.repeat && this.garden) {
@@ -1181,6 +1182,9 @@ export class HabitatSession {
   // ---------------------------------------------------------
   _onStory(flag) {
     console.log('Level 2 story:', flag);
+    if ((flag === 'cardTaken' || flag === 'labDone') && this._kesslerUnlocked()) {
+      this._startRoboArm();
+    }
     // on the way to Kessler's room: load her for the flashback ahead of time
     if (FLASHBACK_3D && (flag === 'cardTaken' || flag === 'labDone')) {
       this.flashback3d.player = this.controls.character;
@@ -1384,6 +1388,23 @@ export class HabitatSession {
     return this.aria.speaking || this.game.ui.dialogue.classList.contains('visible');
   }
 
+  _startRoboArm() {
+    if (this._armStarted || !this.roboArmAction) {
+      console.log('[ARM] not started', { already: this._armStarted, action: !!this.roboArmAction });
+      return;
+    }
+    this._armStarted = true;
+    this.roboArmAction.reset().play();
+    console.log('[ARM] started');
+  }
+
+  // TEMP DEBUG: remove before submitting
+  _debugUnlockKessler() {
+    this.story.set('cardTaken');
+    this.story.set('labDone');
+    this._startRoboArm();
+    this.game.ui.showToast('DEBUG: arm started [9]', 2000);
+  }
   _kesslerUnlocked() {
     return this.story.has('cardTaken') && this.story.has('labDone');
   }

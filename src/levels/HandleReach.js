@@ -94,9 +94,9 @@ export class HandleReach {
     }
     this._across.normalize();
 
-    // The hand nearer the handle does it, not the one that would have to cross his chest
+    // His right hand does it
     const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).setY(0).normalize();
-    this.side = this._across.dot(right) > 0 ? 'R' : 'L';
+    this.side = 'R';
     this._elbowOut = right.multiplyScalar(this.side === 'R' ? 1 : -1);
     this.span = player.armSpan(this.side);
     if (!(this.span > 0)) return;      // no arm bones on this rig: the level falls back

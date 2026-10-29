@@ -99,8 +99,8 @@ export const INTRO_CONFIG = {
     [3.1, 0.00, 0.86],        // blink: black
     [3.5, 0.00, 0.84],
     [4.6, 0.85, 0.55],        // open again, more fully
-    [5.2, 1.25, 0.30],        // wide open
-    [6.2, 1.25, 0.00]         // sharp
+    [5.4, 1.25, 0.30],        // wide open
+    [7.2, 1.25, 0.00]         // sharp (slowly, so the hand-over to play is seamless)
   ],
   ARIA_DELAY: 1.0,            // ARIA's line comes this long after the second opening is complete
   PROLOGUE: true              // the Polaroids and the last day, between Begin and the wake-up
@@ -228,7 +228,7 @@ export const EyeShader = {
       // tunnel vision, closing in when hazy (soft and colourless: no edge to see)
       vec2 d = (vUv - 0.5) * vec2(uAspect, 1.0);
       float vig = smoothstep(1.05, 0.2, length(d) * (1.0 + 0.7 * uHaze));
-      col *= mix(1.0, vig, 0.3 + 0.55 * uHaze);
+      col *= mix(1.0, vig, 0.3 * smoothstep(0.0, 0.3, uHaze) + 0.55 * uHaze);
 
       // how open the eyes are: how much of the picture comes through, out of black
       float seen = clamp(uOpen / 0.9, 0.0, 1.0);

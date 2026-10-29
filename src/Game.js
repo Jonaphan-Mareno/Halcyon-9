@@ -675,15 +675,46 @@ export class Game {
       .catch((e) => console.warn('Level 1: shaders not precompiled.', e));
   }
 
-  // The eyes are open: hand him over
-  endOpeningWake() {
+  // The eyes are open: a moment later he asks where he is, looking slowly round the cell, then he
+  // is handed over
+  async endOpeningWake() {
+    if (this._wakeEnding) return;
+    this._wakeEnding = true;
+    if (this.music) this.music.muted = this._musicWasMuted;
+    if (this.state === 'WAKING' && this.controls && this.intro) {
+      await sleep(1500);
+      const look = this._lookRound(4.2);
+      await vossSays(this.ui, INTRO_LINES[0].voss, 'intro-line-1', { timed: true });
+      this.ui.hideDialogue();
+      this.intro.wakeLineSaid = true;
+      await look;
+    }
     if (this.controls) this.controls.instance.enabled = true;
     if (this.state === 'WAKING') {
       this.state = 'PLAYING';
       this.reticle.classList.add('visible');
     }
-    if (this.music) this.music.muted = this._musicWasMuted;
     this._wantLockHint = true;
+  }
+
+  // A slow, uneasy look round: left, then right, then back to where he was facing
+  _lookRound(seconds) {
+    const cam = this.camera.instance;
+    const e = new THREE.Euler().setFromQuaternion(cam.quaternion, 'YXZ');
+    const yaw0 = e.y, pitch0 = e.x;
+    const t0 = performance.now();
+    return new Promise((resolve) => {
+      const step = () => {
+        const k = Math.min(1, (performance.now() - t0) / (seconds * 1000));
+        const s = k * k * (3 - 2 * k);
+        // (a sine through left and right, eased in and out, the head dipping a little as it turns)
+        e.set(pitch0 - 0.06 * Math.sin(s * Math.PI), yaw0 + 0.55 * Math.sin(s * Math.PI * 2), 0, 'YXZ');
+        cam.quaternion.setFromEuler(e);
+        if (k < 1 && this.state === 'WAKING') requestAnimationFrame(step);
+        else resolve();
+      };
+      requestAnimationFrame(step);
+    });
   }
 
   // ARIA's first recorded line ("You're awake!"), the moment her monitor comes back on after the
@@ -1852,12 +1883,8 @@ async onRingPuzzleSolved() {
   this.audio.success();
   await sleep(1200);             // let the green ticks show
   this.exitRingPuzzle();
-  this.ui.showToast('Panel repaired. The wall monitor is coming back online.');
-  // (once the view is back from the panel) the monitor flickers on, and she speaks; if he gets to
-  // her monitor first, the conversation there starts with this line instead
-  for (let i = 0; i < 60 && this.state !== 'PLAYING'; i++) await sleep(100);
-  await sleep(1200);
-  this.openingAriaLine();
+  // (the monitor flickers on, silent: she greets him when he goes up to it)
+  this.ui.showToast('Panel repaired. The wall monitor is back online. Go and look at it.');
 }
 
 }

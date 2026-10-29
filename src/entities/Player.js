@@ -32,14 +32,14 @@ const SWIM_FBX = './assets/models/Swimming.fbx';
 const TREAD_FBX = './assets/models/Treading Water.fbx';
 
 // The model is authored at 1.39 m; the game's Voss is 1.8 m
-const MODEL_HEIGHT = 1.394;
+export const MODEL_HEIGHT = 1.394;
 
 // Between the eyes, in model space (glTF axes, before the half turn below)
-const EYE = new THREE.Vector3(0, 1.300, 0.051);
+export const EYE = new THREE.Vector3(0, 1.300, 0.051);
 
 // How fast a planted foot travels at model scale: game speed / (this * scale) = clip speed.
 // Measured from each clip: the planted foot's backward speed while it is on the ground.
-const WALK_STRIDE_SPEED = 1.356;
+export const WALK_STRIDE_SPEED = 1.356;
 const RUN_STRIDE_SPEED = 4.2;          // Sprint.fbx
 const GLB_RUN_STRIDE_SPEED = 2.463;    // the glb's Run (the fallback), and FP_Run, made to match it
 // The run plays while the run key is held and the body is moving at least this fast (m/s)

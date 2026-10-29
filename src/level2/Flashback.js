@@ -1,23 +1,19 @@
-import { audioSrc } from '../audio/AudioCache.js';
-
-// The flashback in Dr. Kessler's room (scene 2.8, step 3): a wordless memory, the first time the
-// player sees faces. Kessler stands at the shutdown console. Voss argues with her, protective of
-// the work, while ARIA pleads from a speaker (her words indistinct: only her pulsing light). Kessler
-// reaches for the shutdown lever. Voss turns away from her, walks to the door controls instead,
-// and locks the room. Cut to black.
+// The flashback in Dr. Kessler's room (Flashback 2, "The shutdown"), drawn: the fallback for slow
+// machines (the full scene, Flashback3D.js, plays in first person when Kessler's model has loaded and
+// the machine keeps up). The same story, silent and wordless: Kessler at her workbench, Voss arguing
+// with her, ARIA only a light on the bench that pulses faster and faster. Then a silence, and
+// Kessler walks past Voss and out of the door; he turns to watch her go. Cut to black. Nothing is
+// locked.
 //
 // It is drawn in 2D on a canvas (flat shapes in the station's colours, a cold teal grade, film
-// grain, letterbox bars), so it costs nothing in 3D. This is the fallback: the full 3D flashback
-// (Flashback3D.js) plays instead when Kessler's model has loaded and the machine keeps up. An optional recording can go in
-// public/assets/audio/logs/flashback.mp3 (the muffled argument); until then it is silent.
+// grain, letterbox bars), so it costs nothing in 3D.
 //
 // play() resolves when it ends. Enter skips it (after the first couple of seconds).
 
 const W = 640;
 const H = 360;
-const DURATION = 14.6;
+const DURATION = 16.4;
 const FLOOR = 300;
-const AUDIO = './assets/audio/logs/flashback.mp3';
 
 const C = {
   wall: '#10222e', wall2: '#0a1620', floor: '#0b1218', console: '#172a3a', trim: '#f07a14',
@@ -55,9 +51,6 @@ export class Flashback {
     this.t = 0;
     this.el.classList.add('on');
     this.hint.style.opacity = 0;
-    this.audio = new Audio(audioSrc(AUDIO));
-    this.audio.addEventListener('error', () => { this.audio = null; });
-    this.audio.play().catch(() => { this.audio = null; });
     return new Promise((resolve) => {
       let last = performance.now();
       const frame = (now) => {
@@ -67,7 +60,6 @@ export class Flashback {
         this.hint.style.opacity = this.t > 2 && this.t < DURATION - 1 ? 0.55 : 0;
         if (this.t >= DURATION) {
           this.running = false;
-          this.audio?.pause();
           this.el.classList.remove('on');
           resolve();
           return;
@@ -92,39 +84,37 @@ export class Flashback {
 
     this._room(g, t);
 
-    // the beats
-    const argue = seg(t, 0.6, 1.4) * (1 - seg(t, 8.3, 9));
-    const toKess = seg(t, 5, 7.5);                 // Voss steps up to Kessler
-    const leave = seg(t, 9.3, 12);                 // Voss walks away to the door
-    const lever = seg(t, 6.2, 8.2) * (1 - 0.0);     // she pulls the lever
-    const vx = lerp(lerp(350, 275, toKess), 535, leave);
-    const faceLeft = t < 9.3;
-    const reach = seg(t, 5.2, 7);                  // her arm goes to the lever
-    const door = seg(t, 12, 12.6);                 // the door locks
+    // the beats: they argue (he steps up to her), a silence, then she walks past him and out of the
+    // door, and he turns to watch her go
+    const argue = seg(t, 0.6, 1.4) * (1 - seg(t, 7.6, 8.2));
+    const toKess = seg(t, 3, 4.5);                 // Voss steps up to her
+    const leave = seg(t, 10.8, 14.2);              // she walks out (past him, through the door)
+    const kx = lerp(175, 640, leave);
+    const vx = lerp(350, 300, toKess);
+    const watch = kx > vx + 10;                    // he has turned to watch her go
+    const door = seg(t, 12.4, 12.9) * (1 - seg(t, 14.3, 14.8));
 
-    // ARIA's speaker: pleading, then frantic
-    const aria = 0.5 + 0.5 * Math.sin(t * (4 + toKess * 6)) * (0.6 + 0.4 * Math.sin(t * 1.7));
-    this._aria(g, t, aria, 1 + toKess * 0.6 + (t > 12 ? 1 : 0));
+    // ARIA: a light on the bench, faster and faster through the talk and the silence
+    const rate = 1 + seg(t, 1, 10.5) * 3;
+    const aria = 0.5 + 0.5 * Math.sin(t * rate * Math.PI * 2 * 0.6);
+    this._aria(g, t, aria, rate);
 
-    this._person(g, 175, FLOOR, 1.05, {
-      dir: 1, coat: C.coat, shade: C.coatShade, hair: C.kessHair, long: true, shades: true,
-      armF: lerp(-0.2, -1.5, reach), armB: -0.15,
-      talk: t > 6 && t < 12 ? Math.abs(Math.sin(t * 7)) * 0.7 : 0.1,
-      brow: lerp(0.1, 0.5, toKess) - (t > 12 ? 0.8 : 0), look: t > 11.5 ? 1 : 0, t,
-      lean: lerp(0, 0.04, reach), watch: leave > 0.1
-    });
-    this._person(g, vx, FLOOR, 1.05, {
-      dir: faceLeft ? -1 : 1, coat: C.vossCoat, shade: '#a9b9c4', hair: C.vossHair, long: false, shades: false,
-      armF: faceLeft ? Math.sin(t * 5) * 0.5 * argue - 1.0 * argue - 0.9 * toKess : lerp(0.1, -1.6, door),
-      armB: faceLeft ? Math.sin(t * 4 + 1) * 0.5 * argue - 0.7 * argue : 0.2,
-      talk: argue * Math.abs(Math.sin(t * 8)) * 0.8, brow: 0.6 * argue, look: 0, t,
+    this._doorway(g, door);
+    this._person(g, kx, FLOOR, 1.05, {
+      dir: leave > 0.02 ? 1 : (t > 1 ? 1 : -1), coat: C.coat, shade: C.coatShade, hair: C.kessHair, curls: true, shades: false,
+      armF: leave > 0 ? 0.1 : -0.2, armB: -0.15,
+      talk: t > 1.5 && t < 7.6 ? Math.abs(Math.sin(t * 6)) * 0.6 * (Math.sin(t * 0.9) > 0 ? 1 : 0.2) : 0.1,
+      brow: lerp(0.1, 0.4, toKess), look: 0, t,
       walk: leave > 0 && leave < 1 ? leave : 0
     });
+    this._person(g, vx, FLOOR, 1.05, {
+      dir: watch ? 1 : -1, coat: C.vossCoat, shade: '#a9b9c4', hair: C.vossHair, curls: false, shades: false,
+      armF: Math.sin(t * 5) * 0.5 * argue - 1.0 * argue - 0.9 * toKess * argue,
+      armB: Math.sin(t * 4 + 1) * 0.5 * argue - 0.7 * argue,
+      talk: argue * Math.abs(Math.sin(t * 8)) * 0.8 * (Math.sin(t * 0.9) > 0 ? 0.2 : 1), brow: 0.6 * argue, look: 0, t
+    });
 
-    // the lever at the console: down once she has pulled it
-    this._lever(g, lever, t);
-    // the door panel, locking
-    this._doorPanel(g, door, t);
+    this._doorPanel(g, t);
 
     this._grade(g, t);
   }
@@ -160,37 +150,14 @@ export class Flashback {
     for (let i = 0; i < 5; i++) g.fillRect(92, 160 + i * 10, 30 + ((i * 37 + Math.floor(t * 3)) % 46), 3);
   }
 
-  _lever(g, k, t) {
-    // a red plate with the shutdown lever on the console
-    g.fillStyle = '#3a0f0d';
-    g.fillRect(212, 232, 44, 36);
-    g.fillStyle = C.red;
-    g.globalAlpha = 0.5 + 0.5 * Math.abs(Math.sin(t * 6));
-    g.fillRect(216, 236, 36, 4);
-    g.globalAlpha = 1;
-    g.strokeStyle = '#c9d3da';
-    g.lineWidth = 5;
-    g.lineCap = 'round';
-    const a = lerp(-1.1, 0.5, k);
-    g.beginPath();
-    g.moveTo(234, 258);
-    g.lineTo(234 + Math.sin(a) * 26, 258 - Math.cos(a) * 26);
-    g.stroke();
-    g.fillStyle = C.red;
-    g.beginPath();
-    g.arc(234 + Math.sin(a) * 26, 258 - Math.cos(a) * 26, 5, 0, Math.PI * 2);
-    g.fill();
-  }
 
   _aria(g, t, pulse, rate) {
-    // a speaker panel high on the wall with rings spreading from its light
-    const cx = 470, cy = 92;
+    // ARIA: a round light set in the console, with rings spreading from it
+    const cx = 110, cy = 236;
     g.fillStyle = '#0a1520';
-    g.fillRect(cx - 38, cy - 26, 76, 52);
-    g.strokeStyle = 'rgba(79,227,255,0.4)';
-    g.strokeRect(cx - 37.5, cy - 25.5, 76, 52);
+    g.fillRect(cx - 14, cy - 8, 28, 14);
     for (let i = 0; i < 4; i++) {
-      const k = ((t * 0.6 * rate + i / 4) % 1);
+      const k = ((t * 0.3 * rate + i / 4) % 1);
       g.strokeStyle = `rgba(79,227,255,${(1 - k) * 0.5 * (0.4 + pulse)})`;
       g.lineWidth = 2;
       g.beginPath();
@@ -208,25 +175,24 @@ export class Flashback {
     g.fill();
   }
 
-  _doorPanel(g, k, t) {
+  // the door's panel, green: nothing is locked
+  _doorPanel(g) {
     const x = 543, y = 214;
     g.fillStyle = '#16202a';
     g.fillRect(x - 12, y - 18, 24, 40);
-    g.fillStyle = k > 0.5 ? C.red : '#43ff8f';
-    g.globalAlpha = k > 0.5 ? 0.6 + 0.4 * Math.abs(Math.sin(t * 9)) : 1;
+    g.fillStyle = '#43ff8f';
     g.beginPath();
     g.arc(x, y - 6, 4, 0, Math.PI * 2);
     g.fill();
-    g.globalAlpha = 1;
-    if (k > 0.5) {
-      // bolts slide across the door
-      g.fillStyle = C.red;
-      g.globalAlpha = 0.7;
-      g.fillRect(562, 200, 78, 6);
-      g.fillRect(562, 250, 78, 6);
-      g.globalAlpha = 1;
-    }
   }
+
+  // the door slides up as she reaches it (k 0 shut, 1 open), the dim corridor behind
+  _doorway(g, k) {
+    if (k <= 0) return;
+    g.fillStyle = '#1b2c38';
+    g.fillRect(562, 118, 78, (FLOOR - 118) * k);
+  }
+
 
   // A person, standing on floorY. pose: dir (+1 faces right), armF/armB (the near/far arm's raise
   // in radians, 0 hanging down), talk (mouth open 0..1), brow (0 calm .. 1 hard angry), look,
@@ -257,7 +223,7 @@ export class Flashback {
     g.fill();
     g.fillStyle = p.shade;
     g.fillRect(-1, -122, 2, 78);                         // the front seam
-    if (p.long) {
+    if (p.curls) {
       g.fillStyle = C.cyan;                               // Kessler: a badge on a lanyard
       g.fillRect(6, -118, 2, 20);
       g.fillRect(3, -99, 8, 10);
@@ -306,11 +272,13 @@ export class Flashback {
     g.beginPath();
     g.arc(-1, -2, 16, 0, Math.PI * 2);
     g.fill();
-    if (p.long) {
-      // Kessler: red, long and loose, falling down her back
-      g.beginPath();
-      g.ellipse(-8, 16, 11, 27, 0.12, 0, Math.PI * 2);
-      g.fill();
+    if (p.curls) {
+      // Kessler: red curls to her shoulders
+      for (const [cx, cy, r] of [[-12, 4, 8], [-13, 14, 7], [-8, 22, 6], [12, -4, 6], [-4, -14, 7], [6, -14, 6]]) {
+        g.beginPath();
+        g.arc(cx, cy, r, 0, Math.PI * 2);
+        g.fill();
+      }
     }
     // face
     g.fillStyle = C.skin;
@@ -379,17 +347,12 @@ export class Flashback {
     g.fillStyle = '#000';
     g.fillRect(0, 0, W, 34);
     g.fillRect(0, H - 34, W, 34);
-    // a flicker and a few glitch bars as the door locks
-    if (t > 12 && t < 13.6 && Math.random() < 0.5) {
-      g.fillStyle = 'rgba(255,60,50,0.18)';
-      g.fillRect(0, Math.random() * H, W, 6 + Math.random() * 18);
-    }
     if (t < 1.2) {
       g.fillStyle = `rgba(235,252,255,${1 - t / 1.2})`;
       g.fillRect(0, 0, W, H);
     }
     // the cut to black
-    const out = seg(t, 13.5, 14.2);
+    const out = seg(t, DURATION - 0.9, DURATION - 0.2);
     if (out > 0) {
       g.fillStyle = `rgba(0,0,0,${out})`;
       g.fillRect(0, 0, W, H);

@@ -271,6 +271,15 @@ export class FaceRig {
     }
   }
 
+  // Lip-sync to an AnalyserNode the caller plays the voice through (a decoded recording, say)
+  attachAnalyser(analyser) {
+    this.analyser = analyser;
+    this._timeData = new Uint8Array(analyser.fftSize);
+    this._freqData = new Uint8Array(analyser.frequencyBinCount);
+    this.mode = 'audio';
+    this._peak = AUDIO_PEAK;
+  }
+
   // The brows stress a word: a quick lift, or a deeper knit on a scowling face
   emphasis(amount) {
     this._emph = Math.max(this._emph, amount);

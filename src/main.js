@@ -7,11 +7,12 @@ import './style.css';
 
 // Entry point for Halcyon-9
 const game = new Game();
+if (import.meta.env.DEV) window.__game = game;   // for poking at from the dev console
 
 const params = new URLSearchParams(window.location.search);
 // The opening cinematic plays as soon as the page loads, with no menu. It is skipped for the
-// test links (?level=2, ?level=3...) and with ?nointro, which keep the old start screen.
-const classic = params.has('level') || params.has('nointro');
+// test links (?level=2, ?level=3, ?flashback1...) and with ?nointro, which keep the old start screen.
+const classic = params.has('level') || params.has('nointro') || params.has('flashback1');
 
 // The old start screen: a WAKE UP button, whose click starts the game and takes the mouse
 function setUpStartScreen() {

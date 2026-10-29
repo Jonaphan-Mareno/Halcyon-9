@@ -3,6 +3,11 @@ import creditsMd from '../../CREDITS.md?raw';
 // The credits screen's text: CREDITS.md, turned into HTML at build time, so the screen always
 // shows what the file says. Only what CREDITS.md uses is handled: headings, paragraphs, tables,
 // lists, *italics*, **bold**, `code` and bare links.
+//
+// Everything from INTERNAL_MARK down in CREDITS.md is a note to the team (what is still owed and
+// by whom, before submission): it stays in the file for us, but never reaches the screen.
+
+const INTERNAL_MARK = '<!-- internal -->';
 
 const escape = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -67,4 +72,10 @@ export function renderMarkdown(md) {
   return out.join('\n');
 }
 
-export const CREDITS_HTML = renderMarkdown(creditsMd);
+// What players see: everything above the internal marker (all of it if the marker is absent).
+const shown = (md) => {
+  const cut = md.indexOf(INTERNAL_MARK);
+  return cut === -1 ? md : md.slice(0, cut);
+};
+
+export const CREDITS_HTML = renderMarkdown(shown(creditsMd));

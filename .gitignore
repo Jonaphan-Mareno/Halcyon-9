@@ -36,11 +36,15 @@ __pycache__/
 Blender/assets/plants/
 # Private design/task notes (local only)
 Halcyon-9 Level 2 Six Independent Task Prompts.pdf
+CGV_Game_Tasks.pdf
 halcyon-9.zip
 
 # Working notes and reference images (handover documents, character/lab references, flashback frames)
 HANDOVER_*.txt
 reference/
+
+# Local copies of files taken before risky edits (restore with: cp .backup/<name> <path>)
+.backup/
 
 # Models used only to render the prologue photos (local only; removed once the photos are final)
 Blender/assets/babyTpose.fbx

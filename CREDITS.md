@@ -11,8 +11,7 @@
 
 Everything not listed here (the station, rooms, furniture, props, the organism, the drowned deck,
 shaders, the procedural textures and the sound effects) is our own work. The sound effects are
-synthesised in the browser (src/audio). The background music is the team's own choice of tracks
-(public/assets/audio/music): credit every track here when it is added.
+synthesised in the browser (src/audio).
 
 ## ambientCG (CC0 1.0, public domain)
 
@@ -175,16 +174,30 @@ low thuds, footsteps and the console's buzz are synthesised in the browser.
 
 | Asset | Source | Used for |
 |---|---|---|
-| `public/assets/audio/aria/*.mp3` | Text-to-speech from ElevenLabs, voice "Maisie" (as named in the Level 2 script; confirm the exact voice and plan terms before submission) | ARIA's spoken lines |
-
-## To add when used
-
-- Sketchfab sea creatures for the final submission: record the model name, author, licence and
-  link here when they are added.
-
+| `public/assets/audio/aria/*.mp3` | Text-to-speech from ElevenLabs, voice "Maisie" | ARIA's spoken lines |
 
 ## Fonts
 
 | Font | Author | Used for | Licence |
 |---|---|---|---|
 | Orbitron | Matt McInerney (Google Fonts) | the HALCYON-9 title in the opening | SIL Open Font License 1.1, https://github.com/google/fonts/tree/main/ofl/orbitron |
+
+<!-- internal -->
+
+## To finish before submission (not shown in the game)
+
+Everything below the `<!-- internal -->` line above is a note to the team: `src/intro/credits.js`
+stops rendering there, so it never appears on the credits screen. Player-facing lines belong above
+it; anything still owed belongs below.
+
+- **Background music.** The soundtrack player is `src/audio/Soundtrack.js`, which looks in
+  `public/assets/audio/music/` for `level1.mp3`, `level1-tense.mp3`, `level2.mp3`,
+  `level2-fight.mp3`, `level3.mp3`, `level3-tense.mp3` and `prologue.mp3` (see that folder's
+  README.txt). None of them are in the build yet: only the kraken and sea tracks are, and those are
+  already credited above. Each track needs its own credit row once the music lands, so add a
+  `## Background music` section above this line with one row per track (title, artist, link,
+  licence) as they arrive.
+- **ARIA's voice.** Confirm the exact ElevenLabs voice and the plan terms before submission: the
+  row above names "Maisie" because that is what the Level 2 script says.
+- **Sea creatures.** Sketchfab models for the final submission: record the model name, author,
+  licence and link here, then add them to the tables above.

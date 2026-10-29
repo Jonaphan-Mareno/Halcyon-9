@@ -88,6 +88,12 @@ export class Level2Story {
       // the lit door in the dead gallery is the pull: the marker names the light, not the room
       return { text: "Find Dr. Kessler's override key", label: 'LIGHT ON', target: t.quarters };
     }
+    // The log flag and the inventory card are separate: debug progression (and interrupted
+    // sessions) can set the first without running the montage's completion callback.
+    if (!f.cardTaken) {
+      if (p && this._inBunk(p)) return { text: "Watch Voss's personal logs to recover her card", label: 'LOGS', target: t.personalLog };
+      return { text: "Recover Dr. Kessler's card from Voss's locker", label: 'CARD', target: t.quarters };
+    }
     if (!f.labDone) {
       if (p && this._inLab(p)) return { text: 'Read the files on the lab terminal', label: 'TERMINAL', target: t.labTerminal };
       return { text: 'Investigate the lab', label: 'LAB', target: t.lab };

@@ -50,12 +50,10 @@ export class HUD {
         <div class="tut-title">HOW THIS WORKS</div>
         <div class="tut-item"><b class="tut-health">HEALTH</b>
           <span>The green bar in the bottom-left. Electric shocks, live fuses and generator overloads drain it.</span></div>
-        <div class="tut-item"><b class="tut-lives">LIVES</b>
-          <span>The three glowing discs. If your health runs out, ARIA brings you back from a saved copy and you lose one disc. Lose all three and it is game over.</span></div>
         <div class="tut-item"><b class="tut-key">F</b>
           <span>Switch your torch on or off, once you have found it. It sits in the bottom-right corner.</span></div>
         <div class="tut-item"><b class="tut-key">I</b>
-          <span>Open your inventory: what you are carrying, your health and lives, and your stats.</span></div>
+          <span>Open your inventory: what you are carrying, your health, and your stats.</span></div>
         <div class="tut-continue">Press Space, Enter or click to continue</div>
       </div>`;
 

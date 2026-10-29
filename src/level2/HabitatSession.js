@@ -1020,8 +1020,13 @@ export class HabitatSession {
     // Solid only while fully closed, since that is where their collider is baked.
     for (const d of this.quarterDoors) {
       const allowed = d.node.name !== 'DOOR_KESSLER' || this._kesslerUnlocked();
-      // (Flashback 2 holds Kessler's door open as she walks out: flashbackDoors, name -> open)
-      const near = this.flashbackDoors?.[d.node.name] ?? (allowed && this.controls.position.distanceTo(d.centre) < 4);
+      // Flashback 2 scripts Kessler's door while it is running. A stale `false` left in
+      // flashbackDoors must not override the normal proximity trigger after the scene ends.
+      const inFlashback = d.node.name === 'DOOR_KESSLER' && this.flashback3d?.running;
+      const approach = d.node.name === 'DOOR_KESSLER' ? this.story.targets.kessler : d.centre;
+      const near = inFlashback
+        ? (this.flashbackDoors?.[d.node.name] ?? false)
+        : (allowed && this.controls.position.distanceTo(approach) < 6);
       d.open = THREE.MathUtils.clamp(d.open + (near ? dt : -dt) / (d.panels ? 0.7 : 1.2), 0, 1);
       const t = d.open * d.open * (3 - 2 * d.open);
       if (d.panels) for (const pn of d.panels) pn.obj.position.x = pn.s * (d.pw / 2 + d.pw * t);
@@ -1298,11 +1303,12 @@ export class HabitatSession {
   // card"). He has Kessler's card now (it was in his own locker), Voss recognises the handwriting,
   // and ARIA breaks in.
   _memoriesWatched() {
-    if (!this.story.set('logWatched')) return;
-    this.story.set('cardTaken');
-    this.inventory.add('card');
-    this.game.ui.showToast("DR. KESSLER'S ACCESS CARD ADDED TO YOUR INVENTORY (I)", 6000);
-    setTimeout(() => this.say([...TALKS.letter, ...TALKS.bunkInterrupt]), 800);
+    const firstWatch = this.story.set('logWatched');
+    if (this.story.set('cardTaken')) {
+      this.inventory.add('card');
+      this.game.ui.showToast("DR. KESSLER'S ACCESS CARD ADDED TO YOUR INVENTORY (I)", 6000);
+    }
+    if (firstWatch) setTimeout(() => this.say([...TALKS.letter, ...TALKS.bunkInterrupt]), 800);
   }
 
   // an entry was opened: the lab's first file gets ARIA's longest pause

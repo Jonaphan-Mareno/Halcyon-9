@@ -121,7 +121,7 @@
 @keyframes loading-sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 
 /* Level 2 works like It Takes Two: dying restarts the course, so there are no lives to show */
-#hud .hud-row:nth-child(2) { display: none; }
+#hud .hud-row:nth-of-type(2) { display: none; }
 
 /* the garden fight's controls (FightHelp.js), under the objective */
 #fight-help {

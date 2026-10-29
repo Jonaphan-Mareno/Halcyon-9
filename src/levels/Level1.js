@@ -552,6 +552,8 @@ export class Level1{
       // PLAYING, so otherwise the room pops from ambient-only to lit on start
       this.update(0, new THREE.Vector3());
 
+     
+
     } catch (error) {
         console.error('Failed to load controlroom.glb:', error);
         console.log('Stuck in purgatory')

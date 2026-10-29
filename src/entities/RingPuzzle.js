@@ -132,7 +132,6 @@ export class RingPuzzle {
       this.ringMeshes.push(ringMesh);
     });
   }
-
   handleClick(hitObject) {
     let obj = hitObject;
     while (obj && obj.userData.ringIndex === undefined) {

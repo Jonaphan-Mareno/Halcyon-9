@@ -46,6 +46,8 @@ import { buildRoomProps } from './RoomProps.js';
 import { applyBedroomShell } from './BedroomShell.js';
 import { disposeScene } from '../core/disposeScene.js';
 import '../ui/level2.css';
+import { RoboArmHazard } from './RoboArmHazard.js';
+import { FuseboxPuzzle } from './FuseboxPuzzle.js';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
 // ENVIRONMENT PREVIEW. You arrive in the lift, the doors open, and you can walk the whole space.
@@ -127,6 +129,9 @@ export class HabitatSession {
   constructor(game) {
     this.game = game;
     this.ready = false;
+    this.roboArmMixer = null;
+    this.roboArmClip = null;
+    this.roboArmAction = null;
     this.doorOpen = 0;
     this.doors = [];
     this.doorColliders = {};   // DOOR_ nodes keep their collider here so it can be removed on open
@@ -196,6 +201,7 @@ export class HabitatSession {
     this._talkToken = 0;
     window.addEventListener('keydown', (e) => {
       if (this.disposed) return;
+      if (this.fuseboxPuzzle?.isOpen) return;
       if (this.keypad?.isOpen) {
         if (e.code === 'Escape') this._closeKeypad();
         return;
@@ -214,6 +220,7 @@ export class HabitatSession {
         this._openInventory();
         return;
       }
+      if (e.code === 'Digit9' && !e.repeat) this._debugUnlockKessler(); // TEMP DEBUG
       if (e.code === 'KeyE' && !e.repeat) this.interact?.use();
       if (e.code === 'Enter') this.skipLine();
       if (e.code === 'KeyQ' && !e.repeat && this.garden) {
@@ -343,6 +350,7 @@ export class HabitatSession {
   async _loadModel(url) {
     const gltf = await createGLTFLoader().loadAsync(url);
     const model = gltf.scene;
+    model.animations = gltf.animations || [];
     model.updateMatrixWorld(true);
     for (const node of [...model.children]) {
       if (SOLID.some((p) => node.name.startsWith(p))) {
@@ -450,6 +458,29 @@ export class HabitatSession {
     ]);
     this.atrium = atrium;
     this.lab = lab;
+
+    // Retain atrium animation mixer and find Kessler bedroom robo arm swing clip
+    this.roboArmMixer = new THREE.AnimationMixer(atrium);
+    const clip = atrium.animations?.find((c) => c.name === 'KesslerRoboArmSwing');
+    if (clip) {
+      this.roboArmClip = clip;
+      this.roboArmAction = this.roboArmMixer.clipAction(clip);
+      this.roboArmAction.setLoop(THREE.LoopRepeat, Infinity);
+    } else {
+      console.warn('[HabitatSession] Animation clip "KesslerRoboArmSwing" not found in atrium animations.');
+      this.roboArmClip = null;
+      this.roboArmAction = null;
+    }
+
+    // Damaging hazard: read the arm's live bone positions every frame and hurt Voss on contact
+    this.roboArmHazard = new RoboArmHazard(atrium, {
+      onHit: (from) => {
+        if (this._restoring) return;
+        playClip(CLIPS.metalHit ?? CLIPS.tech, 0.9);
+        this._hurt('direct', from);
+      }
+    });
+
     // his tally on his bunk's locker, in his quarter (the logs show it growing up to Cycle 8)
     scene.add(tallyInRoom());
 
@@ -536,17 +567,29 @@ export class HabitatSession {
     const fuseBoxObj = atrium.getObjectByName('FuseBox00001') || atrium.getObjectByName('FuseBox00.001') || atrium.getObjectByName('COL_Kess_FuseBox00');
     if (fuseBoxObj) {
       const fusePos = new THREE.Box3().setFromObject(fuseBoxObj).getCenter(new THREE.Vector3());
-      // Nudge slightly towards room interior (+X) so raycast is completely clear of the wall collider
-      fusePos.x += 0.12;
-      this.interact.add({
+      // Move the interaction point into the room so the wall-mounted mesh cannot block its raycast.
+      fusePos.x += 0.7;
+      this.fuseboxSpot = this.interact.add({
         id: 'fusebox',
         position: fusePos,
-        radius: 0.6,
-        reach: 2.8,
-        label: 'Use FuseBox',
+        radius: 1.0,
+        reach: 3.2,
+        label: () => {
+          if (!this._armStarted) return 'FuseBox (no reason to touch it yet)';
+          if (this.story.has('fuseSolved')) return 'FuseBox (stable)';
+          return 'Use FuseBox';
+        },
         use: () => {
-          playClip(CLIPS.tech, 0.8);
-          this.game.ui.showToast('FuseBox used.', 2500);
+          if (!this._armStarted) return;
+          if (this.story.has('fuseSolved')) {
+            this.game.ui.showToast('FUSEBOX STABLE.', 2500);
+            return;
+          }
+          this.game.state = 'PUZZLE';
+          this.controls.instance.unlock?.();
+          this.game.ui.setPrompt(null);
+          this.roboArmHazard.paused = true;
+          this.fuseboxPuzzle.open();
         }
       });
     }
@@ -583,6 +626,22 @@ export class HabitatSession {
     this.keypad = new KeypadUI({ onSubmit: (code) => this._hatchCode(code), onCancel: () => this._closeKeypad() });
     this.keypad.root.querySelector('.keypad-brand').textContent = 'MAINTENANCE HATCH 4';
     this.keypad.root.querySelector('.keypad-instruction').textContent = 'EMERGENCY OVERRIDE: CREW LEADER KEY (DR. E. KESSLER)';
+    this.fuseboxPuzzle = new FuseboxPuzzle(document.getElementById('ui-layer'), {
+      onSolved: () => {
+        this.story.set('fuseSolved');
+        const action = this.roboArmAction;
+        action?.fadeOut(0.5);
+        setTimeout(() => action?.stop(), 500);
+        this.roboArmHazard?.stop();
+        this.game.ui.showToast('ARM POWER CUT. LOGS UNLOCKED.', 4000);
+      },
+      onFailed: () => this.game.ui.showToast('FUSE SEQUENCE FAILED. TRY AGAIN.', 3500),
+      onClose: () => {
+        if (this.disposed) return;
+        this.game.state = 'PLAYING';
+        if (this.roboArmHazard) this.roboArmHazard.paused = false;
+      }
+    });
     const kessler = atrium.getObjectByName('DOOR_KESSLER');
     if (kessler) {
       this.interact.add({
@@ -969,6 +1028,13 @@ export class HabitatSession {
 
   update(delta) {
     if (!this.ready || !this.controls.ready) return;
+    if (this.game.state === 'PUZZLE') {
+      const dt = Math.min(delta, 0.05);
+      this.roboArmMixer?.update(dt);
+      this.fuseboxPuzzle?.update(dt);
+      this._perf(delta, false);
+      return;
+    }
     if (this.game.state === 'PAUSED' || this.game.state === 'INVENTORY') {
       this._perf(delta, false);
       return;
@@ -976,6 +1042,9 @@ export class HabitatSession {
     const g = this.game;
     const dt = Math.min(delta, 0.05);
     const playing = g.state === 'PLAYING';
+    if (this.roboArmMixer) this.roboArmMixer.update(dt);
+    // Bones are current after mixer.update; test contact now
+    if (playing) this.roboArmHazard?.update(dt, this.controls.position);
     this._warmTextures();
     // dropping into the shaft: the view sinks into the hole while the screen fades
     if (this._dropping) g.camera.instance.position.y -= dt * 3.5;
@@ -1169,6 +1238,9 @@ export class HabitatSession {
   // ---------------------------------------------------------
   _onStory(flag) {
     console.log('Level 2 story:', flag);
+    if ((flag === 'cardTaken' || flag === 'labDone') && this._kesslerUnlocked()) {
+      this._startRoboArm();
+    }
     // on the way to Kessler's room: load her for the flashback ahead of time
     if (FLASHBACK_3D && (flag === 'cardTaken' || flag === 'labDone')) {
       this.flashback3d.player = this.controls.character;
@@ -1211,6 +1283,13 @@ export class HabitatSession {
     for (const body of spots.lockerBodies) this.physics.addStaticObject(body);
     const r = this.reader;
     const add = (id, position, radius, label, use, when) => this.interact.add({ id, position, radius, label, use, when, reach: 2.2 });
+    const gateKesslerRead = (read) => () => {
+      if (this._armStarted && !this.story.has('fuseSolved')) {
+        this.game.ui.showToast("LOCKED: CUT THE ARM'S POWER AT THE FUSEBOX FIRST.", 3500);
+        return;
+      }
+      read();
+    };
     add('bunkLogA', spots.bunkLogA, 0.25, 'Play the crew log', () => r.read('bunkLogA'));
     add('bunkLogB', spots.bunkLogB, 0.25, 'Play the crew log', () => r.read('bunkLogB'));
     add('corkboard', spots.corkboard, 0.55, 'Look at the corkboard', () => r.read('rota', () => this.say('corkboard')));
@@ -1223,9 +1302,9 @@ export class HabitatSession {
       add('labTerminal', screen.getWorldPosition(new THREE.Vector3()), 0.45, 'Use the terminal',
         () => r.terminal('B-LAB: RESTRICTED DIRECTORY', LAB_FILES));
     }
-    add('kesslerLog', spots.kesslerLog, 0.3, 'Play the final log', () => r.read('kesslerLog'));
+    add('kesslerLog', spots.kesslerLog, 0.3, 'Play the final log', gateKesslerRead(() => r.read('kesslerLog')));
     add('codeCard', spots.codeCard, 0.15, 'Read the card',
-      () => (this._kesslerDone ? r.read('codeCard') : r.read('codeCard', () => this._kesslerScene())),
+      gateKesslerRead(() => (this._kesslerDone ? r.read('codeCard') : r.read('codeCard', () => this._kesslerScene()))),
       () => r.seen.has('kesslerLog'));       // her log first: it is what leads him to the card
     this._idle = { bunk: 0, lab: 0, kessler: 0 };
     // where the objective's marker points inside the rooms
@@ -1237,10 +1316,14 @@ export class HabitatSession {
     this.story.seen = (id) => r.seen.has(id);
     // a small glowing diamond floats over everything not read yet, so nothing is missed
     const seen = (id) => () => r.seen.has(id);
+    const kesslerLocked = () => this._armStarted && !this.story.has('fuseSolved');
     this._markers = [
       [spots.bunkLogA, seen('bunkLogA')], [spots.bunkLogB, seen('bunkLogB')], [spots.corkboard, seen('rota')],
       [spots.personalLog, () => this.story.has('logWatched')],
-      [t.labTerminal, () => this.story.has('labDone')], [spots.kesslerLog, seen('kesslerLog')], [spots.codeCard, seen('codeCard')],
+      [t.labTerminal, () => this.story.has('labDone')],
+      [spots.kesslerLog, () => kesslerLocked() || seen('kesslerLog')()],
+      [spots.codeCard, () => kesslerLocked() || seen('codeCard')()],
+      [this.fuseboxSpot?.position, () => !this._armStarted || this.story.has('fuseSolved')],
       // and the hall's optional clues, until he has looked at each (seen from further off: the hall is big)
       ...this._hallClues.map(([id, p, , , , over]) => [over || p, () => this._looked.has(id), 16])
     ].filter(([p]) => p).map(([p, done, range = 10], i) => {
@@ -1376,6 +1459,24 @@ export class HabitatSession {
     return this.aria.speaking || this.game.ui.dialogue.classList.contains('visible');
   }
 
+  _startRoboArm() {
+    if (this._armStarted || !this.roboArmAction) {
+      console.log('[ARM] not started', { already: this._armStarted, action: !!this.roboArmAction });
+      return;
+    }
+    this._armStarted = true;
+    this.roboArmAction.reset().play();
+    this.roboArmHazard?.start();
+    console.log('[ARM] started');
+  }
+
+  // TEMP DEBUG: remove before submitting
+  _debugUnlockKessler() {
+    this.story.set('cardTaken');
+    this.story.set('labDone');
+    this._startRoboArm();
+    this.game.ui.showToast('DEBUG: arm started [9]', 2000);
+  }
   _kesslerUnlocked() {
     return this.story.has('cardTaken') && this.story.has('labDone');
   }
@@ -1438,7 +1539,11 @@ export class HabitatSession {
     }
     const p = this.controls.position;
     // the thing he is looking at, if he can use it
-    const hit = this.interact ? this.interact.update(this._head.set(p.x, p.y + 1.6, p.z)) : null;
+    let hit = this.interact ? this.interact.update(this._head.set(p.x, p.y + 1.6, p.z)) : null;
+    if (this.fuseboxSpot && this.story._inKessler(p) && p.distanceTo(this.fuseboxSpot.position) < 3.2) {
+      hit = this.fuseboxSpot;
+      this.interact.current = hit;
+    }
     ui.setPrompt(hit ? 'E   ' + (typeof hit.label === 'function' ? hit.label() : hit.label) : null);
     const goal = this.story.objective(p);
     ui.setObjective(goal.text);
@@ -1553,6 +1658,9 @@ export class HabitatSession {
     this.visorAria?.dispose?.();
     this.aria?.dispose?.();
     this.flashback3d?.dispose();
+    this.roboArmMixer?.stopAllAction();
+    this.roboArmHazard?.stop();
+    this.fuseboxPuzzle?.dispose();
     try { this.garden?.audio?.ctx?.close(); } catch (e) { /* already closed */ }
     for (const el of [this.codeNote, this.fpsEl, this.keypad?.root, this.flashback?.el]) el?.remove();
     this.composer?.dispose?.();

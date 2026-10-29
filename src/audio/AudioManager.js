@@ -1,10 +1,29 @@
 // Sound effects synthesized in the browser with the Web Audio API, so they need
 // no audio files (and nothing to license). ARIA's voice is separate: it is
-// played from recordings by AriaManager.
+// played from recordings by AriaManager. Background music is one file per
+// level from public/assets/audio, routed through this same graph.
+
 //
 // The generator hum is two slightly detuned saw waves through a low-pass
 // filter. setHum(stress) raises its pitch, brightness and volume as the
 // countdown runs down, so the tension can be heard.
+
+// The song files live in public/assets/audio/ (Vite serves that folder at the
+// site root). Each level has its own track: name the files to match, or edit
+// the paths below.
+const MUSIC_TRACKS = {
+  l1: './assets/audio/Halcyon1(ver2).wav', // level 1: the control deck
+  l2: './assets/audio/Halcyon2(ver2).wav',     // level 2: the habitat deck
+};
+
+// Loop shape: the song eases out over its last MUSIC_END_FADE seconds, the
+// volume stays off for MUSIC_GAP seconds of silence, and the next loop eases
+// back in over MUSIC_FADE_IN seconds (the same fade as the very first start).
+// Switching to another track eases the old one out over MUSIC_CROSSFADE.
+const MUSIC_END_FADE = 3;
+const MUSIC_GAP = 3;
+const MUSIC_FADE_IN = 1.2;
+const MUSIC_CROSSFADE = 3;
 
 export class AudioManager {
   constructor() {
@@ -100,6 +119,98 @@ export class AudioManager {
     b.stop(stopAt);
     lfo.stop(stopAt);
     this.hum = null;
+  }
+
+  // ---------------------------------------------------------
+  // Background music (one file per level, looped with an end fade and a pause)
+  // ---------------------------------------------------------
+
+  // Starts the asked-for track: asking for the one already playing is a
+  // no-op (so every pointer-lock click can call this), while asking for a
+  // different track crossfades to it — the lift out of level 1 swaps songs
+  // that way. `track` is a MUSIC_TRACKS key ('l1', 'l2') or a raw file path.
+  // Browsers refuse to play audio until a user gesture, which is why the
+  // game calls this from lockControls.
+  startMusic(track = 'l1', volume = 0.1) {
+    const ctx = this._ensure();
+    if (!ctx) return;
+    const path = MUSIC_TRACKS[track] || track;
+    if (this.music) {
+      if (this.music.path === path) return; // already playing this track
+      this.stopMusic(MUSIC_CROSSFADE); // ease the old track out under the new
+    }
+
+    const el = new Audio(path);
+    el.preload = 'auto';
+
+    // Route the element through the graph so the fades below work and the
+    // music obeys the master gain like every other sound.
+    const source = ctx.createMediaElementSource(el);
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    source.connect(gain);
+    gain.connect(this.master);
+
+    const music = { el, gain, path, gapTimer: null, fading: false };
+    this.music = music;
+
+    const fadeIn = () => {
+      const t = ctx.currentTime;
+      gain.gain.cancelScheduledValues(t);
+      gain.gain.setValueAtTime(gain.gain.value, t);
+      gain.gain.setTargetAtTime(volume, t, MUSIC_FADE_IN);
+    };
+
+    // The element does not loop by itself: over the song's last seconds the
+    // volume eases to zero, and once it ends a gap of silence is waited out
+    // before the next loop fades back in. `left` is re-measured on every
+    // tick, so the fade stays anchored to the song's real end.
+    el.addEventListener('timeupdate', () => {
+      if (music !== this.music || music.fading) return;
+      const left = (el.duration || Infinity) - el.currentTime;
+      if (left <= MUSIC_END_FADE) {
+        music.fading = true;
+        const t = ctx.currentTime;
+        gain.gain.cancelScheduledValues(t);
+        gain.gain.setTargetAtTime(0, t, Math.max(left, 0.1) / 3);
+      }
+    });
+
+    el.addEventListener('ended', () => {
+      if (music !== this.music) return; // stopped meanwhile
+      music.gapTimer = setTimeout(() => {
+        if (music !== this.music) return;
+        music.fading = false;
+        el.currentTime = 0;
+        el.play().catch(() => {}); // already gesture-unlocked; keep looping
+        fadeIn();
+      }, MUSIC_GAP * 1000);
+    });
+
+    const begin = () => {
+      el.play().catch(() => {
+        // Autoplay refused: park it and let the next click try again.
+        el.pause();
+        this.music = null;
+      });
+      fadeIn();
+    };
+
+    // The context may still be resuming right after the gesture; wait for it.
+    if (ctx.state === 'suspended') ctx.resume().then(begin);
+    else begin();
+  }
+
+  // Fades the music out and pauses it; a later startMusic starts fresh.
+  stopMusic(fade = 5) {
+    if (!this.music) return;
+    const { el, gain, gapTimer } = this.music;
+    if (gapTimer) clearTimeout(gapTimer); // no loop restart after a stop
+    this.music = null;
+    const t = this.ctx.currentTime;
+    gain.gain.cancelScheduledValues(t);
+    gain.gain.setTargetAtTime(0, t, fade / 3);
+    setTimeout(() => el.pause(), fade * 1000 + 100);
   }
 
   // ---------------------------------------------------------

@@ -340,6 +340,9 @@ export class Game {
     this.level2Mode = true;
     this.ui = new UIManager();
     this.reticle = document.getElementById('reticle');
+    // ?level=2 previews the real level 2, so it gets the game's background
+    // music (the habitat track); the single-room test harnesses stay silent
+    if (this.startLevel === '2') this.audio = new AudioManager();
     // ?level=2: level 2, the habitat atrium
     // ?level=3: level 3, the drowned deck
     // ?level=hose: the coolant hose test room
@@ -477,6 +480,7 @@ export class Game {
     this.level2Mode = true;
     this.state = 'PLAYING';
     this._mountLevel2('2');
+    this.audio?.startMusic('l2'); // the habitat deck gets its own song
     this._departing = false;
   }
 
@@ -621,7 +625,12 @@ export class Game {
     this.intro = new IntroSequence(this.ui, level.ariaManager);
     level.onTalkToAria = () => this.startIntroDialogue();
     level.onBrickPickedUp = () => this.ui.showToast('Click throws the brick. E drops it.', 5000);
-    level.onHandleTurned = () => this.audio.clunk();
+    // The cell door coming open is where level 1's song starts: the room stays
+    // silent until Voss gets himself out
+    level.onHandleTurned = () => {
+      this.audio.clunk();
+      this.audio.startMusic('l1');
+    };
     // The cell's handle is reached through the broken window (Level1._turnHandle): his arm is
     // scripted for a couple of seconds, so the walk and the mouse are his again afterwards
     level.getCharacter = () => this.controls?.character;
@@ -665,6 +674,10 @@ export class Game {
     if (this.controls) {
       this.controls.lock();
       this.reticle.classList.add('visible');
+      // Level 1's song waits for the cell door (see onHandleTurned above);
+      // a direct level-2 mount starts the habitat track on this first click.
+      // (The click itself still unlocks the AudioContext for whatever plays later.)
+      if (this.level2Mode) this.audio?.startMusic('l2');
 
       // Voss wakes up: eyes open and close before the player can move
       this.state = 'WAKING';

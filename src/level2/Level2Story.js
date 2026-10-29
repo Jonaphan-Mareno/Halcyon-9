@@ -21,7 +21,8 @@ export const FLAGS = [
   'logWatched',     // watched Voss's personal logs, through to Cycle 8
   'labDone',        // opened the lab's files (the subject list: CYCLE 9)
   'codeFound',      // found the override code in Kessler's room
-  'hatchOpen'       // typed the code: the hatch is open
+  'hatchOpen',      // typed the code: the hatch is open
+  'fuseSolved'      // cut power to Kessler's arm
 ];
 
 // The crew bunk (Voss's old room, east of the gallery), the lab (north) and Kessler's room

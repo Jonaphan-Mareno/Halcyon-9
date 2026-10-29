@@ -47,6 +47,7 @@ import { applyBedroomShell } from './BedroomShell.js';
 import { disposeScene } from '../core/disposeScene.js';
 import '../ui/level2.css';
 import { RoboArmHazard } from './RoboArmHazard.js';
+import { FuseboxPuzzle } from './FuseboxPuzzle.js';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
 // ENVIRONMENT PREVIEW. You arrive in the lift, the doors open, and you can walk the whole space.
@@ -199,6 +200,7 @@ export class HabitatSession {
     this._talkToken = 0;
     window.addEventListener('keydown', (e) => {
       if (this.disposed) return;
+      if (this.fuseboxPuzzle?.isOpen) return;
       if (this.keypad?.isOpen) {
         if (e.code === 'Escape') this._closeKeypad();
         return;
@@ -564,17 +566,29 @@ export class HabitatSession {
     const fuseBoxObj = atrium.getObjectByName('FuseBox00001') || atrium.getObjectByName('FuseBox00.001') || atrium.getObjectByName('COL_Kess_FuseBox00');
     if (fuseBoxObj) {
       const fusePos = new THREE.Box3().setFromObject(fuseBoxObj).getCenter(new THREE.Vector3());
-      // Nudge slightly towards room interior (+X) so raycast is completely clear of the wall collider
-      fusePos.x += 0.12;
-      this.interact.add({
+      // Move the interaction point into the room so the wall-mounted mesh cannot block its raycast.
+      fusePos.x += 0.7;
+      this.fuseboxSpot = this.interact.add({
         id: 'fusebox',
         position: fusePos,
-        radius: 0.6,
-        reach: 2.8,
-        label: 'Use FuseBox',
+        radius: 1.0,
+        reach: 3.2,
+        label: () => {
+          if (!this._armStarted) return 'FuseBox (no reason to touch it yet)';
+          if (this.story.has('fuseSolved')) return 'FuseBox (stable)';
+          return 'Use FuseBox';
+        },
         use: () => {
-          playClip(CLIPS.tech, 0.8);
-          this.game.ui.showToast('FuseBox used.', 2500);
+          if (!this._armStarted) return;
+          if (this.story.has('fuseSolved')) {
+            this.game.ui.showToast('FUSEBOX STABLE.', 2500);
+            return;
+          }
+          this.game.state = 'PUZZLE';
+          this.controls.instance.unlock?.();
+          this.game.ui.setPrompt(null);
+          this.roboArmHazard.paused = true;
+          this.fuseboxPuzzle.open();
         }
       });
     }
@@ -611,6 +625,22 @@ export class HabitatSession {
     this.keypad = new KeypadUI({ onSubmit: (code) => this._hatchCode(code), onCancel: () => this._closeKeypad() });
     this.keypad.root.querySelector('.keypad-brand').textContent = 'MAINTENANCE HATCH 4';
     this.keypad.root.querySelector('.keypad-instruction').textContent = 'EMERGENCY OVERRIDE: CREW LEADER KEY (DR. E. KESSLER)';
+    this.fuseboxPuzzle = new FuseboxPuzzle(document.getElementById('ui-layer'), {
+      onSolved: () => {
+        this.story.set('fuseSolved');
+        const action = this.roboArmAction;
+        action?.fadeOut(0.5);
+        setTimeout(() => action?.stop(), 500);
+        this.roboArmHazard?.stop();
+        this.game.ui.showToast('ARM POWER CUT. LOGS UNLOCKED.', 4000);
+      },
+      onFailed: () => this.game.ui.showToast('FUSE SEQUENCE FAILED. TRY AGAIN.', 3500),
+      onClose: () => {
+        if (this.disposed) return;
+        this.game.state = 'PLAYING';
+        if (this.roboArmHazard) this.roboArmHazard.paused = false;
+      }
+    });
     const kessler = atrium.getObjectByName('DOOR_KESSLER');
     if (kessler) {
       this.interact.add({
@@ -997,6 +1027,13 @@ export class HabitatSession {
 
   update(delta) {
     if (!this.ready || !this.controls.ready) return;
+    if (this.game.state === 'PUZZLE') {
+      const dt = Math.min(delta, 0.05);
+      this.roboArmMixer?.update(dt);
+      this.fuseboxPuzzle?.update(dt);
+      this._perf(delta, false);
+      return;
+    }
     if (this.game.state === 'PAUSED' || this.game.state === 'INVENTORY') {
       this._perf(delta, false);
       return;
@@ -1239,6 +1276,13 @@ export class HabitatSession {
     for (const body of spots.lockerBodies) this.physics.addStaticObject(body);
     const r = this.reader;
     const add = (id, position, radius, label, use, when) => this.interact.add({ id, position, radius, label, use, when, reach: 2.2 });
+    const gateKesslerRead = (read) => () => {
+      if (this._armStarted && !this.story.has('fuseSolved')) {
+        this.game.ui.showToast("LOCKED: CUT THE ARM'S POWER AT THE FUSEBOX FIRST.", 3500);
+        return;
+      }
+      read();
+    };
     add('bunkLogA', spots.bunkLogA, 0.25, 'Play the crew log', () => r.read('bunkLogA'));
     add('bunkLogB', spots.bunkLogB, 0.25, 'Play the crew log', () => r.read('bunkLogB'));
     add('corkboard', spots.corkboard, 0.55, 'Look at the corkboard', () => r.read('rota', () => this.say('corkboard')));
@@ -1251,9 +1295,9 @@ export class HabitatSession {
       add('labTerminal', screen.getWorldPosition(new THREE.Vector3()), 0.45, 'Use the terminal',
         () => r.terminal('B-LAB: RESTRICTED DIRECTORY', LAB_FILES));
     }
-    add('kesslerLog', spots.kesslerLog, 0.3, 'Play the final log', () => r.read('kesslerLog'));
+    add('kesslerLog', spots.kesslerLog, 0.3, 'Play the final log', gateKesslerRead(() => r.read('kesslerLog')));
     add('codeCard', spots.codeCard, 0.15, 'Read the card',
-      () => (this._kesslerDone ? r.read('codeCard') : r.read('codeCard', () => this._kesslerScene())),
+      gateKesslerRead(() => (this._kesslerDone ? r.read('codeCard') : r.read('codeCard', () => this._kesslerScene()))),
       () => r.seen.has('kesslerLog'));       // her log first: it is what leads him to the card
     this._idle = { bunk: 0, lab: 0, kessler: 0 };
     // where the objective's marker points inside the rooms
@@ -1265,10 +1309,14 @@ export class HabitatSession {
     this.story.seen = (id) => r.seen.has(id);
     // a small glowing diamond floats over everything not read yet, so nothing is missed
     const seen = (id) => () => r.seen.has(id);
+    const kesslerLocked = () => this._armStarted && !this.story.has('fuseSolved');
     this._markers = [
       [spots.bunkLogA, seen('bunkLogA')], [spots.bunkLogB, seen('bunkLogB')], [spots.corkboard, seen('rota')],
       [spots.personalLog, () => this.story.has('logWatched')],
-      [t.labTerminal, () => this.story.has('labDone')], [spots.kesslerLog, seen('kesslerLog')], [spots.codeCard, seen('codeCard')],
+      [t.labTerminal, () => this.story.has('labDone')],
+      [spots.kesslerLog, () => kesslerLocked() || seen('kesslerLog')()],
+      [spots.codeCard, () => kesslerLocked() || seen('codeCard')()],
+      [this.fuseboxSpot?.position, () => !this._armStarted || this.story.has('fuseSolved')],
       // and the hall's optional clues, until he has looked at each (seen from further off: the hall is big)
       ...this._hallClues.map(([id, p, , , , over]) => [over || p, () => this._looked.has(id), 16])
     ].filter(([p]) => p).map(([p, done, range = 10], i) => {
@@ -1480,7 +1528,11 @@ export class HabitatSession {
     }
     const p = this.controls.position;
     // the thing he is looking at, if he can use it
-    const hit = this.interact ? this.interact.update(this._head.set(p.x, p.y + 1.6, p.z)) : null;
+    let hit = this.interact ? this.interact.update(this._head.set(p.x, p.y + 1.6, p.z)) : null;
+    if (this.fuseboxSpot && this.story._inKessler(p) && p.distanceTo(this.fuseboxSpot.position) < 3.2) {
+      hit = this.fuseboxSpot;
+      this.interact.current = hit;
+    }
     ui.setPrompt(hit ? 'E   ' + (typeof hit.label === 'function' ? hit.label() : hit.label) : null);
     const goal = this.story.objective(p);
     ui.setObjective(goal.text);
@@ -1596,6 +1648,7 @@ export class HabitatSession {
     this.aria?.dispose?.();
     this.roboArmMixer?.stopAllAction();
     this.roboArmHazard?.stop();
+    this.fuseboxPuzzle?.dispose();
     try { this.garden?.audio?.ctx?.close(); } catch (e) { /* already closed */ }
     for (const el of [this.codeNote, this.fpsEl, this.keypad?.root, this.flashback?.el]) el?.remove();
     this.composer?.dispose?.();

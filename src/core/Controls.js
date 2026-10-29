@@ -199,6 +199,13 @@ export class Controls {
     this.character?.reach();
   }
 
+  // Let the world cover his arms for a while, instead of their being drawn over it (_armsOnTop).
+  // For a scripted reach that puts his hand through something and behind it - the cell door's
+  // broken window - being hidden is the whole point of the shot.
+  armsBehindWorld(on) {
+    this._armsBehind = !!on;
+  }
+
   _loadBody() {
     const scene = this.level?.scene;
     if (!scene) return;
@@ -220,14 +227,14 @@ export class Controls {
   // The first-person arms reach further than the camera keeps from a wall, so they are drawn after
   // everything else (glass included: they go in the transparent list, last), over a cleared depth
   // buffer: they never sink into a wall or a door. (Their own copies of the materials: the body's
-  // stay as they are.)
+  // stay as they are.) armsBehindWorld() turns the clear off where that is the wrong answer.
   _armsOnTop(viewModel) {
     let cleared = -1;
     const clearOnce = (renderer) => {
       if (renderer.info.render.frame === cleared) return;
       cleared = renderer.info.render.frame;
       renderer.state.buffers.depth.setMask(true);   // (glass drawn just before leaves it off: no clear)
-      renderer.clearDepth();
+      if (!this._armsBehind) renderer.clearDepth();
     };
     viewModel.traverse((o) => {
       if (!o.isMesh) return;
@@ -240,9 +247,10 @@ export class Controls {
   }
 
   // Each frame while he can move (after update): his body stands under the eyes, turns the way he
-  // walks and walks as fast as he goes
+  // walks and walks as fast as he goes. False when there was nothing to do (no body yet, or no time
+  // passed): his clips did not run, so nothing may be posed on top of them this frame either.
   updateBody(delta) {
-    if (!this.character?.ready || delta <= 0) return;
+    if (!this.character?.ready || delta <= 0) return false;
     const eye = this.camera.position;
     if (!this._lastEye) this._lastEye = eye.clone();
     const dx = eye.x - this._lastEye.x, dz = eye.z - this._lastEye.z;
@@ -268,6 +276,7 @@ export class Controls {
       camera: this.camera,
       bodyYaw: this._facing
     });
+    return true;
   }
 
   // The lights Level 1's shader is using this frame (set by its update), onto his body's lights.

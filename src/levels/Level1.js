@@ -11,6 +11,7 @@ import { createBrickMaps } from "./brickTexture.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { MonitorWall } from "./MonitorWall.js";
 import { makeLiftScreen, makeLiftPhoto } from "./liftCabin.js";
+import { HandleReach } from "./HandleReach.js";
 
 // Must match MAX_LIGHTS in Shaders.js (the room's 8 lights + the flashlight)
 const MAX_LIGHTS = 9;
@@ -74,7 +75,8 @@ const BRICK_SIZE = [0.25, 0.085, 0.12];   // a real house brick (a touch larger,
 const BRICK_HOLD_DISTANCE = 1.4;
 const BRICK_THROW_SPEED = 15;
 const GRAVITY = 9.8;
-const HANDLE_RANGE = 2.5;            // reaching through the broken window to the far-side handle
+const HANDLE_RANGE = 1.5;            // reaching through the broken window to the far-side handle:
+                                     // he steps up the rest of the way (HandleReach)
 const TAG_WAYPOINT_RANGE = 4;        // after the hint, how close Voss gets before the waypoint points at the tag
 // The torn photograph on the lift's back wall (Flashback 1): from public/, made by
 // scripts/flashback1-photo. Voss must look at it before the lift will go down.
@@ -198,6 +200,11 @@ export class Level1{
     this.door = null;              // the door leaf (its handle is parented to the same pivot)
     this.doorPivot = null;
     this.doorHandle = null;        // the handle on the far side, turned through the broken window
+    this.doorHandlePivot = null;   // a pivot at the handle's own centre, read for where it lies
+    this.handleReach = null;       // the scripted arm through the window (HandleReach.js)
+    this.getCharacter = null;      // set by the Game: Voss's body and arms, once they have loaded
+    this.onReachStart = null;      // set by the Game (the walk is frozen for it)
+    this.onReachEnd = null;        // set by the Game (and handed back)
     this.doorOpening = false;
     this.doorOpen = false;
     this.window = null;            // { glass, source, shards, box, broken }
@@ -859,7 +866,8 @@ onRingPuzzleComplete() {
     // The far-side handle: reachable only once the window is broken, and gone
     // again as soon as the door is moving. Falls back to the door leaf itself
     // if the model has no handle node.
-    if ((this.doorHandle || this.door) && this.window?.broken && !this.doorOpen && !this.doorOpening) {
+    if ((this.doorHandle || this.door) && this.window?.broken && !this.doorOpen && !this.doorOpening &&
+        !this.handleReach) {
       this._interactables.push(this.doorHandle || this.door);
     }
   }
@@ -913,6 +921,12 @@ onRingPuzzleComplete() {
   // materials have to be disposed explicitly.
   dispose() {
     this.scene.onBeforeRender = () => {};
+    // a scripted reach part way through has the arms drawn behind the world: put that back
+    if (this.handleReach) {
+      this.handleReach.cancel();
+      this.onReachEnd?.();
+    }
+    this.handleReach = null;
     this._buzz?.stop(0.3);
     this._buzz = null;
     for (const fx of this._fixtures || []) {
@@ -1818,7 +1832,8 @@ onRingPuzzleComplete() {
       return !this.brickHeld && distance <= BRICK_RANGE && this._clearLineTo(object.position, distance);
     }
     if (this._isHandlePart(object)) {
-      return this.window?.broken && !this.doorOpen && !this.doorOpening && distance <= HANDLE_RANGE;
+      return this.window?.broken && !this.handleReach && !this.doorOpen && !this.doorOpening &&
+             distance <= HANDLE_RANGE;
     }
     if (object === this.wallMonitor) {
       return this.talkEnabled && distance <= Level1.MONITOR_RANGE;
@@ -1867,8 +1882,7 @@ onRingPuzzleComplete() {
       return;
     }
     if (this._isHandlePart(object)) {
-      this.onHandleTurned?.();
-      this.openDoor();
+      this._turnHandle();
       return;
     }
     if (object === this.wallMonitor) {
@@ -2114,7 +2128,20 @@ onRingPuzzleComplete() {
     if (handle) handle.userData.noLineOfSight = true;
     this.doorPivot = pivot;
     this.doorHandle = handle || null;
-    if (handle) new THREE.Box3().setFromObject(handle).getCenter(this._handleCentre);
+    if (handle) {
+      // The handle's geometry is baked around the world origin like the leaf's, so it gets a pivot
+      // of its own at its centre. Nothing turns it - the handle is on the far side of the door and
+      // never in shot - but it gives the reach a live point to aim past and a local z that is the
+      // door's normal, both of which follow the leaf wherever it swings. See HandleReach.
+      new THREE.Box3().setFromObject(handle).getCenter(this._handleCentre);
+      const lever = new THREE.Object3D();
+      lever.name = 'DoorHandlePivot';
+      pivot.add(lever);
+      lever.position.copy(pivot.worldToLocal(this._tmpA.copy(this._handleCentre)));
+      lever.updateMatrixWorld(true);
+      lever.attach(handle);
+      this.doorHandlePivot = lever;
+    }
 
     const doorway = frame ? new THREE.Box3().setFromObject(frame) : box;
     doorway.getCenter(this._doorwayCentre);
@@ -2172,7 +2199,9 @@ onRingPuzzleComplete() {
       this.doorPivot.attach(this._blocker);
     }
     box.expandByScalar(0.25);
-    this.window = { glass, source, shards, box, broken: false };
+    // `box` is the generous one the aim assist and the reach test use; `hole` is the opening itself,
+    // which is what his arm has to thread (HandleReach)
+    this.window = { glass, source, shards, box, hole: box.clone().expandByScalar(-0.25), broken: false };
   }
 
   // A fired clay brick with chipped, rounded edges (see brickTexture.js)
@@ -2251,6 +2280,50 @@ onRingPuzzleComplete() {
     playClip(CLIPS.cellDoor, 0.9);
   }
 
+  // The handle, through the broken window: Voss steps up, puts his arm through the hole and feels for
+  // the lever on the far side (HandleReach), and the door opens once his arm is clear. If his model
+  // is not there (still loading, or it failed to) the door just unlatches as it always did.
+  _turnHandle() {
+    if (this.handleReach || this.doorOpening || this.doorOpen || this._doorOpenAt >= 0) return;
+    const player = this.getCharacter?.();
+    if (!player?.ready || !this.doorHandlePivot || !this.window?.broken || !this._cam) {
+      console.warn('Level 1: no reach through the window -',
+        !player?.ready ? 'his model is not loaded' : !this.doorHandlePivot ? 'the door has no handle' : 'no camera yet');
+      this.onHandleTurned?.();
+      this.openDoor();
+      return;
+    }
+    this.handleReach = new HandleReach({
+      camera: this._cam,
+      player,
+      handle: this.doorHandlePivot,
+      hole: this.window.hole,
+      onLatch: () => this.onHandleTurned?.(),
+      // the leaf stays shut until his arm is back through the hole, or it would swing away with it
+      onDone: () => { this.handleReach = null; this.openDoor(0.1); this.onReachEnd?.(); }
+    });
+    if (!this.handleReach.ok) {
+      console.warn('Level 1: no reach through the window - his rig has no arm bones on that side');
+      this.handleReach = null;
+      this.onHandleTurned?.();
+      this.openDoor();
+      return;
+    }
+    this._rebuildInteractables();   // no turning it twice
+    this.onReachStart?.();
+  }
+
+  // While a scripted move is playing, the Game leaves the walk and the mouse alone
+  get cinematic() {
+    return !!this.handleReach;
+  }
+
+  // His hands on what he is holding, for this frame. Called by the Game straight after his body's
+  // clips have run: the mixer undoes anything posed before them.
+  poseHands() {
+    this.handleReach?.pose();
+  }
+
   shatterWindow(impactPoint) {
     const w = this.window;
     if (!w || w.broken) return;
@@ -2290,6 +2363,9 @@ onRingPuzzleComplete() {
   _updateCell(delta, playerPosition, camera) {
     if (camera) this._cam = camera;
     if (!this.brick) return;
+
+    // Before anything reads the camera: the reach turns the view toward the window and back again
+    if (this.handleReach && !this.handleReach.update(delta)) this.handleReach = null;
 
     this._updateBrick(delta);
     this._updateShards(delta);

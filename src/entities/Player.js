@@ -85,6 +85,8 @@ const SWIM_STROKE_TIME = 0.5;
 // of the forearms covers the screen (view space, metres: +z is back, toward the player)
 const FP_ARMS_OFFSET = new THREE.Vector3(0, -0.05, 0.05);
 
+const _j1 = new THREE.Vector3(), _j2 = new THREE.Vector3(), _j3 = new THREE.Vector3();   // (joints)
+
 // The playable Voss (Cycle 9) looks as worn as the Cycle 8 Voss of the last video log: his face
 // painted at FaceWear's condition level 4 (bags, pallor, cuts, bruise, dried blood) and his lids
 // as heavy as that log's 'resigned' face
@@ -539,6 +541,12 @@ export class Player {
     if (this.ready) this._reachT = 0;
   }
 
+  // Stop a reach part way: a scripted move is taking the arms over (the last frame of it is undone
+  // before the next clips, like any other)
+  stopReach() {
+    this._reachT = REACH_TIME;
+  }
+
   // Hands on something he holds, for this frame (call after update, every frame it is held):
   // right and left are grips for ArmIK (either may be null), on whichever body the camera shows.
   // Undone, like the reach, before the next update's clips
@@ -548,6 +556,37 @@ export class Player {
     arms.root.updateWorldMatrix(true, true);
     if (right) arms.R.hold(right);
     if (left) arms.L.hold(left);
+  }
+
+  // Where one hand is as the clips have just posed it (world), on whichever body the camera shows.
+  // A scripted reach starts from here, so the hand eases out of the pose it was in rather than
+  // snapping to the start of its path. side: 'R' or 'L'.
+  handPosition(side, out = new THREE.Vector3()) {
+    if (!this.ready) return out;
+    const arms = this._arms[this.mode === 'first' ? 'first' : 'third'];
+    arms.root.updateWorldMatrix(true, true);
+    return arms[side].hand.getWorldPosition(out);
+  }
+
+  // The shoulder one arm turns about (world), on whichever body the camera shows
+  shoulderPosition(side, out = new THREE.Vector3()) {
+    if (!this.ready) return out;
+    const arms = this._arms[this.mode === 'first' ? 'first' : 'third'];
+    arms.root.updateWorldMatrix(true, true);
+    return arms[side].upper?.getWorldPosition(out) ?? out;
+  }
+
+  // How far that arm reaches from the shoulder: its two bones as the rig is actually scaled. A
+  // scripted reach measures itself against this instead of against a guess, so it knows whether
+  // what it is reaching for is in reach at all. 0 if the rig has no arm bones on that side.
+  armSpan(side) {
+    if (!this.ready) return 0;
+    const arms = this._arms[this.mode === 'first' ? 'first' : 'third'];
+    const arm = arms[side];
+    if (!arm?.ok) return 0;
+    arms.root.updateWorldMatrix(true, true);
+    return arm.upper.getWorldPosition(_j1).distanceTo(arm.fore.getWorldPosition(_j2)) +
+           _j2.distanceTo(arm.hand.getWorldPosition(_j3));
   }
 
   // A jump has just started (the controller pushed the body upward)

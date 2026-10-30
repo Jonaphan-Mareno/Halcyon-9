@@ -61,7 +61,7 @@ import { FuseboxPuzzle } from './FuseboxPuzzle.js';
 const FLASHBACK_3D = true;
 const SOLID = ['COL_', 'DOOR_'];
 // what the code finds by name, moves or hides: never joined with the still meshes round it
-const KEEP_SEPARATE = /^(DOOR_|LABDOOR_|ELEVATOR_|ARIA_|PT_|SPAWN_|ORG|FuseBox|COL_|Atrium_Hatch|Atrium_LiftCab|Cabin_|Door_)/;
+const KEEP_SEPARATE = /^(DOOR_|LABDOOR_|ELEVATOR_|ARIA_|PT_|SPAWN_|ORG|FuseBox|COL_|Atrium_Hatch|Atrium_LiftCab|Cabin_|Door_|Dress_KessMirror)/;
 
 // The lift is level 1's (lift.glb, see levels/liftCabin.js), its origin the middle of the door
 // sill at the front of the frame. Set there, the frame's front corners sit on the curved inside
@@ -461,6 +461,61 @@ export class HabitatSession {
     return model;
   }
 
+  _addKesslerMirror(model) {
+    const surface = model.getObjectByName('Dress_KessMirror');
+    if (!surface?.isMesh) return;
+    const geometry = surface.geometry;
+    geometry.computeBoundingBox();
+    const bounds = geometry.boundingBox;
+    const size = bounds.getSize(new THREE.Vector3());
+    if (size.x < 0.1 || size.y < 0.1) return;
+
+    // A dedicated camera looks from the mirror into the room. Unlike Reflector, this feed is
+    // independent of the player camera and remains visible as the player changes viewing angle.
+    const center = bounds.getCenter(new THREE.Vector3());
+    const target = new THREE.WebGLRenderTarget(384, 768, { depthBuffer: true, stencilBuffer: false });
+    const screen = new THREE.Mesh(
+      new THREE.PlaneGeometry(size.x, size.y),
+      new THREE.MeshBasicMaterial({ map: target.texture, side: THREE.DoubleSide })
+    );
+    screen.name = 'Kessler_MirrorScreen';
+    screen.position.set(center.x, center.y, bounds.max.z + 0.004);
+    screen.renderOrder = 1;
+
+    const camera = new THREE.PerspectiveCamera(75, size.x / size.y, 0.05, 30);
+    camera.name = 'Kessler_MirrorCamera';
+    camera.position.set(center.x, center.y, bounds.max.z + 0.015);
+    camera.rotation.y = Math.PI; // local -z points into the room from this wall
+    surface.add(screen, camera);
+
+    screen.onBeforeRender = (renderer, scene) => {
+      const visible = surface.visible;
+      const renderTarget = renderer.getRenderTarget();
+      const viewport = renderer.getViewport(new THREE.Vector4());
+      const scissor = renderer.getScissor(new THREE.Vector4());
+      const scissorTest = renderer.getScissorTest();
+      const xrEnabled = renderer.xr.enabled;
+      const shadowAutoUpdate = renderer.shadowMap.autoUpdate;
+      surface.visible = false; // keep the camera feed from seeing itself
+      try {
+        renderer.xr.enabled = false;
+        renderer.shadowMap.autoUpdate = false;
+        renderer.setRenderTarget(target);
+        renderer.clear(true, true, true);
+        renderer.render(scene, camera);
+      } finally {
+        renderer.setRenderTarget(renderTarget);
+        renderer.setViewport(viewport);
+        renderer.setScissor(scissor);
+        renderer.setScissorTest(scissorTest);
+        renderer.xr.enabled = xrEnabled;
+        renderer.shadowMap.autoUpdate = shadowAutoUpdate;
+        surface.visible = visible;
+      }
+    };
+    this.kesslerMirrorTarget = target;
+  }
+
   async _load() {
     const scene = this.game.scene;
     // Voss's quarter is authored inside l2-atrium.blend (the Bedroom1 collection), so it ships
@@ -475,6 +530,7 @@ export class HabitatSession {
     ]);
     this.atrium = atrium;
     this.lab = lab;
+    this._addKesslerMirror(atrium);
 
     // Retain atrium animation mixer and find Kessler bedroom robo arm swing clip
     this.roboArmMixer = new THREE.AnimationMixer(atrium);
@@ -1827,6 +1883,7 @@ export class HabitatSession {
     try { this.garden?.audio?.ctx?.close(); } catch (e) { /* already closed */ }
     for (const el of [this.codeNote, this.fpsEl, this.keypad?.root, this.flashback?.el]) el?.remove();
     this.composer?.dispose?.();
+    this.kesslerMirrorTarget?.dispose();
     disposeScene(this.game.scene);
     this.physics?.world?.free?.();
     pauseClock.paused = false;

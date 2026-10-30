@@ -55,6 +55,7 @@ BLANKET = (0.10, 0.14, 0.50)
 WHITE = (0.80, 0.80, 0.77)
 RUST = (0.33, 0.09, 0.04)
 TERRACOTTA = (0.55, 0.26, 0.11)
+MIRROR = (0.60, 0.68, 0.70)
 CREAM = (0.72, 0.62, 0.44)
 SAGE = (0.30, 0.36, 0.25)
 SLATE = (0.13, 0.17, 0.24)
@@ -440,6 +441,15 @@ box((-0.36, 0.035, 1.38), (0.36, 0.04, 1.58), SAGE)
 box((-0.36, 0.035, 1.58), (0.36, 0.04, 1.82), (0.25, 0.42, 0.55))
 box((0.05, 0.04, 1.62), (0.18, 0.045, 1.75), SHADE)
 make('Dress_KessPicture', R2, PLAN)
+
+# a tall, metal-framed mirror on the clear +y wall, opposite the bed's picture
+XF = place(0.9, HY - 0.05, 0)
+box((-0.49, -0.015, 0.12), (0.49, 0.035, 1.92), METAL, bevel=0.018, segments=2)
+make('Dress_KessMirrorFrame', R2, PLAN)
+
+XF = place(0.9, HY - 0.05, 0)
+box((-0.425, -0.018, 0.19), (0.425, -0.010, 1.85), MIRROR, bevel=0.006)
+make('Dress_KessMirror', R2, PLAN)
 
 XF = Matrix.Identity(4)                            # books on her desk (its top at 1.16), squared up
 for k, (c, h) in enumerate(((BLANKET, 0.035), (RUST, 0.03), (SAGE, 0.04))):

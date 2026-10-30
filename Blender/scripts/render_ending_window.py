@@ -1,6 +1,6 @@
 """
 The Save-ARIA ending's narration, line 4 ("...and his mother was the first person to be cured"):
-his mother, old now (silver hair, an oatmeal cardigan, a scarf), at the window of the memory care
+his mother, old now (white hair, the teal cardigan she wore when she was young, a cream scarf), at the window of the memory care
 ward in the morning, her hands on the sill, looking out and smiling. Seen from outside: the
 hospital's cream wall around the window, a box of flowers on the sill, the low sun on her face; the
 ward behind her (its sign, the bed's foot) soft in the depth of field. The cast and the helpers are
@@ -34,20 +34,22 @@ WIN_X0, WIN_X1, SILL, WIN_TOP = -0.62, 0.62, 0.9, 2.15
 FRAME_Y = -0.47                                      # the frame, set back from the outside face
 HER = Vector((-0.08, -0.04, 0))                      # where she stands
 
-# ---------- her: old, silver haired, smiling ----------
-restyle_mom(cast, cardigan='#d6c6aa', grey=0.8, streaks=0.0)
+# ---------- her: old, white haired, pleased and proud ----------
+restyle_mom(cast, cardigan='#3f8c88', grey=1.0, streaks=0.0)
 head = cast.new_head
+recolour_whites(bpy.data.materials['SciFem_Bdy_D'], srgb('#3f8c88'), 0.04, 0.14)   # (its shaded folds too, not only the brightest)
 
 
 def hair_fix(head):
-    """Her silver hair: the strands either side of her face are hers too (the mask is widened
-    toward the cheeks there), and its lightest strands stop at silver, not white."""
+    """Her white hair: the strands either side of her face are hers too (the mask is widened
+    toward the cheeks there), and its lightest strands are white, not glaring."""
     nt = head.data.materials[0].node_tree
     for n in nt.nodes:
         if n.type == 'MAP_RANGE' and abs(n.inputs['From Min'].default_value - 0.05) < 1e-6:
             n.inputs['From Min'].default_value = 0.044; n.inputs['From Max'].default_value = 0.049
     tone = next(n for n in nt.nodes if n.type == 'MATH' and n.operation == 'MULTIPLY_ADD' and n.inputs[1].default_value > 1)
-    cap = nt.nodes.new('ShaderNodeMath'); cap.operation = 'MINIMUM'; cap.inputs[1].default_value = 0.6
+    tone.inputs[1].default_value = 2.4; tone.inputs[2].default_value = 0.42
+    cap = nt.nodes.new('ShaderNodeMath'); cap.operation = 'MINIMUM'; cap.inputs[1].default_value = 0.9
     for link in list(tone.outputs['Value'].links):
         nt.links.new(cap.outputs['Value'], link.to_socket)
     nt.links.new(tone.outputs['Value'], cap.inputs[0])
@@ -61,7 +63,7 @@ def older_skin(head):
     b = next(n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED')
     base = b.inputs['Base Color'].links[0].from_socket
     hsv = nt.nodes.new('ShaderNodeHueSaturation')
-    hsv.inputs['Saturation'].default_value = 0.82; hsv.inputs['Value'].default_value = 1.03
+    hsv.inputs['Saturation'].default_value = 0.72; hsv.inputs['Value'].default_value = 1.04
     nt.links.new(base, hsv.inputs['Color']); nt.links.new(hsv.outputs['Color'], b.inputs['Base Color'])
     # the lines: a height field from object-space math, through a Bump node onto the normal it has
     tc = nt.nodes.new('ShaderNodeTexCoord')
@@ -100,8 +102,14 @@ def older_skin(head):
            m('MAXIMUM', m('SUBTRACT', 1.0, m('MULTIPLY', m('ABSOLUTE', m('SUBTRACT', ax, curve_x)), 400.0)), 0.0))
     height = m('MULTIPLY', m('ADD', m('ADD', m('MULTIPLY', fh, 0.6), m('MULTIPLY', cf, 0.5)), nl), front)
     bump = nt.nodes.new('ShaderNodeBump')
-    bump.inputs['Strength'].default_value = 0.35; bump.inputs['Distance'].default_value = 0.0006
+    bump.inputs['Strength'].default_value = 0.8; bump.inputs['Distance'].default_value = 0.0013
     nt.links.new(height, bump.inputs['Height'])
+    # (and the lines drawn in, a little darker, or at this distance they do not show)
+    lined = nt.nodes.new('ShaderNodeMix'); lined.data_type = 'RGBA'; lined.blend_type = 'MULTIPLY'
+    lined.inputs['B'].default_value = (0.4, 0.28, 0.25, 1)
+    nt.links.new(m('MULTIPLY', height, 0.75, clamp=True), lined.inputs['Factor'])
+    nt.links.new(hsv.outputs['Color'], lined.inputs['A'])
+    nt.links.new(lined.outputs['Result'], b.inputs['Base Color'])
     nb = b.inputs['Normal']
     if nb.is_linked:
         nt.links.new(nb.links[0].from_socket, bump.inputs['Normal'])
@@ -128,7 +136,7 @@ def smile(head, k=1.0):
 
 hair_fix(head)
 older_skin(head)
-smile(head, 1.15)
+smile(head, 1.3)
 
 # ---------- her pose: standing at the window, hands on the sill, looking out at the garden ----------
 # (her head level or a little down, and the camera at her eye line: under her chin, where her new head
@@ -139,13 +147,38 @@ standard_heights(cast)
 m_root.location = HER
 update()
 lean(m_arm, m_root, 'Spine2', 4)                     # a little toward the window
-rotate_world(m_arm, 'Neck1', 'Z', -14)               # her face turned toward the sun, past the camera
-lean(m_arm, m_root, 'Head1', 5)                      # a little down: the garden below
+rotate_world(m_arm, 'Neck1', 'Z', -20)               # her face turned toward the sun, past the camera
+lean(m_arm, m_root, 'Head1', 4)                      # level, looking out over the garden
 rotate_world(m_arm, 'Head1', 'Y', -4)
 for side, x in ((-1, -0.19), (+1, 0.17)):
     reach(m_arm, side, Vector((HER.x + x, WALL_IN + 0.08, SILL + 0.035)), (side * 0.35, 0.45, -1))
 curl_hand(m_arm, -1, 16, 8)
 curl_hand(m_arm, +1, 16, 8)
+
+
+# a cream scarf, loose round her neck (and over where her new head meets her old neck)
+def scarf():
+    update()
+    bm = bmesh.new()
+    n1 = bone_world(m_arm, 'Neck1')
+    for dz, r_big, r_small, seed in ((0.0, 0.074, 0.024, 1.3), (-0.034, 0.094, 0.03, 4.1)):
+        rings = []
+        for i in range(48):
+            a = i / 48 * 2 * math.pi
+            big = r_big * (1 + 0.1 * math.sin(a * 3 + seed))
+            c = Vector((math.cos(a) * big, math.sin(a) * big * 0.92 - 0.012, dz + 0.012 * math.sin(a * 2 + seed) - 0.018 * max(0, -math.sin(a))))
+            out = Vector((math.cos(a), math.sin(a), 0))
+            rings.append([bm.verts.new(n1 + c + out * math.cos(k / 10 * 2 * math.pi) * r_small + Vector((0, 0, math.sin(k / 10 * 2 * math.pi) * r_small * 1.35))) for k in range(10)])
+        for i in range(48):
+            for k in range(10):
+                bm.faces.new((rings[i][k], rings[(i + 1) % 48][k], rings[(i + 1) % 48][(k + 1) % 10], rings[i][(k + 1) % 10]))
+    me = bpy.data.meshes.new('Scarf'); bm.to_mesh(me); bm.free()
+    me.polygons.foreach_set('use_smooth', [True] * len(me.polygons))
+    me.materials.append(flat('Scarf', srgb('#efe4d0'), 0.95))
+    o = bpy.data.objects.new('Scarf', me); scn.collection.objects.link(o)
+
+
+scarf()
 
 
 
@@ -307,8 +340,8 @@ sun.rotation_euler = to.to_track_quat('-Z', 'Y').to_euler()
 light((0.2, 1.2, 2.7), 80, 2.0, (1.0, 0.93, 0.82), face)                 # the room's light, low and warm
 light((1.6, -2.4, 1.2), 60, 3.0, (1.0, 0.92, 0.82), face)                 # a soft warm bounce from outside
 light((-0.9, -2.0, 2.1), 110, 1.5, (1.0, 0.88, 0.72), face)               # and the sun's own glow, on her face
-frame_on = empty('frame_on', face.location + Vector((0.05, 0, -0.3)))   # (her face in the upper third)
-cam = camera((0.45, -2.3, 1.6), frame_on, 40)
+frame_on = empty('frame_on', face.location + Vector((0.02, 0, -0.2)))   # (her face in the upper third)
+cam = camera((0.45, -2.3, 1.68), frame_on, 46)
 cam.data.dof.use_dof = True
 cam.data.dof.focus_object = face
 cam.data.dof.aperture_fstop = 2.8

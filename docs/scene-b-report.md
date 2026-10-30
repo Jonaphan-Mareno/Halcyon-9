@@ -85,7 +85,7 @@ One bug was found and fixed by measuring: the spine turns move the measured lean
 **The narration pictures.**
 
 - **Line 2:** the prologue's `photo1` ("My little Voss", his mother young), slowly zooming in.
-- **Line 3:** drawn on a canvas. A hall seen from behind: rows of seated silhouettes rim-lit by a giant screen, some in white coats. ARIA's face is on the screen as hologram dots, made from `aria-avatar.jpg` with its contrast stretched. On her caption the hall reacts: heads jolt back, turn to each other, a hand goes to a mouth, someone half stands.
+- **Line 3 (changed 2026-10-30, at the owner's request):** drawn live by `src/level3/ConferenceScene.js`. It is Flashback 1's conference room, with ARIA's face on its screen as hologram dots. Six new people are in the room, three men and three women in suits and lab coats, nobody from the crew (`public/assets/models/conf-man-1` to `-3` and `conf-woman-1` to `-3`, 1.9 MB in all, built by `Blender/scripts/build_conference_people.py`). On her caption the picture cuts to their faces: brows up, mouths open, two hands to mouths, one man half out of his chair, two turning to a neighbour. It has its own small renderer, compiled during the opening black: 60 fps at 1280 × 720 on this machine's Intel UHD. If it cannot start, the line plays over black. This replaces the planned hall renders (`conference-wide.webp` and `conference-react.webp`), which were never made and left the line black; `render_ending_conference.py` is deleted.
 - **Line 4:** three warm, backlit reunions, all silhouettes seen from behind:
   - an old man and his daughter on a bench;
   - a grandmother between her son and her granddaughter;
@@ -119,9 +119,9 @@ One bug was found and fixed by measuring: the spine turns move the measured lean
 |---|---|---|
 | 1 | Done | 3 s of black and silence, then the line over black. |
 | 2 | Done | The Polaroid, slowly closer. |
-| 3 | Done | The hall and the screen. ARIA's line "...and how the organism can cure dementia." is a caption: `end-aria-10` is not recorded, and it plays automatically if it is added. The hall reacts toward the end of her words. |
+| 3 | Done | The conference room and its screen. "...and how it can cure dementia." is the narrator's own line (`end-narrator-curedementia`, added by the owner, gain -2.9 dB). The cut to their shocked faces comes halfway through it. |
 | 4 | Done | Reunions while "countless people bring back a lifetime of memories". The old woman arrives at the pause, before "his mother was the first person to be cured", and turns and smiles on it. |
-| 5 | Done | The trolling, from the line's start; about 6 s of pile-up under the 5.5 s line. |
+| 5 | Done | The trolling, from the line's start. All 32 cards take about 10.4 s to come down; the pile is held 3 s more, with only the music, before the closing line (about 8 s after line 5 ends). |
 | Closing | Done | The photo comes in on the line and is held after it, then black, then the credits. |
 
 **Camera.** All moves are eased. The trace (`scripts/scene-b/trace.mjs`) found two snaps, both fixed:
@@ -136,7 +136,7 @@ The fastest move inside any shot is now 0.8 m/s, as he walks. All other jumps ar
 **Files.**
 
 - All seven Scene B recordings and all six narrator files were found.
-- `end-aria-10` (optional) is missing, so that line is a caption only.
+- `end-aria-10` is no longer used: that line is now the narrator's (`end-narrator-curedementia`).
 - No line is on a subtitle fallback. The fallbacks still exist (`FALLBACK_B` in `SceneB.js`, `NARRATION_FALLBACK` in `EndingNarration.js`, at 2.4 words a second): a missing file shows its subtitle for that long.
 - Bracketed directions are never subtitled. Two lines change subtitle at their measured pause: `end-voss-13` at the giggle, `end-voss-14` before "I wonder...".
 
@@ -194,11 +194,16 @@ The fastest move inside any shot is now 0.8 m/s, as he walks. All other jumps ar
 - **What Scene B adds:** 9,216 points (cheap shaders), the bar plane, a sprite and its own post pass. There are no new lights and no shadows. The narration and credits draw a cleared black canvas under the DOM.
 - **The fallback works in the game.** On SwiftShader the confrontation's judgement went to stills ("4 fps in its first seconds"). Scene B carried on in stills: a new picture at each shot, line or beat, with the voices, sound and subtitles going on as normal. The full in-game run (`scripts/scene-b/game.mjs`) went from Scene B to the narration to the credits to the title, with no errors.
 
+## Changes of 2026-10-30, at the owner's request
+
+- **His mother at the window:** `mom-window.webp` is now rendered (19 KB), by `Blender/scripts/render_ending_window.py`, with white hair, the teal cardigan she wore when young, a cream scarf and a smile, looking out. **Known limit:** her face is the younger head with lines drawn on, so her hair does most of the ageing.
+- **Music:** `src/level3/endingMusic.js`, a small waltz for a felt piano, written for this and drawn in the browser (no file, no third-party music). It starts on the Polaroid, gains strings under the families and his mother, goes up an octave and turns light for the trolling, and ends on one chord on the crew photo. It dips under the narrator and follows the player's music volume. **I cannot hear it:** only its levels were measured. A file at `public/assets/audio/music/ending-narration.ogg` is played instead if the owner adds one (and must then be credited).
+
 ## 8. What the owner must do
 
 1. **Watch and listen at normal speed**, especially the kneel (beat 1), the plug in his hands (beats 4 and 5), the drain and the silence (beat 9), the fall (beat 10), the lip sync, and the levels of the quiet takes.
 2. **Confirm the closing line's wording**, "Well, wasn't that a wonderful story.", which is used as the subtitle.
-3. **Optionally record `end-aria-10`**, "...and how the organism can cure dementia.", into `public/assets/audio/aria/`. It plays when present.
+3. **Confirm the wording of `end-narrator-curedementia`:** the subtitle says "...and how it can cure dementia."
 4. **Confirm the restored photo**, especially the smiles. To re-render it: `node scripts/ending-photo/render.mjs`.
 5. **The "No" ending:** the `TODO(owner)` in `DeckSession.onChoice` (another session is planning it in `docs/scene-c-agent-prompt.md`).
 6. **What comes after the credits:** `DeckSession._afterCredits()` reloads to the title for now.

@@ -134,7 +134,7 @@ Updated by the owner. The narrator is a new voice: neutral, gentle, a storytelle
 |---|---|---|
 | `end-narrator-1` | "Voss died shortly after." | Black, three seconds of silence **before** the line: the room has no sound. |
 | `end-narrator-2` | "He never remembered his mother, but ARIA did." | The Polaroid from the prologue (mother, young), slowly zooming in. |
-| `end-narrator-3` | "After ARIA got connected to the mainland she explained everything that happened on Halcyon-9 the last few months." | ARIA's face on a giant screen at the front of a room full of scientists and business-looking people. ARIA says: "...and how the organism can cure dementia." (shown as her caption, and optionally recorded as `end-aria-10`). The audience looks shocked and surprised. |
+| `end-narrator-3` | "After ARIA got connected to the mainland she explained everything that happened on Halcyon-9 the last few months." | ARIA's face on a giant screen at the front of a room full of scientists and business-looking people. The narrator goes on (`end-narrator-curedementia`): "...and how it can cure dementia." The audience looks shocked and surprised. |
 | `end-narrator-4` | "Voss's research was used to help countless people bring back a lifetime of memories, and his mother was the first person to be cured." | Lots of old people crying with joy and hugging their families. Then an old woman at a window in morning light, turning to look at the camera and smiling. **Time the wording to the pictures**: the crying and hugging while "countless people bring back a lifetime of memories", the old woman on "his mother was the first person to be cured". She does not need to be recognisably Voss's mother; the line does that. No clear faces if it suits the style; a hand reaching to a hand is enough. |
 | `end-narrator-5` | "Oh, and ARIA? She spent her days happily trolling people on the internet." | **The trolling montage, already made:** `public/assets/ending/aria-troll.html` (with `aria-avatar.jpg`). Cards of ARIA's comments pile up over about 6 seconds, starting slowly and then faster until the screen is buried. This is the one comic beat, and it works because the scene before it is so quiet. |
 | `the-end` ("Well, wasn't that a wonderful story.") | **Decided:** the line is the cue for the closing image. | The restored crew photo (the Flashback 1 photograph, whole and clean, with no tear and no stain; Voss, Kessler, Lindqvist, Navarro and Park, all happy, arms round each other), cued in as the narrator says the line, held, then a fade to the credits (`src/intro/credits.js`). |
@@ -245,7 +245,6 @@ That is 8 Voss files and 7 ARIA files for Scene A.
 | `end-narrator-4` | "Voss's research was used to help countless people bring back a lifetime of memories, and his mother was the first person to be cured." (a full second of silence at the end) |
 | `end-narrator-5` | "Oh, and ARIA? She spent her days happily trolling people on the internet." (with a smile) |
 | `the-end` | "Well, wasn't that a wonderful story." (cues the restored crew photo, then the credits; **wording is my reading of your note, please correct it**) |
-| `end-aria-10` | **Optional:** ARIA on the giant screen: "...and how the organism can cure dementia." Without it, the line is a caption only. |
 
 **Scene C, the "Stay" ending (record later)**
 

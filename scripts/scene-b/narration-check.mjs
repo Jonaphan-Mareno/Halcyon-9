@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { startVite, launchBrowser } from '../flashback1-photo/cdp.mjs';
 
 const outDir = process.argv[2] || 'narration-check';
-const specs = (process.argv[3] || '2,4,polaroid+2,hall+3,a10+0.8,react+0.5,react+2,families+1,families+3,families+5,window+1,window+4,troll+3,photo+2').split(',');
+const specs = (process.argv[3] || '2,4,polaroid+2,hall+3,n3b+0.8,react+0.5,react+2,families+1,families+3,families+5,window+1,window+4,troll+3,photo+2').split(',');
 mkdirSync(outDir, { recursive: true });
 const vite = await startVite(5196);
 const page = await launchBrowser({ headless: true, width: 960, height: 540, log: false, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });

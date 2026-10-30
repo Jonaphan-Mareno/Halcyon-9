@@ -104,12 +104,13 @@ export const FALLBACK_LENGTHS = Object.fromEntries(LINES.map((l) => [l.id, +(l.t
 //   n3         -17.6   -1.8   -19.4
 //   n4         -18.1   -1.3   -19.4
 //   n5         -16.8   -2.6   -19.4
+//   n3b        -16.5   -2.9   -19.4   end-narrator-curedementia
 //   n6         -19.6   +0.2   -19.4   the-end: "Well, wasn't that a wonderful story."
 export const VOICE_GAIN_DB = {
   a1: 0.1, a2: 1.8, a3: -0.3, a4: -3.4, a5: -2.4, a6: -1.7, a7: -2.3,
   v1: 1.9, v2: -0.5, v3: 0.9, v4: 0.1, v5: -0.8, v6: 3.0, v7: 0.8, v8: 5.3,
   v9: 7.0, v10: 8.5, v11: 7.8, v12: 7.2, v13: 6.8, a8: 7.7, v14: 8.1,
-  n1: 0.5, n2: -2.6, n3: -1.8, n4: -1.3, n5: -2.6, n6: 0.2
+  n1: 0.5, n2: -2.6, n3: -1.8, n3b: -2.9, n4: -1.3, n5: -2.6, n6: 0.2
 };
 const VOICE_BUS_DB = 1.5;     // the dialogue bus, after its compressor (the makeup)
 

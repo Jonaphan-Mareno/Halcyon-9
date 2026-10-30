@@ -292,6 +292,13 @@ export class BriefingFlashback {
 
   // ------------------------------------------------------------------ the room
   _build() {
+    this.buildRoom();
+    this._cast();
+  }
+
+  // The room and its look's pass, with nobody in it (the ending's narration uses this room too:
+  // level3/ConferenceScene.js)
+  buildRoom() {
     const scene = (this.scene = new THREE.Scene());
     scene.background = new THREE.Color(0x2a2018);
     this.camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.05, 20);
@@ -299,7 +306,6 @@ export class BriefingFlashback {
     this._mats = [];
     this._textures = [];
     this._room();
-    this._cast();
 
     this.target = new THREE.WebGLRenderTarget(16, 16, { type: THREE.HalfFloatType });
     this.post = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ ...LOOK, uniforms: THREE.UniformsUtils.clone(LOOK.uniforms), depthTest: false, depthWrite: false }));
@@ -393,6 +399,7 @@ export class BriefingFlashback {
     const screen = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.125), scr);
     screen.position.set(0.3, 1.55, -2.57);
     scene.add(screen);
+    this.screenMesh = screen;
     this.screenCentre = v3(0.3, 1.55, -2.57);
     // the table and the chairs
     box(1.1, 0.05, 2.6, wood, 0, TABLE_Y - 0.025, 0.15);
@@ -423,6 +430,7 @@ export class BriefingFlashback {
     const jug = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.22, 12), this._toon(0xbcd3d6, 0x10181a));
     jug.position.set(0, TABLE_Y + 0.11, -0.55);
     scene.add(jug);
+    this.jug = jug;
     // a plant in the corner by the window, and ceiling lights
     const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.13, 0.36, 10), this._toon(0x7b5a3e));
     pot.position.set(2.4, 0.18, 2.6);
@@ -1374,7 +1382,7 @@ export class BriefingFlashback {
         if (o.isSkinnedMesh) o.skeleton.dispose();
         else if (o.isMesh) o.geometry.dispose();
       });
-      for (const p of Object.values(this.people)) {
+      for (const p of Object.values(this.people || {})) {
         p.mixer.stopAllAction();
         p.mixer.uncacheRoot(p.model);
       }

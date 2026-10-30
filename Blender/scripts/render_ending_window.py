@@ -45,7 +45,7 @@ def hair_fix(head):
     nt = head.data.materials[0].node_tree
     for n in nt.nodes:
         if n.type == 'MAP_RANGE' and abs(n.inputs['From Min'].default_value - 0.05) < 1e-6:
-            n.inputs['From Min'].default_value = 0.041; n.inputs['From Max'].default_value = 0.046
+            n.inputs['From Min'].default_value = 0.044; n.inputs['From Max'].default_value = 0.049
     tone = next(n for n in nt.nodes if n.type == 'MATH' and n.operation == 'MULTIPLY_ADD' and n.inputs[1].default_value > 1)
     cap = nt.nodes.new('ShaderNodeMath'); cap.operation = 'MINIMUM'; cap.inputs[1].default_value = 0.6
     for link in list(tone.outputs['Value'].links):
@@ -256,13 +256,14 @@ def text(body, loc, size, mat, rot=(math.radians(90), 0, 0)):
 
 
 wy = BACK - 0.06
-box('Sign', (0.34, wy, 1.74), (1.1, 0.02, 0.18), flat('SignBlue', srgb('#1f4e79'), 0.4))
-text('MEMORY CARE UNIT', (0.34, wy - 0.015, 1.74), 0.088, flat('SignText', srgb('#f4f4f0'), 0.5))
+box('Sign', (0.0, wy, 1.74), (1.1, 0.02, 0.18), flat('SignBlue', srgb('#1f4e79'), 0.4))
+text('MEMORY CARE UNIT', (0.0, wy - 0.015, 1.74), 0.088, flat('SignText', srgb('#f4f4f0'), 0.5))
 # the foot of her bed, made, and a vase of flowers on the table beside it
 sheet = flat('Sheet', srgb('#e9ece8'), 0.85)
 box('Bed', (1.0, 1.6, 0.5), (1.0, 1.7, 0.22), sheet, 0.04)
 box('BedFrame', (1.0, 1.6, 0.33), (1.04, 1.74, 0.12), flat('Steel', srgb('#b9bdc0'), 0.35, 1.0))
-box('Table', (-0.85, 1.9, 0.38), (0.5, 0.45, 0.76), flat('Table', srgb('#b49a7a'), 0.6), 0.01)
+box('Table', (-0.85, 1.9, 0.38), (0.5, 0.45, 0.76), flat('Table', srgb('#dcdcd2'), 0.5), 0.015)   # the bedside cabinet
+box('Drawer', (-0.85, 1.67, 0.62), (0.44, 0.01, 0.005), flat('Line', srgb('#9a9c96'), 0.5))
 bpy.ops.mesh.primitive_cylinder_add(radius=0.055, depth=0.2, location=(-0.85, 1.9, 0.86))
 bpy.context.object.data.materials.append(flat('Vase', srgb('#6f9fb8'), 0.2))
 for i in range(9):

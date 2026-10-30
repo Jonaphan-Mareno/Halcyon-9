@@ -67,20 +67,19 @@ class Person:
         self.coat, self.hair = coat, hair
 
     def _freeze(self, action):
-        """Its Idle clip's first frame held as its pose (kept, to go back to)."""
+        """Its Idle clip's first frame held as its pose (kept, to go back to). Kept as each bone's
+        own channels, as the clip set them: written back through pb.matrix instead (as
+        prologue_common's freeze_clip does), these rigs' finger bones land far from their hands."""
         arm = self.arm
         arm.animation_data.action = action
         scn.frame_set(1)
-        self.rest = {pb.name: pb.matrix.copy() for pb in arm.pose.bones}
+        self.rest = {pb.name: (pb.location.copy(), pb.rotation_quaternion.copy(), pb.scale.copy()) for pb in arm.pose.bones}
         arm.animation_data.action = None
         self.reset()
 
     def reset(self):
         for pb in self.arm.pose.bones:
-            pb.location = (0, 0, 0); pb.rotation_quaternion = (1, 0, 0, 0); pb.scale = (1, 1, 1)
-        update()
-        for pb in sorted(self.arm.pose.bones, key=lambda b: len(b.parent_recursive)):
-            pb.matrix = self.rest[pb.name]
+            pb.location, pb.rotation_quaternion, pb.scale = self.rest[pb.name]
         update()
 
     def dress(self, suit, hair):

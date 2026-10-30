@@ -1,13 +1,13 @@
 // Pictures of the narration at given times (dev only).
 //   node scripts/scene-b/narration-check.mjs <out dir> [t1,t2,...]
-// Times may be names from its timeline (hall, families, window, turn, troll, photo; a line id such
+// Times may be names from its timeline (hall, react, families, window, troll, photo; a line id such
 // as n3; a name+1.5 adds seconds) or seconds. Prints the timeline.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { startVite, launchBrowser } from '../flashback1-photo/cdp.mjs';
 
 const outDir = process.argv[2] || 'narration-check';
-const specs = (process.argv[3] || '2,4,polaroid+2,hall+3,react+1,families+1,families+3,families+5,window+1,turn+2,troll+3,photo+2').split(',');
+const specs = (process.argv[3] || '2,4,polaroid+2,hall+3,a10+0.8,react+0.5,react+2,families+1,families+3,families+5,window+1,window+4,troll+3,photo+2').split(',');
 mkdirSync(outDir, { recursive: true });
 const vite = await startVite(5196);
 const page = await launchBrowser({ headless: true, width: 960, height: 540, log: false, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });

@@ -45,19 +45,6 @@ const RELAY_RING_HEIGHTS = [1.3, 1.95, 2.6, 3.25];
 const RELAY_RADIUS = 1.95;
 const RELAY_STEPS = 8;
 
-// Which rings each dial turns, bottom to top (0..3), each dial's own ring listed first. Every ring
-// is turned by at least two dials, so none of them can be set once and forgotten, and the third
-// dial reaches down to the bottom ring: the link map is the puzzle, since four independent dials
-// would just be four alignment jobs. Any map whose link matrix has an odd determinant leaves every
-// scramble solvable; a plain chain round all four rings is singular (half the scrambles could not
-// be solved), which is why the middle dial drives two neighbours as well as itself.
-const RELAY_LINKS = [
-  [0, 2],       // bottom dial: itself and the third
-  [1, 3],       // second dial: itself and the top
-  [2, 0, 1],    // third dial: itself, the bottom and the second
-  [3, 1, 2],    // top dial: itself and the two below it
-];
-
 // Where the torch lies: on the floor in front of ARIA's wall monitor
 const TORCH_XZ = new THREE.Vector2(1.2, -7.3);
 
@@ -2714,12 +2701,16 @@ onRingPuzzleComplete() {
     return -1;
   }
 
-  // Ring order is bottom to top, and each dial turns itself plus its linked rings (RELAY_LINKS):
-  // bottom -> third, second -> top, third -> bottom and second, top -> the two below it. Turning the
-  // third therefore disturbs the ring the player has just aligned at the bottom.
+  // Ring order is bottom to top. Each dial turns itself and its linked rings:
+  // bottom -> third, second -> top, third -> second, top -> second and third.
   turnRing(index, direction = 1) {
     if (!this.relay || !this.cablesFixed || this.relaySolved) return;
-    const linkedRings = RELAY_LINKS[index];
+    const linkedRings = [
+      [0, 2],
+      [1, 3],
+      [2, 1],
+      [1, 2, 3],
+    ][index];
     if (!linkedRings) return;
     for (const ringIndex of linkedRings) {
       this.relay.rings[ringIndex].steps += direction;

@@ -12,6 +12,8 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { MonitorWall } from "./MonitorWall.js";
 import { makeLiftScreen, makeLiftPhoto } from "./liftCabin.js";
 import { HandleReach } from "./HandleReach.js";
+import { settings } from "../core/Settings.js";
+import { relayTurnDeltas } from "./relayRules.js";
 
 // Must match MAX_LIGHTS in Shaders.js (the room's 8 lights + the flashlight)
 const MAX_LIGHTS = 9;
@@ -2710,10 +2712,13 @@ onRingPuzzleComplete() {
     return -1;
   }
 
-  // Turn one ring a step. Every ring above it in the tree turns with it.
+  // Ordinary modes carry the rings above the selected dial. Last Backup uses
+  // cross-linked world turns, compensated locally for the same nested scene graph.
   turnRing(index, direction = 1) {
     if (!this.relay || !this.cablesFixed || this.relaySolved) return;
-    this.relay.rings[index].steps += direction;
+    const deltas = relayTurnDeltas(index, settings.get('difficulty'));
+    if (!deltas) return;
+    this.relay.rings.forEach((ring, i) => { ring.steps += deltas[i] * direction; });
     this.onRingTurned?.();
     this._relayCheckAt = this.time + 0.6; // after the turn has finished animating
   }

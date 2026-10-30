@@ -34,7 +34,7 @@ export const DIFFICULTIES = {
     puzzleTime: 0.6,
     restores: 1,
     permadeath: true,
-    description: 'Double damage, 40% less puzzle time, two lives. No second run: permadeath.'
+    description: 'Double damage, 40% less puzzle time, cross-linked relay rings, two lives. No second run: permadeath.'
   }
 };
 

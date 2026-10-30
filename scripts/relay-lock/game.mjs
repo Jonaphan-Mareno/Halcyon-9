@@ -36,6 +36,7 @@ const state = () => page.evaluate(`(() => {
   return JSON.stringify({ game: window.__game?.state, lock: L?.state, owns: L?.owns, T: sc ? +sc.T.toFixed(2) : null, shot: sc?.shot,
     landed: sc?.landed, sat: sc?.sat, water: L ? +(L.water.level - L.o.y).toFixed(2) : null, fog: s?.prep?._fogMode,
     conf: !!s?.confrontation?.running, actor: !!L?.actor, helmet: !!L?.helmet,
+    clip: L?.actor?.currentName, feet: L?.actor ? ['leftFoot', 'rightFoot', 'leftCalf', 'pelvis'].map((b) => { const m = L.actor.bone(b)?.matrixWorld.elements; return m ? [+(m[12] - L.o.x).toFixed(2), +(m[13] - L.o.y).toFixed(2), +(m[14] - L.o.z).toFixed(2)] : null; }) : null,
     line: (() => { const d = document.getElementById('dialogue-box'); return d && d.classList.contains('visible') ? getComputedStyle(d).visibility + ': ' + d.textContent.slice(0, 40) : null; })() });
 })()`);
 try {
@@ -52,6 +53,9 @@ try {
       c.teleport(L.L(0, 0.2, -3.2)); c.camera.rotation.set(0, Math.PI, 0); c.facing = Math.PI; })()`);
     await sleep(2500);
     await shot('relay-01-hatch-sealed');
+    // (the valves solved: the hatch slides open; then the reroute won)
+    await page.evaluate('(() => { const t = window.__game.level2.trench; if (t.pressureSeal?.state) t.pressureSeal.state.solved = true; t.works.openRelayHatch(); })()');
+    await sleep(4000);
     await page.evaluate('window.__game.level2.trench.lock.unseal()');
     for (let k = 0; k < 4; k++) { await sleep(2000); await shot('relay-02-unsealing-' + k); }
     console.log('after unseal', await state());
@@ -75,6 +79,12 @@ try {
       console.log('t', ((Date.now() - t0) / 1000).toFixed(0), JSON.stringify(j));
       const errs = page.logs.filter((l) => /exception|error/i.test(l) && !/Pointer Lock|WrongDocument/.test(l));
       if (errs.length) console.log(errs.slice(-3).join('\n'));
+    }
+    // (NOLEAN=t: take the lean-back pose off at scene time t, to see what it does)
+    if (process.env.NOLEAN && j.T >= +process.env.NOLEAN && !globalThis.__noLean) {
+      globalThis.__noLean = true;
+      await page.evaluate('window.__game.level2.trench.lock._leanOff?.()');
+      console.log('lean off at', j.T);
     }
     const due = j.T != null ? at[k] != null && j.T >= at[k] : Date.now() - last > 4000;
     if (j.conf) { await sleep(3000); await shot('confrontation'); console.log('confrontation running'); break; }

@@ -811,7 +811,7 @@ export class Game {
   }
 
   enterKeypadMode(keypad) {
-    if (this.state !== 'PLAYING' || !keypad) return;
+    if (this.state !== 'PLAYING' || !keypad || !this.currentLevel?.relaySolved) return;
 
     const cam = this.camera.instance;
 
@@ -948,6 +948,7 @@ export class Game {
   }
   
   onKeypadSubmit(code) {
+    if (this.state !== 'KEYPAD' || !this.currentLevel?.relaySolved) return;
     console.log(`Six-digit keypad input received: ${code}`);
 
     if (code === ELEVATOR_ACCESS_CODE) {

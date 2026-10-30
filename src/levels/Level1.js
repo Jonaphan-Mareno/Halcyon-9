@@ -1794,7 +1794,7 @@ onRingPuzzleComplete() {
         return null;
       }
 
-      if (!this.relaySolved) return 'The keypad is dead. No power';
+      if (!this.relaySolved) return 'Complete the current objective first';
 
       return 'Click or press E to use keypad';
     }
@@ -1890,7 +1890,7 @@ onRingPuzzleComplete() {
     }
     if (this._isKeypadPart(object)) {
       if (!this.relaySolved) {
-        this.onLockedHint?.('The keypad is dead: no power. The relay rings are still out of phase.');
+        this.onLockedHint?.('Complete the current objective first');
         return;
       }
       this.onUseKeypad?.(this.keypad);

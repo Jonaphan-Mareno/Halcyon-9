@@ -141,7 +141,7 @@ const NAMES = { voss: 'VOSS', aria: 'ARIA' };
 const COLOURS = { voss: '#ff8a8a', aria: '#7fe3ff' };
 const EFFECTS = ['machine-hum', 'clank-2', 'click', 'punch', 'slide'];
 const SKIP_AFTER = 2.0;
-const CHOICE_SECONDS = 15;    // the choice's timer; out of time, it is yes
+const CHOICE_SECONDS = 15;    // the choice's timer; out of time, it is no
 const CHOICE_CYAN = [0, 229, 255], CHOICE_RED = [255, 48, 64];
 const RENDER_SCALE = 0.9;
 
@@ -1012,7 +1012,7 @@ export class Confrontation {
   // ------------------------------------------------------------------ the choice
   _showChoice() {
     this._choiceShown = true;
-    // (the clock runs without the UI too, so the scene still ends: on yes)
+    // (the clock runs without the UI too, so the scene still ends: on no)
     this._choiceClock = { t: 0, phase: 0.55, n: 0 };
     this._buttons = [];
     if (!this.root) return;
@@ -1034,6 +1034,7 @@ export class Confrontation {
       b.addEventListener('mouseenter', () => this._focus(this._buttons.indexOf(b)));
     }
     this.root.appendChild(el);
+    this._focus(1);                                // (No is the default: Enter takes it, as the timer does)
     document.exitPointerLock?.();
     requestAnimationFrame(() => { el.style.opacity = '1'; });
   }
@@ -1046,7 +1047,7 @@ export class Confrontation {
   // The choice's clock, on the frames' time (so it stops with them, under the pause menu), and its
   // suspense: the buttons beat like a heart, flashing on each beat and dimming between them, the
   // beat quicker and the dimming deeper as the time runs out. In the last seconds the bar and the
-  // Yes go ARIA's red and her face pulses red with them, while the No fades. Out of time: yes.
+  // Yes go ARIA's red and her face pulses red with them. Out of time: no.
   _choiceTick(raw) {
     const c = this._choiceClock;
     if (!c || this.choice) return;
@@ -1078,20 +1079,20 @@ export class Confrontation {
       const yes = k === 0, focused = this._focused === k;
       const col = mix(yes ? red : 0);
       const lit = floor + (1 - floor) * beat;
-      b.style.opacity = (focused ? Math.max(0.92, lit) : lit * (yes ? 1 : 1 - 0.45 * red)).toFixed(3);
+      b.style.opacity = (focused ? Math.max(0.92, lit) : lit).toFixed(3);
       b.style.borderColor = `rgba(${col},${Math.min(1, 0.4 + 0.6 * glow + (focused ? 0.45 : 0)).toFixed(2)})`;
       b.style.background = `rgba(${col},${(0.06 + 0.16 * glow + (focused ? 0.12 : 0)).toFixed(3)})`;
       b.style.boxShadow = `0 0 ${(2 + 18 * glow).toFixed(1)}px rgba(${col},${(0.1 + 0.5 * glow).toFixed(2)})`;
     });
     if (c.t >= CHOICE_SECONDS) {
-      // out of time: the Yes lights up solid, and it is chosen
-      const yes = this._buttons[0];
-      if (yes) {
-        yes.style.opacity = '1';
-        yes.style.background = `rgba(${mix(1)},0.35)`;
-        yes.style.borderColor = `rgb(${mix(1)})`;
+      // out of time: the No lights up solid, and it is chosen
+      const no = this._buttons[1];
+      if (no) {
+        no.style.opacity = '1';
+        no.style.background = `rgba(${mix(0)},0.35)`;
+        no.style.borderColor = `rgb(${mix(0)})`;
       }
-      this._choose('yes');
+      this._choose('no');
     }
   }
 
@@ -1110,7 +1111,7 @@ export class Confrontation {
     if (move) {
       e.preventDefault();
       this._focus(this._focused === undefined ? (move > 0 ? 0 : 1) : (this._focused + move + 2) % 2);
-    } else if ((e.code === 'Enter' || e.code === 'Space' || e.code === 'KeyE') && this._focused !== undefined) {
+    } else if ((e.code === 'Enter' || e.code === 'Space' || e.code === 'KeyE') && !e.repeat && this._focused !== undefined) {
       e.preventDefault();
       this._choose(this._buttons[this._focused].dataset.choice);
     }

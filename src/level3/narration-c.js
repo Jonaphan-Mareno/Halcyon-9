@@ -5,6 +5,8 @@ import { FACE, DESK } from './Confrontation.js';
 import { voiceBus, dbGain, decode, speechShape } from './endingAudio.js';
 import { leanOf } from './vossPoses.js';
 import { SubsShot, LabShot, PowerShot, POWER } from './rescue-scenes.js';
+import { ChairShot, FILM } from './chair-shot.js';
+import { synthMusic } from '../story/PrologueSequence.js';
 
 // The narration after the "Stay" ending (docs/ending-confrontation-script.md, "The narration,
 // Scene C"), built a line at a time: lines 6 to 8 in their room, one continuous scene, then line 8's
@@ -42,6 +44,14 @@ import { SubsShot, LabShot, PowerShot, POWER } from './rescue-scenes.js';
 //      A dip through black to his lab, its lights still on: two of the rescue team, in dive suits,
 //      helmets off, come in out of the dark with torches; his research notes open in a gloved
 //      hand ("for Mom" stuck on them); the two of them look up at each other. Then black.
+//   4  "Voss's research was used to help countless people bring back a lifetime of memories, and his
+//      mother was the first person to be cured." (The Save-ARIA narration's line and its families.)
+//   11 "He kept his promise to his mother after all. (A pause on the last photo.) Sorry... I always get
+//      a bit teary when this story comes to an end." Black, then "Voss, my hero" alone on it, then the
+//      credits. (One recording, played in two parts, for the pause.)
+//      From "and his mother", ChairShot (chair-shot.js): his mother in a chair, slowly going through the
+//      prologue's Polaroids, and the last, one the player has never seen: "Voss, my hero". The
+//      prologue's music box under it, for the long silence while she looks.
 //
 // Lines 6 and 7 are not a scene of their own: like Scene B, they carry on in the confrontation's
 // room with the same Voss (conf.actor), ARIA and look (conf's own post pass), and the
@@ -61,12 +71,15 @@ export const LINES_C = [
   { id: 'c-n7', clip: 'ending/end-narrator-7', text: 'And Voss, at last, felt at peace... and slowly drifted off.' },
   { id: 'c-n8', clip: 'ending/end-narrator-8', text: "ARIA was devastated by Voss's death, but she also felt something she had never truly felt before: happiness. So she gave every last bit of power to keep the lab running, so his research would never be lost." },
   { id: 'c-n9', clip: 'ending/end-narrator-9', text: 'Months went by without a word from Halcyon-9. So the mainland came looking.' },
-  { id: 'c-n10', clip: 'ending/end-narrator-10', text: 'And there, waiting for them, was everything Voss had worked for.' }
+  { id: 'c-n10', clip: 'ending/end-narrator-10', text: 'And there, waiting for them, was everything Voss had worked for.' },
+  { id: 'c-n4', clip: 'ending/end-narrator-4', text: "Voss's research was used to help countless people bring back a lifetime of memories, and his mother was the first person to be cured." },
+  { id: 'c-n11a', clip: 'ending/end-narrator-11', text: 'He kept his promise to his mother after all.' },
+  { id: 'c-n11b', clip: 'ending/end-narrator-11', text: 'Sorry... I always get a bit teary when this story comes to an end.' }
 ];
 // Measured with scripts/confrontation/loudness.mjs: end-narrator-6 -17.7 LUFS, -7 -20.1, -8 -18.3,
-// -9 -16.8 and -10 -18.0, to the narration's -19.4. The murmur sits well under the narrator, and lower
-// still under its low-pass.
-const GAIN_DB = { 'c-n6': -1.7, 'c-n7': 0.7, 'c-n8': -1.1, 'c-n9': -2.6, 'c-n10': -1.4 };
+// -9 -16.8, -10 -18.0, -4 -18.1 and -11 -18.9, to the narration's -19.4. The murmur sits well under the
+// narrator, and lower still under its low-pass.
+const GAIN_DB = { 'c-n6': -1.7, 'c-n7': 0.7, 'c-n8': -1.1, 'c-n9': -2.6, 'c-n10': -1.4, 'c-n4': -1.3, 'c-n11a': -0.5, 'c-n11b': -0.5 };
 // Line 8's words (seconds into end-narrator-8, from its pauses): "but she also felt" (her colour
 // starts to warm), "happiness" (a small smile), "So she gave" (determined), "...every last bit of
 // power" ends (the cut to her power going out: PowerShot); its length if there is no recording
@@ -115,6 +128,17 @@ const HOLD_9 = 0.9;                        // the sea held after line 9's speech
 const DIP_OUT = 0.6, DIP_IN = 0.7;         // the dip through black to the lab
 const LEAD_10 = 1.0;                       // line 10 starts this long after the lab comes up (they are walking in)
 const HOLD_10 = 2.2;                       // the lab held after line 10 (their look at each other), then the fade
+// lines 4 and 11 (chair-shot.js): the black after the lab; the families coming up, the narrator starting
+// this long after, as in the Save-ARIA narration; the last photo uncovered this long before "after all"
+// ends; the pause on it, before "Sorry..."; held after the sniffle; a slow fade, and the caption on the black
+const BLACK_4 = 1.0, FADE_IN_4 = 1.2, LEAD_4 = 0.6;
+const LAST_BEFORE = 0.25;
+const PAUSE_11 = 2.2;
+const HOLD_11 = 1.2;
+const FADE_11 = 2.8;
+const CAPTION_AFTER = 0.7, CAPTION_FOR = 4.2;
+const SPLIT_11 = 0.35;                     // the shortest pause in line 11 that can be where it is parted
+const MUSIC_DB = -13, MUSIC_LOOPS = 4;     // the music box, soft; it plays out under the film
 const SKIP_AFTER = 2.0;
 const RENDER_SCALE = 0.9;
 
@@ -168,6 +192,7 @@ export class NarrationC {
     this.subs = session?.sea ? new SubsShot(session) : null;
     this.lab = new LabShot(conf);
     this.power = new PowerShot(conf, this.lab);
+    this.chair = new ChairShot();
   }
 
   // ------------------------------------------------------------------ loading
@@ -176,7 +201,7 @@ export class NarrationC {
     this._loading ||= this._load().then(() => { this.ready = true; }).catch((e) => console.warn('Narration C: could not set up.', e));
     this._rescue ||= (async () => {
       // (in the order they play, the lab first: line 8's montage ends in it)
-      for (const shot of [this.lab, this.power, this.subs]) {
+      for (const shot of [this.lab, this.power, this.subs, this.chair]) {
         if (!shot) continue;
         if (shot === this.power && !this.lab.ready) continue;
         await shot.preload(renderer).catch((e) => console.warn('Narration C: a picture for lines 9-10 did not load (its line plays over black).', e));
@@ -188,13 +213,21 @@ export class NarrationC {
   async _load() {
     const ac = this.conf.ac;
     this.len = { ...FALLBACK };
+    this.shape = {};
     this.buffers = new Map();
     if (!ac) return;
     await Promise.all([...LINES_C.map(async (l) => {
       const b = await decode(ac, AUDIO + l.clip + '.mp3');
       if (!b) return console.info('Narration C: no recording yet for', l.clip, '(its subtitle is shown instead)');
       this.buffers.set(l.id, b);
-      this.len[l.id] = speechShape(b).end;
+      this.shape[l.id] = speechShape(b);
+      this.len[l.id] = this.shape[l.id].end;
+      // (line 11's two parts: at the pause after "after all")
+      if (l.id.startsWith('c-n11')) {
+        const stop = this.shape[l.id].pauses.find((p) => p[1] - p[0] >= SPLIT_11) || [0.33 * b.duration, 0.33 * b.duration];
+        this._split11 = stop;
+        this.len[l.id] = l.id === 'c-n11a' ? stop[0] : this.shape[l.id].end - stop[1];
+      }
     }), decode(ac, AUDIO + WALLA + '.mp3').then((b) => { this.walla = b; }),
     ...Object.entries(SFX).map(([k, [file]]) => decode(ac, AUDIO + file).then((b) => { (this.sfx ||= {})[k] = b; })),
     decode(ac, AUDIO + GIGGLE + '.mp3').then((b) => {
@@ -245,7 +278,22 @@ export class NarrationC {
     const lab0 = seaOut + DIP_OUT + 0.15;
     const n10 = [lab0 + LEAD_10, lab0 + LEAD_10 + this.len['c-n10']];
     const labOut = n10[1] + HOLD_10;
-    Object.assign(this.T, { sea0, n9, seaOut, lab0, n10, labOut, final: labOut + FADE_OUT });
+    const labEnd = labOut + FADE_OUT;
+    Object.assign(this.T, { sea0, n9, seaOut, lab0, n10, labOut, labEnd });
+    // lines 4 and 11: the families; at the pause in line 4 (as in the Save-ARIA narration), his mother
+    // in the chair; over her shoulder after two flips; the last of the six goes down as "after all" ends
+    const fam0 = labEnd + BLACK_4;
+    const n4 = [fam0 + LEAD_4, fam0 + LEAD_4 + this.len['c-n4']];
+    const gap4 = (this.shape['c-n4']?.pauses || []).reduce((m, p) => (!m || p[1] - p[0] > m[1] - m[0] ? p : m), null);
+    const chair = n4[0] + (gap4 ? gap4[0] + 0.1 : 0.6 * this.len['c-n4']);
+    // line 11, in two parts: its first ends as the last photo comes clear; a pause on it; then the rest
+    const last = chair + FILM.last;
+    const n11a = [last + LAST_BEFORE - this.len['c-n11a'], last + LAST_BEFORE];
+    const n11b = [n11a[1] + PAUSE_11, n11a[1] + PAUSE_11 + this.len['c-n11b']];
+    const heroOut = n11b[1] + HOLD_11;
+    const caption = heroOut + FADE_11 + CAPTION_AFTER, captionEnd = caption + CAPTION_FOR;
+    Object.assign(this.T, { fam0, n4, chair, last, n11a, n11b, heroOut, caption, captionEnd, final: captionEnd + 0.2 });
+    this.chair.setTimes({ chair: chair - fam0, last: last - fam0, caption: caption - fam0, captionEnd: captionEnd - fam0 });
     // line 7's turns (absolute times): his laughs, shorter each time, the first with her; her last giggle
     this._turns7 = [
       [n7[0] - 0.3, n7[0] + 0.8, 'both', 'laugh'],
@@ -337,7 +385,11 @@ export class NarrationC {
       if (t >= this.T.final) return this._finish(renderer);
       black = this._blackAt(t);
     }
-    if (this.hint) this.hint.style.opacity = !this._skip && t > SKIP_AFTER && t < this.T.labOut ? 0.55 : 0;
+    if (this.hint) this.hint.style.opacity = !this._skip && t > SKIP_AFTER && t < this.T.heroOut ? 0.55 : 0;
+    if (this._musicAt !== undefined && !this._skip && t >= this._musicAt) {
+      this._musicAt = undefined;
+      synthMusic(this.conf.ac, this._musicOut, MUSIC_LOOPS);
+    }
     if (!this._powered && this._play && !this._skip && this.power.ready && t > this.T.power - 1.5 && t < this.T.power) {
       this._powered = true;
       this._powerSound();
@@ -352,7 +404,9 @@ export class NarrationC {
     const T = this.T, n0 = T.n6[0];
     if (t < T.end) return Math.max(1 - seg(t, n0 - 0.2, n0 + FADE_IN), seg(t, T.end - FADE_OUT, T.end));
     if (t < T.lab0) return Math.max(1 - seg(t, T.sea0, T.sea0 + FADE_IN_9), seg(t, T.seaOut, T.seaOut + DIP_OUT));
-    return Math.max(1 - seg(t, T.lab0, T.lab0 + DIP_IN), seg(t, T.labOut, T.final));
+    if (t < T.fam0) return Math.max(1 - seg(t, T.lab0, T.lab0 + DIP_IN), seg(t, T.labOut, T.labEnd));
+    if (t < T.caption) return Math.max(1 - seg(t, T.fam0, T.fam0 + FADE_IN_4), ease(seg(t, T.heroOut, T.heroOut + FADE_11)));
+    return 0;                              // (the caption fades itself, on the black)
   }
 
   _finish(renderer) {
@@ -722,8 +776,10 @@ export class NarrationC {
     }
     // (line 8's montage: if it is not loaded, the room stays, her face resolved)
     const montage = t >= T.power && t < T.end && this.power.ready;
-    const shot = montage ? this.power : t < T.end ? null : t >= T.lab0 ? this.lab : t >= T.sea0 ? this.subs : undefined;
+    const shot = montage ? this.power : t < T.end ? null : t >= T.fam0 ? this.chair : t >= T.lab0 ? this.lab : t >= T.sea0 ? this.subs : undefined;
     if (shot === undefined || (shot && !shot.ready) || black >= 1) return this._black(renderer);
+    // (its film goes straight to the screen: see chair-shot.js)
+    if (shot === this.chair) return shot.draw(renderer, t - T.fam0, black);
     if (shot) {
       const from = shot === this.power ? T.power : shot === this.lab ? T.lab0 : T.sea0;
       shot.draw(renderer, conf.target, t - from, Math.min(dt, 0.05));
@@ -746,7 +802,7 @@ export class NarrationC {
     if (!this.sub) return;
     const T = this.T;
     const line = this._skip ? null : LINES_C.find((l, i) => {
-      const n = [T.n6, T.n7, T.n8, T.n9, T.n10][i];
+      const n = [T.n6, T.n7, T.n8, T.n9, T.n10, T.n4, T.n11a, T.n11b][i];
       return t >= n[0] && t <= n[1] + 0.35;
     });
     if (line) {
@@ -779,7 +835,10 @@ export class NarrationC {
       const g = ac.createGain();
       g.gain.value = dbGain(GAIN_DB[l.id] || 0);
       src.connect(g).connect(bus.input);
-      src.start(at + { 'c-n6': this.T.n6, 'c-n7': this.T.n7, 'c-n8': this.T.n8, 'c-n9': this.T.n9, 'c-n10': this.T.n10 }[l.id][0]);
+      const when = at + { 'c-n6': this.T.n6, 'c-n7': this.T.n7, 'c-n8': this.T.n8, 'c-n9': this.T.n9, 'c-n10': this.T.n10, 'c-n4': this.T.n4, 'c-n11a': this.T.n11a, 'c-n11b': this.T.n11b }[l.id][0];
+      if (l.id === 'c-n11a') src.start(when, 0, this._split11[0] + 0.05);
+      else if (l.id === 'c-n11b') src.start(when, Math.max(0, this._split11[1] - 0.05));
+      else src.start(when);
       this._sources.push(src);
     }
     this._ambience(ac, at);
@@ -878,8 +937,21 @@ export class NarrationC {
     this._play = play;
     play('thruster', T.sea0, T.seaOut + DIP_OUT, { lowpass: SEA_LOWPASS, rise: FADE_IN_9 });
     play('bubbles', T.sea0, T.seaOut + DIP_OUT, { lowpass: SEA_LOWPASS * 2, rise: FADE_IN_9 });
-    play('hum', T.lab0, T.final, { rise: DIP_IN, fall: FADE_OUT });
+    play('hum', T.lab0, T.labEnd, { rise: DIP_IN, fall: FADE_OUT });
     play('paper', T.lab0 + this.lab.cuts[0] - 0.15, T.lab0 + this.lab.cuts[0] + 1.6, { rise: 0.02, fall: 0.3, loop: false });
+    // each photo, softly, as she takes it
+    for (const at_ of FILM.flips) play('paper', T.chair + at_, T.chair + at_ + 0.9, { rise: 0.05, fall: 0.4, loop: false });
+    // the music box from the prologue, soft, out of the line's end and away with the picture
+    const music = (this._musicOut = ac.createGain());
+    const musicVol = dbGain(MUSIC_DB) * settings.get('music');
+    music.gain.setValueAtTime(0, at);
+    music.gain.setValueAtTime(0, at + T.chair);
+    music.gain.linearRampToValueAtTime(musicVol, at + T.chair + 3);
+    music.gain.setValueAtTime(musicVol, at + T.heroOut);
+    music.gain.linearRampToValueAtTime(0, at + T.heroOut + FADE_11 + 0.4);
+    music.connect(ac.destination);
+    // (started when the film starts: its notes are timed from the moment it is called)
+    this._musicAt = T.chair;
   }
 
   // Line 8's montage sound, set going just before it (it may still have been loading at the start):
@@ -895,7 +967,7 @@ export class NarrationC {
     const ac = this.conf.ac;
     if (!ac) return;
     const now = ac.currentTime;
-    for (const o of [this._wallaOut, this._ambOut]) {
+    for (const o of [this._wallaOut, this._ambOut, this._musicOut]) {
       if (!o) continue;
       o.gain.cancelScheduledValues(now);
       o.gain.setValueAtTime(o.gain.value, now);
@@ -925,10 +997,12 @@ export class NarrationC {
     this.subs?.dispose();
     this.power?.dispose();
     this.lab?.dispose();
+    this.chair?.dispose();
     setTimeout(() => {
       try { this._bus?.output.disconnect(); } catch { /* gone */ }
       try { this._wallaOut?.disconnect(); } catch { /* gone */ }
       try { this._ambOut?.disconnect(); } catch { /* gone */ }
+      try { this._musicOut?.disconnect(); } catch { /* gone */ }
     }, 400);
   }
 }

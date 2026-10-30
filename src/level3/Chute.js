@@ -391,7 +391,6 @@ export class Chute {
     document.getElementById('ui-layer').appendChild(this.banner);
     this._bannerT = 0;
     this.s.sfx?.startLoop('chute', 'chute-slide', { ui: true, vol: 0.55, rate: 0.8 });
-    this.s.say?.('chute');           // ARIA: what is in the way, and what to do about it
     this._joint = 0;
     return new Promise((resolve) => { this._done = resolve; });
   }

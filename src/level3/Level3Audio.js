@@ -167,7 +167,7 @@ const SCATTER = {
   ]
 };
 
-const MUSIC_VOLUME = 0.75;
+const MUSIC_VOLUME = 0.6;
 const SEA_SWELL = 0.8;              // the sea's music the first time he steps out (0.42 the rest of the time)
 
 export class Level3Audio {
@@ -188,8 +188,9 @@ export class Level3Audio {
     this._f = new THREE.Vector3();
     if (!this.ctx) return;
     const ctx = this.ctx;
-    // the buses: the world (through the water when he is outside), the helmet (never muffled),
-    // the music; all through a compressor, so the kraken's roar in his face does not crack
+    // the buses: the world (through the water when he is outside) and the helmet (never muffled)
+    // through a compressor, so the kraken's roar in his face does not crack; the music through
+    // one of its own, on the game's music bus (the Music slider)
     this.comp = ctx.createDynamicsCompressor();
     this.comp.threshold.value = -14;
     this.comp.ratio.value = 6;
@@ -235,10 +236,14 @@ export class Level3Audio {
     this.wet.gain.value = 0.55;
     this.reverb.connect(this.wet);
     this.wet.connect(this.world);
-    // the music: its own gain (the music volume), the base track through a filter that opens
+    // the music: its own gain, the base track through a filter that opens
     this.music = ctx.createGain();
     this.music.gain.value = 0;
-    this.music.connect(this.comp);
+    const musicComp = ctx.createDynamicsCompressor();
+    musicComp.threshold.value = -14;
+    musicComp.ratio.value = 6;
+    this.music.connect(musicComp);
+    musicComp.connect(session.game.audio.musicBus);
     this.ready = this._load();
   }
 
@@ -537,12 +542,10 @@ export class Level3Audio {
   }
 
   _music(dt) {
-    const m = this.game.music;
     const t = this.ctx.currentTime;
     this.fight.duck = Math.max(0, this.fight.duck - dt);
-    const user = m ? (m.muted ? 0 : m.volume) * (m.ducked ? 0.5 : 1) * (m.paused ? 0 : 1) : 1;
     const duck = this.fight.duck > 0 ? 0.45 : 1;
-    this.music.gain.setTargetAtTime(this._muted || this._paused ? 0 : MUSIC_VOLUME * user * duck, t, this._paused || this.fight.duck > 0 ? 0.08 : 0.5);   // (paused: silent)
+    this.music.gain.setTargetAtTime(this._muted || this._paused ? 0 : MUSIC_VOLUME * duck, t, this._paused || this.fight.duck > 0 ? 0.08 : 0.5);   // (paused: silent)
     if (!this._musicOn) return;
     const f = this.fight;
     let base = 0, cut = 300, top = 0;
@@ -568,7 +571,7 @@ export class Level3Audio {
     }
   }
 
-  // the kraken and the line: is the session's music (the Soundtrack) to keep quiet
+  // the kraken and the line: is the fight's music on
   get musicBusy() {
     return this.fight.mode === 'dread' || this.fight.mode === 'fight';
   }

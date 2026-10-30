@@ -16,7 +16,6 @@ import { Inventory } from './ui/Inventory.js';
 import { ItemPreview } from './ui/ItemPreview.js';
 import { IntroSequence, INTRO_LINES } from './story/IntroSequence.js';
 import { AudioManager } from './audio/AudioManager.js';
-import { Soundtrack } from './audio/Soundtrack.js';
 import { PauseMenu } from './ui/PauseMenu.js';
 import { DeckSession } from './level3/DeckSession.js';
 import { settings } from './core/Settings.js';
@@ -234,10 +233,6 @@ export class Game {
     // models, so it is ready for whichever level needs it
     this._physicsLoaded = Physics.preload();
 
-    // The music and the lighting mood belong to the whole game (they carry from level to level).
-    // The music is your own files (see Soundtrack.js); it may only start after a click, and
-    // init() runs from the start button.
-    this.music = new Soundtrack();
     // the pause menu (Esc / P / the corner button) and the player's options
     this.pauseMenu = new PauseMenu({
       state: () => this.state,
@@ -251,7 +246,7 @@ export class Game {
     this.mood = new MoodLight({ base: 0.74 });
     this._angerUntil = 0;
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'KeyM') this.ui?.showToast?.(this.music.toggleMute() ? 'Music off (M)' : 'Music on (M)', 1200);
+      if (e.code === 'KeyM' && this.audio) this.ui?.showToast?.(this.audio.toggleMusicMute() ? 'Music off (M)' : 'Music on (M)', 1200);
       // F8: preview ARIA snapping (red lights). Handy for the demo and while tuning.
       if (e.code === 'F8') { e.preventDefault(); this.ariaAnger(5); }
     });
@@ -362,7 +357,6 @@ export class Game {
   _mountLevel2(kind) {
     const sessions = { '2': HabitatSession, '3': DeckSession, hose: HoseTestSession, reactor: Level2Session };
     this.startLevel = kind;
-    this.music?.setLevel(kind === '3' ? 3 : 2);
     if (kind === '3') preloadVoices(3);
     else if (kind === '2') { preloadVoices(2); preloadVoices(3); }   // (Level 3's queue up behind Level 2's)
     this.level2 = new sessions[kind](this);
@@ -541,7 +535,7 @@ export class Game {
       this.currentLevel?._buzz?.pause();
     }
     vossVoice.pause();
-    this.music?.setPaused(true);
+    this.audio?.setMusicPaused(true);
     this.pauseMenu.open();
   }
 
@@ -559,7 +553,7 @@ export class Game {
       this.currentLevel?._buzz?.resume();
     }
     vossVoice.resume();
-    this.music?.setPaused(false);
+    this.audio?.setMusicPaused(false);
     this.state = 'PLAYING';
   }
 
@@ -573,7 +567,7 @@ export class Game {
     }
     this.pauseMenu.close();
     pauseClock.paused = false;
-    this.music?.setPaused(false);
+    this.audio?.setMusicPaused(false);
     this.state = 'PLAYING';
     this.restart();
   }
@@ -582,7 +576,7 @@ export class Game {
   applySettings() {
     const s = settings;
     if (getDifficulty().permadeath) s.lockDifficulty();
-    this.music?.setVolume(s.get('music'));
+    this.audio?.setMusicVolume(s.get('music'));
     this.audio?.setVolume(s.get('effects'));
     const garden = this.level2?.garden;
     if (garden) {
@@ -615,37 +609,26 @@ export class Game {
     this._calmTimer = setTimeout(() => aria?.updateAriaState?.('neutral'), seconds * 1000);
   }
 
-  // Hold the music on one mood for a while, whatever the player is doing (a scripted beat,
-  // such as ARIA's long silence in the lab)
+  // Hold the lighting's tension for a while, whatever the player is doing (a scripted beat, such
+  // as ARIA's long silence in the lab)
   holdMusic(mood, seconds) {
     this._musicHold = { mood, until: performance.now() + seconds * 1000 };
   }
 
-  // Called every frame: picks the music's mood from what the player is doing
-  _steerMusic() {
-    const music = this.music;
-    if (!music || !this.mood) return;
+  // Called every frame: picks the lighting's tension from what the player is doing
+  _steerMood() {
+    if (!this.mood) return;
     const s = this.state;
-    let mood = 'calm';
     let tension = 0.15;
-    if (performance.now() < this._angerUntil) { mood = 'angry'; tension = 1; }
-    else if (this._musicHold && performance.now() < this._musicHold.until) { mood = this._musicHold.mood; tension = 0.5; }
-    else if (this.level2Mode && this.level2?.musicMood) {
-      // a level 2 scene asks for its own mood (the garden fight: pressure)
-      mood = this.level2.musicMood;
-      tension = this.level2.musicTension ?? 0.5;
-      music.setMood(mood);
-      this.mood.tension += (tension - this.mood.tension) * 0.03;
-      return;
-    }
+    if (performance.now() < this._angerUntil) tension = 1;
+    else if (this._musicHold && performance.now() < this._musicHold.until) tension = 0.5;
+    // a level 2 scene asks for its own (the garden fight)
+    else if (this.level2Mode && this.level2?.musicMood) tension = this.level2.musicTension ?? 0.5;
     // (CUTSCENE: a scene played in the level itself, which goes on updating: Level 3's water lock)
-    else if (s === 'DEAD' || s === 'GAME_OVER' || s === 'FLASHBACK' || s === 'CUTSCENE') { mood = 'silence'; tension = 0.6; }
-    else if (!this.level2Mode && s === 'PUZZLE') {
-      // a blackout after an overload is silent; otherwise the pressure follows the countdown
-      mood = this.puzzle.frozen ? 'silence' : 'pressure';
-      tension = 0.4 + 0.5 * (this.puzzle.stress || 0);
-    } else if (!this.level2Mode && this.currentLevel?.inCell) { mood = 'uneasy'; tension = 0.35; }
-    music.setMood(mood);
+    else if (s === 'DEAD' || s === 'GAME_OVER' || s === 'FLASHBACK' || s === 'CUTSCENE') tension = 0.6;
+    // the pressure follows the countdown
+    else if (!this.level2Mode && s === 'PUZZLE') tension = 0.4 + 0.5 * (this.puzzle.stress || 0);
+    else if (!this.level2Mode && this.currentLevel?.inCell) tension = 0.35;
     this.mood.tension += (tension - this.mood.tension) * 0.03;
   }
 
@@ -730,8 +713,8 @@ export class Game {
     this.init();
     this.state = 'WAKING';
     this.ui.blink.style.display = 'none';          // (the cinematic's shader wakes him up instead)
-    this._musicWasMuted = this.music.muted;
-    this.music.muted = true;                       // (the video carries its own sound)
+    this._musicWasMuted = this.audio?.musicMuted;
+    this.audio?.setMusicMuted(true);               // (the video carries its own sound)
     this._lockHint = document.createElement('div');
     this._lockHint.id = 'lock-hint';
     this._lockHint.textContent = 'Click to look around';
@@ -754,7 +737,7 @@ export class Game {
   async endOpeningWake() {
     if (this._wakeEnding) return;
     this._wakeEnding = true;
-    if (this.music) this.music.muted = this._musicWasMuted;
+    this.audio?.setMusicMuted(!!this._musicWasMuted);
     if (this.state === 'WAKING' && this.controls) {
       await sleep(1000);
       await this._lookRound(3.6);
@@ -1073,7 +1056,7 @@ export class Game {
       // (behind the opening cinematic nothing is drawn, so the video has the machine to itself)
       if (this.renderHeld) return;
       if (this.state !== 'PAUSED') this.mood?.update(Math.min(delta, 0.05));
-      this._steerMusic();
+      this._steerMood();
       this.pauseMenu?.update(this.state);
       // (a flashback draws its own scene instead of the level, which waits, frozen)
       if (this.flashback?.running) {
@@ -1135,6 +1118,8 @@ export class Game {
       this.preview.draw(targets, delta, this.currentLevel.flashlightOn);
     }
 
+    // (every frame, as Levels 2 and 3 do, so no way back into play can leave the dot off)
+    this.reticle.classList.toggle('visible', this.state === 'PLAYING');
     if (this.state === 'PLAYING') {
       this.updateReticle();
       // (the waypoint is placed on screen from where the frame is drawn)

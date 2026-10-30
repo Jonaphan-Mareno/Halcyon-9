@@ -154,8 +154,9 @@ Health or oxygen running out: ARIA restores Voss from backup at the last safe pl
 
 ## Audio
 
-- **Music**: your own files in `public/assets/audio/music/` (`src/audio/Soundtrack.js`; names in
-  that folder's `README.txt`). The kraken fight has its own CC0 tracks (`level3-kraken*.ogg`).
+- **Music**: one song per level in `public/assets/audio/` (`src/audio/AudioManager.js`, which also
+  holds the Music slider, M and the pause). The kraken fight has its own CC0 tracks
+  (`level3-kraken*.ogg`, see `public/assets/audio/music/README.txt`).
 - **ARIA's voice**: recordings in `public/assets/audio/aria/<line id>.mp3` (`AriaManager.speak`).
 - **Voss's voice**: `public/assets/audio/voss/<line id>.mp3` (`vossSays`).
 - Any line without a recording shows as a timed subtitle.
@@ -180,7 +181,7 @@ Health or oxygen running out: ARIA restores Voss from backup at the last safe pl
 - `puzzles/` — `CircuitPuzzle`. `story/` — `IntroSequence`. `intro/` — the opening cinematic.
 - `submarineHack/` — standalone network-control minigame used by the Level 3 relay terminal
   (`submarine-hack.html`); graph, capture, visibility, AI, severing and sonar systems.
-- `audio/` — `AudioManager`, `Soundtrack`, `VossVoice`.
+- `audio/` — `AudioManager`, `VossVoice`.
 - `level2/`, `level3/` — the sessions above.
 
 ---

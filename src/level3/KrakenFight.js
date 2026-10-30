@@ -187,8 +187,7 @@ export class KrakenFight {
     }
     const mouth = k.mouthWorld(this._p);
     if (segmentNear(p0, p1, mouth, MOUTH_RADIUS)) {
-      // (its mouth glowing: a wound, wherever it is)
-      const wounds = this.open > 0.5 && (this.state === 'fight' || this.state === 'stunned');
+      const wounds = this.woundable();
       if (wounds) this._wound();
       else this.t.onShrug();
       return { point: closest(p0, p1, mouth), stick: k.root, flesh: true, big: wounds };
@@ -202,6 +201,11 @@ export class KrakenFight {
       if (k.distanceTo(tent, p1, 0.2) < 0.9) return { point: p1.clone(), stick: null, flesh: true };
     }
     return null;
+  }
+
+  // would a shot in its mouth wound it now? (its mouth glowing: a wound, wherever it is)
+  woundable() {
+    return this.open > 0.5 && (this.state === 'fight' || this.state === 'stunned');
   }
 
   _bodyCentre(out) {

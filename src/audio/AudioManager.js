@@ -1,7 +1,10 @@
+import { settings } from '../core/Settings.js';
+
 // Sound effects synthesized in the browser with the Web Audio API, so they need
 // no audio files (and nothing to license). ARIA's voice is separate: it is
 // played from recordings by AriaManager. Background music is one file per
-// level from public/assets/audio, routed through this same graph.
+// level from public/assets/audio, on its own bus (the Music slider, M, the
+// pause menu, the dip under a voice); Level 3's music goes through that bus too.
 
 //
 // The generator hum is two slightly detuned saw waves through a low-pass
@@ -24,13 +27,24 @@ const MUSIC_END_FADE = 3;
 const MUSIC_GAP = 30; // half a minute between loops: the room's own noise (its lights buzzing) carries the silence
 const MUSIC_FADE_IN = 1.2;
 const MUSIC_CROSSFADE = 3;
+const MUSIC_BUS = 0.9;     // the same headroom as the effects' master
+const MUSIC_DUCKED = 0.4;  // share of the volume left while someone speaks
 
 export class AudioManager {
   constructor() {
     this.ctx = null;
     this.master = null;
+    this.musicBus = null;
     this.hum = null;
     this.volume = 1;           // the player's effects volume (Options)
+    this.musicVolume = settings.get('music');   // the player's music volume (Options)
+    this.musicMuted = false;   // M, or a video with its own sound
+    this.musicPaused = false;  // the pause menu is open: the music stops and picks up where it was
+    this.musicDucked = false;
+    window.addEventListener('aria-speaking', (e) => {
+      this.musicDucked = !!e.detail;
+      this._applyMusicBus();
+    });
   }
 
   // The AudioContext may only start after a user gesture; every call here
@@ -43,6 +57,9 @@ export class AudioManager {
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.9 * this.volume;
       this.master.connect(this.ctx.destination);
+      this.musicBus = this.ctx.createGain();
+      this.musicBus.gain.value = this._musicBusLevel();
+      this.musicBus.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
     return this.ctx;
@@ -51,6 +68,41 @@ export class AudioManager {
   setVolume(v) {
     this.volume = v;
     if (this.master) this.master.gain.value = 0.9 * v;
+  }
+
+  setMusicVolume(v) {
+    this.musicVolume = v;
+    this._applyMusicBus();
+  }
+
+  setMusicMuted(on) {
+    this.musicMuted = on;
+    this._applyMusicBus();
+  }
+
+  toggleMusicMute() {
+    this.setMusicMuted(!this.musicMuted);
+    return this.musicMuted;
+  }
+
+  setMusicPaused(on) {
+    this.musicPaused = on;
+    this._applyMusicBus();
+    // (in the silence between loops there is nothing to hold: its timer starts the next one)
+    const m = this.music;
+    if (!m || m.gapTimer) return;
+    if (on) m.el.pause();
+    else m.el.play().catch(() => {});
+  }
+
+  _musicBusLevel() {
+    if (this.musicMuted || this.musicPaused) return 0;
+    return MUSIC_BUS * this.musicVolume * (this.musicDucked ? MUSIC_DUCKED : 1);
+  }
+
+  _applyMusicBus() {
+    if (!this.musicBus) return;
+    this.musicBus.gain.setTargetAtTime(this._musicBusLevel(), this.ctx.currentTime, this.musicPaused ? 0.02 : 0.15);
   }
 
   // ---------------------------------------------------------
@@ -144,12 +196,12 @@ export class AudioManager {
     el.preload = 'auto';
 
     // Route the element through the graph so the fades below work and the
-    // music obeys the master gain like every other sound.
+    // music obeys the music bus.
     const source = ctx.createMediaElementSource(el);
     const gain = ctx.createGain();
     gain.gain.value = 0;
     source.connect(gain);
-    gain.connect(this.master);
+    gain.connect(this.musicBus);
 
     const music = { el, gain, path, gapTimer: null, fading: false };
     this.music = music;
@@ -179,10 +231,11 @@ export class AudioManager {
     el.addEventListener('ended', () => {
       if (music !== this.music) return; // stopped meanwhile
       music.gapTimer = setTimeout(() => {
+        music.gapTimer = null;
         if (music !== this.music) return;
         music.fading = false;
         el.currentTime = 0;
-        el.play().catch(() => {}); // already gesture-unlocked; keep looping
+        if (!this.musicPaused) el.play().catch(() => {}); // already gesture-unlocked; keep looping
         fadeIn();
       }, MUSIC_GAP * 1000);
     });

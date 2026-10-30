@@ -1100,7 +1100,7 @@ export class DeckSession {
   }
 
   // the pause menu and the inventory hold ARIA's line
-  // (while the kraken's music plays, the soundtrack keeps quiet)
+  // (while the kraken's music plays, the lighting's tension holds)
   get musicMood() {
     return this.sfx?.musicBusy ? 'silence' : null;
   }

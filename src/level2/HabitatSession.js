@@ -1206,7 +1206,7 @@ export class HabitatSession {
     this.aria.ariaMaterial.uniforms.uTime.value += dt;
     if (this.aria.useHead) this.aria.head.update(dt);
     this.visorAria?.update(dt, this._visorOn && playing);
-    g.reticle.classList.toggle('visible', this.controls.view === 'first' && g.state !== 'READING');
+    g.reticle.classList.toggle('visible', this.controls.view === 'first' && playing);
     if (playing && !this.story.has('leftLift') && p.z < LIFT_FRONT_Z) this.story.set('leftLift');
     this._guide(playing);
     this._perf(delta, playing);

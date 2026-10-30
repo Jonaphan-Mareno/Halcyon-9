@@ -288,7 +288,7 @@ export class AriaManager {
       // what pause() needs to hold and resume her line
       const cur = this._cur = { audio, timer: null, due: 0, left: 0, wasPlaying: false };
 
-      // the music ducks while she speaks (see Soundtrack)
+      // the music ducks while she speaks (see AudioManager)
       window.dispatchEvent(new CustomEvent('aria-speaking', { detail: true }));
 
       const finish = () => {

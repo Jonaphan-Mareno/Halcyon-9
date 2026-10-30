@@ -122,7 +122,7 @@ export class PressureSeal {
     if (this.state.solved) return null;
     return {
       text: 'Balance the containment valves: match each pressure to its target',
-      target: this.trench.pts.bay,
+      target: this.spots[1]?.position || this.trench.pts.bay,   // (the middle wheel)
       label: 'VALVES'
     };
   }

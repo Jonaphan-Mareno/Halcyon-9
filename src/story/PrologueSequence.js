@@ -279,7 +279,7 @@ function tine(ac, out, at, midi, gain, decay) {
   }
 }
 
-function synthMusic(ac, out, loops = 3) {
+export function synthMusic(ac, out, loops = 3) {
   const t0 = ac.currentTime + 0.05;
   const bar = BEAT * 3;
   for (let l = 0; l < loops; l++) {

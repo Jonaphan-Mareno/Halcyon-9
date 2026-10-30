@@ -9,8 +9,6 @@ const aria = (cue, text, extra = {}) => ({ who: 'aria', cue, text, ...extra });
 const voss = (text, clip) => ({ who: 'voss', text, clip });
 
 export const LINES = {
-  // 3.1 The chute, on the way down from the garden's hatch (DRAFT: new, not in the script yet)
-  'l3-chute': aria('hesitant', "Careful, Voss! This chute's full of loose cables and broken equipment. Steer round them, and duck under the shutters!"),
   // 3.2 The flooded hall: on landing
   'l3hall-1': aria('bubbly', "Voss, the water's rising faster than I said. Straight ahead, then left. I'll open the doors."),
   // the window into the engine room, where they were locked in (DRAFT: the script only says he
@@ -19,7 +17,7 @@ export const LINES = {
   // (Flashback 1), its recording reused
   'v-window-head': voss('Ah… my head.', 'fb1-voss-head'),
   'v-window-1': voss('Oh no. No, no, no... Dr. Kessler?'),
-  'v-window-2': voss("Kessler. Lindqvist. Navarro... Park. It's locked from out here. Someone shut them in."),
+  'v-window-2': voss('Kessler. Lindqvist. Navarro... Park.'),
   'l3-window-1': aria('hesitant', "Don't look, Voss. There was nothing anyone could have done. Please. Left. Keep moving."),
   // the sealed bulkhead at the end of the way left; ARIA opens it (DRAFT: a stand-in until the
   // first gate's circuit puzzle is built, where she says it is stuck and it is not)
@@ -54,10 +52,6 @@ export const LINES = {
   // the kraken rises in its lair
   'v-kraken': voss("Those aren't pipes..."),
   'l3-kraken-0': aria('hesitant', "Oh no. Voss... it's a kraken!"),
-  // at the cave's mouth: the works' lit entrance (the relay is inside, at the back)
-  'l3-works-1': aria('guarded', "That's the old research works, dug into the cliff. The relay's at the back, down the excavation shaft. Go carefully, Voss."),
-  // the finale: it crashes down through the gantry, and the clearing starts to come down
-  'l3-finale': aria('hesitant', 'Voss, the whole place is coming down! Finish it!'),
   // beaten, it lets go of the station and sinks away
   'l3-kraken-2': aria('relieved', "...Oh, well done. It's let go. Now get inside, quickly, please."),
   // 3.5 The shaft, the relay room and the water lock (docs/relay-lock-plan.md). From the end of the
@@ -72,7 +66,6 @@ export const LINES = {
 };
 
 export const TALKS = {
-  chute: ['l3-chute'],
   landing: ['l3hall-1'],
   window: ['v-window-1', 'v-window-2', 'l3-window-1'],
   sealedGate: ['v-sealed-gate'],
@@ -91,8 +84,6 @@ export const TALKS = {
   caveMouth: ['v-cave', 'l3-cave'],
   kraken: ['v-kraken', 'l3-kraken-0'],
   krakenGone: ['l3-kraken-2'],
-  works: ['l3-works-1'],
-  finale: ['l3-finale'],
   postBossDescent: ['l3-kraken-2'],
   relayEnter: ['l3-relay-3'],
   relayWon: ['l3-relay-4'],

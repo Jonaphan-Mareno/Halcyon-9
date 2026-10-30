@@ -330,7 +330,6 @@ export class Trench {
   onCrash() {
     this.works.drop('FALL_Gantry', true);
     this.shake = Math.max(this.shake, 1.6);
-    this.s.say('finale');
   }
 
   // (the first showdown: up out of the clearing's floor)
@@ -594,7 +593,6 @@ export class Trench {
         if (p.distanceTo(P.front) < 16) {
           this.stage = 'front';
           this.checkpoint = P.respawn.clone();
-          this.s.say('works');
         } else if (!this._toldDescend && p.y < TRENCH_TOP + 10) {
           this._toldDescend = true;
           Promise.race([this.s.prep?.oceanTalk || Promise.resolve(), new Promise((r) => setTimeout(r, 25000))])
@@ -839,11 +837,13 @@ export class Trench {
         return { text: 'Find your way through the works: follow the marker', target: pt?.p || this.pts.clear, label: 'GO' };
       }
       case 'show': {
-        const mouth = F.kraken.mouthWorld(this._v);
-        if (F.state === 'stunned') return { text: "It's stunned: shoot its mouth NOW", target: mouth, label: 'MOUTH' };
-        if (this._mouthOpen) return { text: 'NOW: shoot its glowing mouth (left click)', target: mouth, label: 'MOUTH' };
+        // (the marker only while a shot there would wound it)
+        if (F.woundable()) {
+          const mouth = F.kraken.mouthWorld(this._v);
+          return { text: F.state === 'stunned' ? "It's stunned: shoot its mouth NOW" : 'NOW: shoot its glowing mouth (left click)', target: mouth, label: 'MOUTH' };
+        }
         return { text: this._finale ? 'Finish it! Dash from its blows (and what falls), shoot its mouth when it glows'
-          : 'Kill the kraken: TAP SHIFT to dash from its blows, shoot its mouth when it glows', target: mouth, label: 'KRAKEN' };
+          : 'Kill the kraken: TAP SHIFT to dash from its blows, shoot its mouth when it glows', target: null };
       }
       case 'fleeing': return { text: 'It is fleeing!', target: null };
       case 'free':

@@ -47,7 +47,7 @@ const POLAROID = './assets/textures/prologue/photo1.webp';           // "My litt
 // The rendered picture (made small by scripts/ending-shots/compose.mjs, which prints GLASS): where
 // the window's glass is in it (0..1 of the picture from its top left: top left, top right, bottom
 // right, bottom left), and where it pushes in toward
-const SHOTS = {
+export const SHOTS = {
   window: './assets/textures/ending/mom-window.webp',
   families: ['./assets/textures/ending/family-1.webp', './assets/textures/ending/family-2.webp', './assets/textures/ending/family-3.webp']
 };
@@ -409,7 +409,7 @@ function rnd(seed) {
   return () => (s = (s * 16807) % 2147483647) / 2147483647;
 }
 
-function finish(g, w, h, s, warm = 0) {
+export function finish(g, w, h, s, warm = 0) {
   // vignette and grain, as an old film would have
   const v = g.createRadialGradient(w / 2, h / 2, h * 0.35, w / 2, h / 2, Math.hypot(w, h) * 0.6);
   v.addColorStop(0, 'rgba(0,0,0,0)');
@@ -426,7 +426,7 @@ function finish(g, w, h, s, warm = 0) {
 // A rendered picture over the whole canvas, cut to fill it and pushed slowly in (by push over len
 // seconds) about focus (0..1 of the picture), so what is there stays where it is; returns where a
 // point of the picture lands, for what is drawn over it
-function shot(g, w, h, img, s, focus, push, len) {
+export function shot(g, w, h, img, s, focus, push, len) {
   g.fillStyle = '#000';
   g.fillRect(0, 0, w, h);
   if (!img) return null;
@@ -455,7 +455,7 @@ function over(g, at, quad, draw) {
 
 // 4a: families together again, each picture in turn over `len` seconds, pushed slowly in, dissolving
 // one into the next
-function paintFamilies(g, w, h, s, len, imgs) {
+export function paintFamilies(g, w, h, s, len, imgs) {
   const n = imgs.length, each = len / n;
   const k = Math.min(n - 1, Math.floor(s / each));
   g.fillStyle = '#000';

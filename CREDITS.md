@@ -216,11 +216,10 @@ Everything below the `<!-- internal -->` line above is a note to the team: `src/
 stops rendering there, so it never appears on the credits screen. Player-facing lines belong above
 it; anything still owed belongs below.
 
-- **Background music.** The soundtrack player is `src/audio/Soundtrack.js`, which looks in
-  `public/assets/audio/music/` for `level1.mp3`, `level1-tense.mp3`, `level2.mp3`,
-  `level2-fight.mp3`, `level3.mp3`, `level3-tense.mp3` and `prologue.mp3` (see that folder's
-  README.txt). None of them are in the build yet: only the kraken and sea tracks are, and those are
-  already credited above. Each track needs its own credit row once the music lands, so add a
+- **Background music.** The level songs are played by `src/audio/AudioManager.js`
+  (`public/assets/audio/Halcyon1(ver2).wav` and `Halcyon2(ver2).wav`; Level 2's is not in the build
+  yet), and the prologue looks for `public/assets/audio/music/prologue.mp3`. The kraken and sea
+  tracks are already credited above. Each track needs its own credit row once the music lands, so add a
   `## Background music` section above this line with one row per track (title, artist, link,
   licence) as they arrive.
 - **ARIA's voice.** Confirm the exact ElevenLabs voice and the plan terms before submission: the

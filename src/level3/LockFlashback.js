@@ -13,6 +13,7 @@ import { buildLockPanel, Sparks, crackle, PANEL_SIZE } from './LockPanel.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { EyeShader } from '../intro/intro-cinematic.js';
 import { heartbeat } from '../story/BriefingFlashback.js';
+import { voiceBus, dbGain } from './endingAudio.js';
 
 // Flashback 3, "The lock" (docs/flashback-3-script.md, revision 2): played the first time Voss looks
 // through the engine room door's window in Level 3 (headache() is the way in, on the level's own
@@ -77,6 +78,15 @@ const LINES = [
 // Until a recording is there (or if it cannot be decoded): its length from its words, at about
 // 2.4 words a second, and a breath
 const WORDS_PER_SECOND = 2.4;
+// Each line's gain (dB), so all the voices come out about alike whoever recorded them and however:
+// taken as raw files they run from -29 LUFS (v3) to -15 (n1). Each is set by measuring it as it is
+// played here (scripts/confrontation/loudness.html, __chain: its muffling, this gain, the dialogue
+// bus) to -16 LUFS; the quietest deliveries a little under (k2, p3 -18; v3, n2, p5 -17.5; v1, v4, k6,
+// p4 -16.5) and the two real shouts a little over (k5, n1 -15.5).
+const VOICE_GAIN_DB = {
+  k1: 0, l1: -1.9, p1: -4.5, k2: 1.2, k3: 1.8, l2: 0.6, p2: -3.1, p3: -3.5, k4: 2.9, l3: -3.9, v1: 0, k5: -1.4, v2: 0, l4: 1.4,
+  n1: -8.2, v3: 2.3, k6: -5.6, p4: -5.4, n2: -6, v4: 3.4, p5: -5.4
+};
 export const FALLBACK_LENGTHS = Object.fromEntries(LINES.map((l) => [l.id, +(l.text.split(/\s+/).length / WORDS_PER_SECOND + 0.3).toFixed(2)]));
 
 const CREW = ['kessler', 'lindqvist', 'navarro', 'park'];
@@ -224,7 +234,7 @@ export class LockFlashback {
     say('l1', 0.3);
     say('p1', 0.55);
     say('k2', 0.5);
-    T.signed = T.line.k1[0] + 0.78 * (T.line.k1[1] - T.line.k1[0]);   // "I signed it" (by its share of the words)
+    T.signed = T.line.k1[0] + 0.84 * (T.line.k1[1] - T.line.k1[0]);   // "I signed it" (after the last pause in her take)
     say('k3', 0.9);
     say('l2', 0.45);
     const L = T.line;
@@ -1494,9 +1504,9 @@ export class LockFlashback {
     const T = this.T, L = T.line;
     this._sources = [];
     this.analysers = new Map();
-    const voice = (this._voice = ac.createGain());
-    voice.gain.value = settings.get('voice');
-    voice.connect(ac.destination);
+    const bus = voiceBus(ac, ac.destination, settings.get('voice'));
+    const voice = bus.input;
+    this._voice = bus.output;
     const fx = (this._fx = ac.createGain());
     fx.gain.value = settings.get('effects');
     fx.connect(ac.destination);
@@ -1504,15 +1514,11 @@ export class LockFlashback {
     const glass = ac.createBiquadFilter();
     glass.type = 'lowpass';
     glass.frequency.value = 1300;
-    const glassGain = ac.createGain();
-    glassGain.gain.value = 0.75;
-    glass.connect(glassGain).connect(voice);
+    glass.connect(voice);
     const far = ac.createBiquadFilter();
     far.type = 'lowpass';
     far.frequency.value = 800;
-    const farGain = ac.createGain();
-    farGain.gain.value = 0.6;
-    far.connect(farGain).connect(voice);
+    far.connect(voice);
     for (const l of LINES) {
       const buffer = this.buffers.get(l.id);
       if (!buffer) continue;
@@ -1527,7 +1533,9 @@ export class LockFlashback {
         src.connect(an);
         this.analysers.set(l.id, an);
       }
-      src.connect(out);
+      const gain = ac.createGain();
+      gain.gain.value = dbGain(VOICE_GAIN_DB[l.id] ?? 0);
+      src.connect(gain).connect(out);
       src.start(at + L[l.id][0]);
       this._sources.push(src);
     }

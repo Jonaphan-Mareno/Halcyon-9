@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Player } from '../../src/entities/Player.js';
 import { BriefingFlashback } from '../../src/story/BriefingFlashback.js';
+import { CAPTION_BAND, writeCaption } from './caption.js';
 
 // The photograph of Flashback 1 (public/assets/textures/flashback1/briefing-photo.webp): the same
 // room as the flashback, the same people where they stand at the flash, seen from the speaker's
@@ -14,7 +15,8 @@ import { BriefingFlashback } from '../../src/story/BriefingFlashback.js';
 // the flashback itself as it looks 12 s in (for checking poses).
 
 const params = new URLSearchParams(location.search);
-const W = 1200, H = 800;          // the print, 3:2
+const W = 1200, H = 800;          // the picture on the print, 3:2 with its border
+const PRINT_H = H + CAPTION_BAND; // the print, with the paper under the picture and its caption
 const BORDER = 0.028;             // its white border, as a share of the width
 
 async function main() {
@@ -66,11 +68,11 @@ async function photo(fb) {
 
   const c = document.createElement('canvas');
   c.width = W;
-  c.height = H;
+  c.height = PRINT_H;
   const g = c.getContext('2d');
   const b = Math.round(W * BORDER);
   g.fillStyle = '#f2ede2';
-  g.fillRect(0, 0, W, H);
+  g.fillRect(0, 0, W, PRINT_H);
   g.filter = 'sepia(0.3) saturate(0.85) contrast(1.14) brightness(0.98)';
   g.drawImage(renderer.domElement, b, b, inner[0], inner[1]);
   g.filter = 'none';
@@ -139,8 +141,9 @@ async function photo(fb) {
     g.ellipse(x, y, r, r * 0.92, 0.3, 0, Math.PI * 2);
     g.stroke();
   }
+  writeCaption(g, H - Math.round(W * BORDER) + 20, { opacity: 0.72 });
   // grain
-  const img = g.getImageData(0, 0, W, H);
+  const img = g.getImageData(0, 0, W, PRINT_H);
   for (let i = 0; i < img.data.length; i += 4) {
     const n = (rnd() - 0.5) * 16;
     img.data[i] += n;
@@ -160,7 +163,7 @@ async function photo(fb) {
   // none of it can be left); everything beyond it gone
   const edge = px(shot.shoulder).x + size(shot.shoulder, 0.04);
   const path = [];
-  for (let y = -10; y <= H + 10; y += 9) {
+  for (let y = -10; y <= PRINT_H + 10; y += 9) {
     const slant = ((y - H / 2) / H) * -W * 0.03;
     const wob = Math.sin(y * 0.021) * 9 + Math.sin(y * 0.11 + 1) * 4 + (rnd() - 0.5) * 7;
     path.push([edge + slant + wob, y]);
@@ -170,7 +173,7 @@ async function photo(fb) {
   g.fillStyle = '#000';               // (fully: what it removes goes by the fill's own alpha)
   g.beginPath();
   path.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
-  g.lineTo(W + 10, H + 10);
+  g.lineTo(W + 10, PRINT_H + 10);
   g.lineTo(W + 10, -10);
   g.closePath();
   g.fill();

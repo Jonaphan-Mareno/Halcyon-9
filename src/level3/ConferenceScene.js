@@ -34,23 +34,38 @@ const SEATS = {
 const SEAT_DROP = 0.42;       // how far the hips drop into a chair
 const TABLE_Y = 0.74;
 const WIDE = { from: v3(-2.3, 1.62, 2.75), to: v3(-2.05, 1.56, 2.4), aim: v3(0.42, 1.12, -1.25), fov: 52 };
+// (closer on the screen, over their shoulders, so her mouth can be seen)
+const SCREEN_SHOT = { from: v3(0.0, 1.3, 1.5), to: v3(0.03, 1.31, 1.2), aim: v3(0.28, 1.26, -2.57), fov: 36 };
+const SCREEN_CUT = 3.6;       // s into the picture
 const FACES = { from: v3(0.34, 1.26, -1.72), to: v3(0.34, 1.24, -1.42), aim: v3(0.05, 1.02, 1.25), fov: 44 };
 const SHOCK = { jaw_open: 0.5, mouth_wide: 0.06, brow_up: 1.4, brow_inner_up: 1.0, blink: 0 };
 
 // ARIA on the screen: her face in dots, as her hologram draws her, with her name along the bottom.
-// Her light follows her voice while she speaks; a scan line rolls down.
+// While she speaks her own lips part: the picture is pulled apart along the line of her mouth in the
+// avatar (LIPS, its slope, LIP_W; most in the middle, nothing at the corners), her lower lip and chin
+// go down, and only a dim shade shows between. Her light
+// moves with it; a scan line rolls down.
 const ARIA_SCREEN = {
   uniforms: { tFace: { value: null }, uTime: { value: 0 }, uTalk: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: /* glsl */`
     uniform sampler2D tFace; uniform float uTime, uTalk;
     varying vec2 vUv;
+    const vec2 LIPS = vec2(0.54, 0.206), FACE = vec2(0.5175, 0.92);
+    const float SLOPE = 0.13, LIP_W = 0.2;
     void main() {
-      vec3 c = texture2D(tFace, vUv).rgb;
+      vec2 q = (vUv - LIPS) / FACE;                      // from the middle of her lips, in shares of her face
+      float y = q.y - SLOPE * q.x;                       // from the line of her mouth
+      float gap = 0.05 * uTalk * max(0.0, 1.0 - q.x * q.x / (LIP_W * LIP_W));
+      // below the line everything goes down by the gap, less and less toward her chin
+      float drop = gap * smoothstep(-0.2, -0.05, y) * step(y, 0.0);
+      vec3 c = texture2D(tFace, vUv + vec2(0.0, drop * FACE.y)).rgb;
+      float inside = smoothstep(0.0, 0.004, y + gap) * smoothstep(0.0, -0.004, y) * step(0.001, gap);
+      c = mix(c, vec3(0.03, 0.13, 0.16), inside * 0.9);
       float roll = fract(uTime * 0.17);
       c += vec3(0.015, 0.04, 0.05) * smoothstep(0.03, 0.0, abs(vUv.y - 1.0 + roll));
       c *= 0.94 + 0.06 * sin(vUv.y * 420.0);
-      c *= 1.15 + 0.45 * uTalk + 0.04 * sin(uTime * 2.1);
+      c *= 1.15 + 0.3 * uTalk + 0.04 * sin(uTime * 2.1);
       gl_FragColor = vec4(c, 1.0);
     }`
 };
@@ -249,7 +264,7 @@ export class ConferenceScene {
   }
 
   // t: the narration's clock. shot: s since the picture came up. r: s from the reaction (negative
-  // before it). talk: how much she is talking (0..1).
+  // before it). talk: how far her mouth is open (0..1).
   draw(t, shot, r, talk) {
     if (!this.renderer) return;
     this._fit();
@@ -260,7 +275,8 @@ export class ConferenceScene {
     const steps = Math.min(45, Math.max(1, Math.ceil(dt / (1 / 30))));
     for (let i = 0; i < steps; i++) this._pose(t, r, dt / steps);
     // the camera: the slow push across the room, then its faces
-    const cam = this.camera, shotDef = r >= 0 ? FACES : WIDE, u = r >= 0 ? seg(r, 0, 3.4) : seg(shot, 0, 12);
+    const cam = this.camera, shotDef = r >= 0 ? FACES : shot >= SCREEN_CUT ? SCREEN_SHOT : WIDE;
+    const u = r >= 0 ? seg(r, 0, 3.4) : shot >= SCREEN_CUT ? seg(shot, SCREEN_CUT, SCREEN_CUT + 8) : seg(shot, 0, 7);
     cam.position.lerpVectors(shotDef.from, shotDef.to, u);
     cam.position.x += 0.006 * Math.sin(t * 0.63);
     cam.position.y += 0.004 * Math.sin(t * 0.91);

@@ -2,51 +2,89 @@ import * as THREE from 'three';
 import { createGLTFLoader } from '../core/loaders.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { deckUniforms, MURK_GLSL } from './DeckMaterials.js';
+import { loadCrewFile } from '../entities/CrewMember.js';
 
-// Four of Voss's crewmates, drowned, floating in the flooded engine room behind the door's window
-// (Dr. Kessler, Lindqvist, Navarro and Park, from the lab's subject list). The one nearest the glass
-// is Dr. Kessler: long maroon hair (Voss's own hair strands, grown down her back) and a staff ID
-// badge clipped flat to her coat, reading DR. E. KESSLER. Built from the same rigged
-// model as Voss: each is posed by holding one of his animation clips at a moment (arms adrift,
-// limbs hanging) and turned to float face down, on its back or on its side, then drifts slowly.
-// Their skin is pale and grey-green, their uniforms dark and stained, and they sit in the same
-// murky water as the room (the further from the window, the more they fade into it).
+// Four of Voss's crewmates, drowned, floating in the flooded engine room behind the door's window:
+// Dr. Kessler, Lindqvist, Navarro and Park, each their own model (the same as in Flashback 3, so the
+// player knows them), with their own clothes and hair. Each is posed by holding one of Voss's
+// animation clips at a moment (they share his skeleton: arms adrift, limbs hanging) and turned to
+// float face down, on its back or on its side, then drifts slowly. The one nearest the glass is Dr.
+// Kessler, a staff ID badge clipped flat to her coat, reading DR. E. KESSLER.
+//
+// They have been in the water a long time. Their skin is rotten (rot(), below: grey-green and waxy,
+// with dark blotches, a green marbling of veins and sunken, bruised eyes), their eyes milky, their
+// mouths slack, their clothes dark and stained. They sit in the same murky water as the room (the
+// further from the window, the more they fade into it).
 //
 // One drifts close behind the glass and, once Voss is standing at the window, slowly comes up
 // against it (approach()).
 
-const MODEL = './assets/models/human_scientist.glb';
-const SCALE = 1.8 / 1.394;            // the model is authored at 1.39 m; the crew are life size
+const CLIPS = './assets/models/human_scientist.glb';     // Voss's clips, for their poses
+const SCALE = 1.8 / 1.394;            // the models are authored at 1.39 m; the crew are life size
 
-// who, their uniform's colour, the clip and moment held, and how they lie in the water
+// who, the clip and moment held, and how they lie in the water
 const CREW = [
-  { name: 'Kessler', coat: 0xc9c6b8, clip: 'Idle', at: 0.2, rot: [0.35, 0.15, 0.08], glasses: false,
-    hair: 0x74202e, longHair: true, badge: true },
-  { name: 'Lindqvist', coat: 0x3b4a5e, clip: 'Fall', at: 0.4, rot: [Math.PI / 2 - 0.15, 2.4, 0.3], glasses: true },
-  { name: 'Navarro', coat: 0x5a4a32, clip: 'Jump_Up', at: 0.25, rot: [-1.05, -0.8, -0.2], glasses: false },
-  { name: 'Park', coat: 0x46523f, clip: 'Land', at: 0.1, rot: [0.4, 1.2, 1.35], glasses: false }
+  { name: 'kessler', clip: 'Idle', at: 0.2, rot: [0.35, 0.15, 0.08], badge: true, jaw: 0.3, lids: 0.35 },
+  { name: 'lindqvist', clip: 'Fall', at: 0.4, rot: [Math.PI / 2 - 0.15, 2.4, 0.3], jaw: 0.5, lids: 0.15 },
+  { name: 'navarro', clip: 'Jump_Up', at: 0.25, rot: [-1.05, -0.8, -0.2], jaw: 0.4, lids: 0.5 },
+  { name: 'park', clip: 'Land', at: 0.1, rot: [0.4, 1.2, 1.35], jaw: 0.6, lids: 0.25 }
 ];
 
-function drowned(source, kind, coat, hair = 0x1a1b1c) {
+// What each kind of surface turns into, on top of its own texture (GLSL: t its colour, returns the
+// new one). p: the point on the body, in the model's own units (it moves with the body; a head is
+// about 0.2 tall), so the marks stay where they are as it drifts.
+const NOISE = /* glsl */`
+  float rotN(vec3 p) {
+    return sin(p.x + 1.7 * sin(p.y * 0.8 + 0.5)) * sin(p.y * 1.1 + 1.4 * sin(p.z * 0.9 + 2.0)) * sin(p.z * 1.3 + 1.5 * sin(p.x * 0.7));
+  }`;
+const LOOKS = {
+  skin: /* glsl */`
+    float lum = dot(t, vec3(0.3, 0.6, 0.1));
+    // waxy grey-green, whatever colour it was: a trace of their own skin stays
+    vec3 c = mix(t, vec3(0.46, 0.5, 0.36) * (0.35 + 1.1 * lum), 0.72);
+    // blotches: dark, purple-brown, where the blood settled; green and yellow where it is going
+    float big = rotN(p * 42.0) + 0.5 * rotN(p * 95.0 + 3.0);
+    c = mix(c, vec3(0.17, 0.1, 0.11), 0.72 * smoothstep(0.12, 0.62, big));
+    float green = rotN(p * 58.0 + 9.0);
+    c = mix(c, vec3(0.3, 0.36, 0.13), 0.55 * smoothstep(0.05, 0.5, green));
+    // the marbling: a thin net of dark green veins
+    float vein = abs(rotN(p * 120.0 + 5.0));
+    c = mix(c, vec3(0.08, 0.14, 0.09), 0.6 * (1.0 - smoothstep(0.015, 0.07, vein)));
+    // the flesh going: pale, sodden patches, and pits
+    float pit = rotN(p * 210.0 + 1.0);
+    c = mix(c, vec3(0.62, 0.62, 0.5), 0.35 * smoothstep(0.42, 0.62, pit));
+    c *= 1.0 - 0.45 * smoothstep(0.5, 0.75, -pit);
+    // sunken eyes: dark and bruised round each
+    float eye = min(distance(p, uEyeL), distance(p, uEyeR));
+    c = mix(c, vec3(0.09, 0.05, 0.07), 0.85 * smoothstep(0.05, 0.02, eye));
+    return c;`,
+  // milky, the colour gone out of them
+  eye: /* glsl */`
+    float lum = dot(t, vec3(0.3, 0.6, 0.1));
+    return mix(vec3(0.55, 0.58, 0.5), vec3(0.72, 0.74, 0.66), lum) * (0.6 + 0.4 * lum);`,
+  mouth: 'return t * vec3(0.3, 0.26, 0.24);',
+  // wet, matted, darker
+  hair: 'return mix(t, vec3(dot(t, vec3(0.33))), 0.25) * 0.55;',
+  // their own clothes, soaked and stained
+  cloth: /* glsl */`
+    vec3 c = mix(t, vec3(dot(t, vec3(0.33))), 0.45) * 0.55;
+    float stain = rotN(p * 16.0) + 0.5 * rotN(p * 37.0 + 4.0);
+    c = mix(c, vec3(0.1, 0.1, 0.07), 0.6 * smoothstep(0.0, 0.7, stain));
+    return c;`
+};
+
+function drowned(source, kind, eyes) {
   const m = source.clone();
-  if (kind !== 'hair') m.map = null;
-  if (kind === 'skin') m.color.set(0xb4c0ae);
-  else if (kind === 'coat') m.color.set(coat);
-  else if (kind === 'hair') m.color.set(hair);
-  else m.color.multiplyScalar(0.45);
-  m.roughness = kind === 'skin' ? 0.55 : kind === 'hair' ? 0.7 : 0.9;
+  m.roughness = kind === 'skin' ? 0.42 : kind === 'cloth' ? 0.9 : 0.6;
   m.metalness = 0;
   if (m.emissive) m.emissive.set(0x000000);
   m.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, deckUniforms);
+    shader.uniforms.uEyeL = { value: eyes[0] };
+    shader.uniforms.uEyeR = { value: eyes[1] };
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vDeckPos;\nvarying vec3 vDeckNrm;' +
-        (kind === 'hair' ? '\nuniform float uTime;\nattribute float aDrift;' : ''))
-      // hair: the long strands drift slowly in the water, the ends most, each lock a little out of step
-      .replace('#include <begin_vertex>', kind === 'hair' ? `#include <begin_vertex>
-        transformed += vec3(sin(uTime * 0.7 + position.x * 30.0 + position.y * 9.0) * 0.06,
-                            sin(uTime * 0.5 + position.z * 20.0) * 0.02,
-                            cos(uTime * 0.6 + position.x * 25.0) * 0.05) * aDrift;` : '#include <begin_vertex>')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vDeckPos;\nvarying vec3 vDeckNrm;\nvarying vec3 vRotPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRotPos = position;')
       // after skinning: the posed position, in the world
       .replace('#include <project_vertex>', `vDeckPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
         vDeckNrm = normalize(mat3(modelMatrix) * objectNormal);
@@ -55,25 +93,18 @@ function drowned(source, kind, coat, hair = 0x1a1b1c) {
       .replace('#include <common>', `#include <common>
         varying vec3 vDeckPos;
         varying vec3 vDeckNrm;
+        varying vec3 vRotPos;
         uniform float uTime;
         uniform vec3 uWindow;
         uniform vec3 uMurkColor;
         uniform float uMurkDensity;
-        ${MURK_GLSL}`)
-      // hair: the strand texture is nearly black, so it only cuts the strands out (alpha) and
-      // shades along them; the colour itself comes from the hair colour
-      .replace('#include <map_fragment>', (kind === 'hair' ? `{
-          vec4 strand = texture2D(map, vMapUv);
-          diffuseColor.a *= strand.a;
-          diffuseColor.rgb *= mix(0.55, 1.2, clamp(dot(strand.rgb, vec3(0.33)) * 25.0, 0.0, 1.0));
-        }` : '#include <map_fragment>') + `
-        {
-          // blotches: water damage and staining, mottled over the skin and the cloth
-          vec3 q = vDeckPos * vec3(6.3, 7.1, 5.7);
-          float n = sin(q.x) * sin(q.y + 1.7) * sin(q.z + 0.4) + 0.5 * sin(q.x * 2.3 + q.z * 1.9);
-          diffuseColor.rgb *= 1.0 - 0.35 * smoothstep(0.1, 0.9, n);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.33))), ${kind === 'hair' ? '0.15' : '0.4'});
-        }`)
+        uniform vec3 uEyeL;
+        uniform vec3 uEyeR;
+        ${MURK_GLSL}
+        ${NOISE}
+        vec3 rot(vec3 t, vec3 p) { ${LOOKS[kind]} }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        diffuseColor.rgb = rot(diffuseColor.rgb, vRotPos);`)
       .replace('#include <opaque_fragment>', `
         outgoingLight = deckMurk(outgoingLight, vDeckPos, normalize(vDeckNrm));
         #include <opaque_fragment>`);
@@ -82,33 +113,20 @@ function drowned(source, kind, coat, hair = 0x1a1b1c) {
   return m;
 }
 
-const KIND = { M_Head: 'skin', M_Hands: 'skin', M_Coat: 'coat', M_HairCards: 'hair' };
+const KIND = { M_Head: 'skin', M_Hands: 'skin', M_Eye: 'eye', M_Teeth: 'mouth', M_MouthInner: 'mouth', M_HairCards: 'hair', M_Hair: 'hair' };
+const kindOf = (m) => KIND[m.name.split('.')[0]] || 'cloth';
 
-// Long hair from Voss's own hair cards: the strands below the crown are stretched downwards, most
-// at the back (to between the shoulder blades), less at the sides (to the jaw), and eased back
-// off the coat as they fall. Same strands, same texture, same weights on the head, just longer.
-function growHair(geometry) {
-  const g = geometry.clone();
-  const p = g.attributes.position;
-  const CROWN = 1.335;
-  const drift = new Float32Array(p.count);          // how far down the strand: the ends drift most
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    if (y >= CROWN) continue;
-    const below = CROWN - y;
-    const back = THREE.MathUtils.clamp((0.02 - z) / 0.1, 0, 1);       // 0 at the face, 1 at the back
-    const side = THREE.MathUtils.clamp((Math.abs(x) - 0.055) / 0.025, 0, 1);  // the sides, past the temples
-    const stretch = 1 + Math.max(2.0 * back, 0.7 * side);                    // (the fringe stays as it is)
-    const ny = CROWN - below * stretch;
-    const fall = CROWN - ny;
-    p.setXYZ(i, x * (1 + 0.25 * fall), ny, z - fall * 0.22 * back);
-    drift[i] = fall;
-  }
-  p.needsUpdate = true;
-  g.setAttribute('aDrift', new THREE.BufferAttribute(drift, 1));
-  g.computeVertexNormals();
-  g.computeBoundingSphere();
-  return g;
+// Where the eyes are, in the model's own units (for the sunken skin round them)
+function eyesOf(model) {
+  const box = new THREE.Box3();
+  model.traverse((o) => {
+    if (!o.isMesh || !/^M_Eye/.test(o.material?.name || '')) return;
+    o.geometry.computeBoundingBox();
+    box.union(o.geometry.boundingBox);
+  });
+  const c = box.getCenter(new THREE.Vector3());
+  const half = (box.max.x - box.min.x) / 4;
+  return [new THREE.Vector3(c.x - half, c.y, c.z), new THREE.Vector3(c.x + half, c.y, c.z)];
 }
 
 export class DrownedCrew {
@@ -118,23 +136,28 @@ export class DrownedCrew {
     this.bodies = [];
     this.time = 0;
     this.closeness = 0;            // 0..1: the body nearest the glass coming up against it
-    this.ready = createGLTFLoader().loadAsync(MODEL).then((gltf) => {
+    this.ready = Promise.all([createGLTFLoader().loadAsync(CLIPS), ...CREW.map((c) => loadCrewFile(c.name))]).then(([gltf, ...files]) => {
       this.gltf = gltf;            // (the dive suit on the rack is built from the same model)
       CREW.forEach((c, i) => {
         if (!spots[i]) return;
-        const model = cloneSkinned(gltf.scene);
+        const model = cloneSkinned(files[i].scene);
         model.scale.setScalar(SCALE);
         model.position.y = -0.95;                    // the body's middle at the pivot
+        const eyes = eyesOf(model);
         model.traverse((o) => {
           if (!o.isMesh) return;
           o.frustumCulled = false;
-          if (/Glasses/.test(o.name) && !c.glasses) o.visible = false;
-          if (c.longHair && o.name === 'Hair') o.geometry = growHair(o.geometry);
           const mats = Array.isArray(o.material) ? o.material : [o.material];
-          const out = mats.map((m) => drowned(m, KIND[m.name] || 'cloth', c.coat, c.hair));
+          const out = mats.map((m) => drowned(m, kindOf(m), eyes));
           o.material = Array.isArray(o.material) ? out : out[0];
+          // the mouth slack, the lids half down
+          const d = o.morphTargetDictionary;
+          if (d) {
+            if (d.jaw_open !== undefined) o.morphTargetInfluences[d.jaw_open] = c.jaw;
+            if (d.blink !== undefined) o.morphTargetInfluences[d.blink] = c.lids;
+          }
         });
-        // (before the pose, while the bones are in their rest positions) long hair and a badge
+        // (before the pose, while the bones are in their rest positions) a badge
         if (c.badge) {
           model.updateMatrixWorld(true);
           let chest = null;

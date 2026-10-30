@@ -121,7 +121,7 @@ One bug was found and fixed by measuring: the spine turns move the measured lean
 | 2 | Done | The Polaroid, slowly closer. |
 | 3 | Done | The conference room and its screen. "...and how it can cure dementia." is the narrator's own line (`end-narrator-curedementia`, added by the owner, gain -2.9 dB). The cut to their shocked faces comes halfway through it. |
 | 4 | Done | Reunions while "countless people bring back a lifetime of memories". The old woman arrives at the pause, before "his mother was the first person to be cured", and turns and smiles on it. |
-| 5 | Done | The trolling, from the line's start. All 32 cards take about 10.4 s to come down; the pile is held 3 s more, with only the music, before the closing line (about 8 s after line 5 ends). |
+| 5 | Done | The trolling, from the line's start. All 32 cards come down in about 5 s, and the closing line follows 0.7 s after line 5 ends. |
 | Closing | Done | The photo comes in on the line and is held after it, then black, then the credits. |
 
 **Camera.** All moves are eased. The trace (`scripts/scene-b/trace.mjs`) found two snaps, both fixed:
@@ -196,8 +196,12 @@ The fastest move inside any shot is now 0.8 m/s, as he walks. All other jumps ar
 
 ## Changes of 2026-10-30, at the owner's request
 
-- **His mother at the window:** `mom-window.webp` is now rendered (19 KB), by `Blender/scripts/render_ending_window.py`, with white hair, the teal cardigan she wore when young, a cream scarf and a smile, looking out. **Known limit:** her face is the younger head with lines drawn on, so her hair does most of the ageing.
-- **Music:** `src/level3/endingMusic.js`, a small waltz for a felt piano, written for this and drawn in the browser (no file, no third-party music). It starts on the Polaroid, gains strings under the families and his mother, goes up an octave and turns light for the trolling, and ends on one chord on the crew photo. It dips under the narrator and follows the player's music volume. **I cannot hear it:** only its levels were measured. A file at `public/assets/audio/music/ending-narration.ogg` is played instead if the owner adds one (and must then be credited).
+- **The families (line 4):** three renders of old people and their young families hugging replace the drawn silhouettes (`Blender/scripts/render_ending_families.py`; `family-1.webp` to `-3`, 58 KB in all). The six people are built by `build_conference_people.py -- family <dir>` and do not ship. **Known limits:** their eyes stay open or half shut, since these faces' lids do not close fully, and their smiles are mild.
+- **Music:** tried and removed at the owner's request; the narration has no music.
+- **His mother at the window:** a smaller window, snug around her. `mom-window.webp` is now rendered (19 KB), by `Blender/scripts/render_ending_window.py`, with white hair, the teal cardigan she wore when young, a cream scarf and a smile, looking out. **Known limit:** her face is the younger head with lines drawn on, so her hair does most of the ageing.
+
+- **ARIA's mouth:** her own lips on the conference room's screen now part and close all through her telling, by syllables with a breath between phrases (`ARIA_SCREEN` in `ConferenceScene.js`: the picture is pulled apart along the line of her mouth; nothing is drawn on top of her face). It follows no recording, since the narrator is the one heard. The picture cuts closer to the screen 3.6 s in, so it can be seen.
+- **The crew photo:** it now has a Polaroid's paper under the picture, captioned "We will change the world! :)" in the prologue's handwriting (`scripts/flashback1-photo/caption.js`), and comes in slowly out of the dark. It starts as Level 1's torn print on the closing line, then heals into the whole photo over 4 s as the line ends, and is held 3.5 s more. The caption is centred. The torn print in Level 1's lift and Flashback 1 has the same caption, and the tear cuts off its end (the owner's choice).
 
 ## 8. What the owner must do
 

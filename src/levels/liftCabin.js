@@ -67,7 +67,7 @@ export function makeLiftScreen(cabinRoot, bezelMaterial) {
 // crooked. Level 1's room is drawn 1.6 times life size (Voss's eyes are 2.6 up), so the print is
 // too. Comes back in world space, unparented: the frame and, inside it, the print (by itself, so
 // it can be aimed at).
-export const LIFT_PHOTO_SIZE = [0.66, 0.44];    // 3:2, as the print
+export const LIFT_PHOTO_SIZE = [0.66, 0.5115];  // 1200 x 930, as the print with its caption
 const PHOTO_HEIGHT = 2.45;
 
 export function makeLiftPhoto(cabinRoot, texture, frameMaterial) {

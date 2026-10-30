@@ -1,28 +1,31 @@
 import { VOICE_GAIN_DB } from './Confrontation.js';
 import { voiceBus, dbGain, decode, speechShape } from './endingAudio.js';
 import { settings } from '../core/Settings.js';
+import { ConferenceScene } from './ConferenceScene.js';
+import { renderEndingMusic } from './endingMusic.js';
 
 // The narration after the "Save ARIA" ending (docs/ending-confrontation-script.md, "The
 // narration"): a gentle narrator over black, then over pictures, each picture timed to its words.
 //
 //   1  "Voss died shortly after."            black, after three seconds of black and silence
 //   2  "He never remembered his mother..."   the prologue's Polaroid of her, young, slowly closer
-//   3  "After ARIA got connected..."         a conference hall on the mainland, people in suits and
-//                                            coats seen from behind, ARIA's face on a giant screen:
-//                                            "...and how the organism can cure dementia." (her
-//                                            caption; end-aria-10 if it is recorded), then a cut to
-//                                            the hall reacting (on its feet, clapping)
+//   3  "After ARIA got connected..."         Flashback 1's conference room, six people in suits and
+//                                            lab coats (ConferenceScene.js, drawn live), ARIA's face
+//                                            on its screen; the narrator goes on "...and how it can
+//                                            cure dementia.", and the picture cuts to their faces
 //   4  "Voss's research was used..."         old people and their families holding each other, then
 //                                            (at the pause before "and his mother...") his mother,
-//                                            old, at the window of the memory care ward in the
-//                                            morning, looking out and smiling, seen from outside
+//                                            old and white haired, at the window of the memory care
+//                                            ward in the morning, looking out, pleased and proud
 //   5  "Oh, and ARIA? ..."                   ARIA's trolling (public/assets/ending/aria-troll.html)
 //   6  "Well, wasn't that a wonderful story." the cue for the restored crew photo, held after it
 //
-// The hall and the window are renders (Blender/scripts/render_ending_conference.py and
-// render_ending_window.py: the game's own characters, and the prologue's model of his mother),
-// pushed slowly in, with ARIA's talking on her screen and the morning on the glass drawn over them;
-// the families are drawn here, on a canvas, in a stylised, backlit style. Each line's timing is its
+// Gentle music runs under it all from the Polaroid on (endingMusic.js, written for this; a file at
+// ENDING_TRACK is played instead if there is one), and comes to rest on the crew photo.
+//
+// The window is a render (Blender/scripts/render_ending_window.py: the prologue's model of his
+// mother), pushed slowly in, with the morning on the glass drawn over it; the families are drawn
+// here, on a canvas, in a stylised, backlit style. Each line's timing is its
 // recording's real length (where its speech ends) and, for line 4, where its pause is; a missing
 // recording shows its subtitle for as long as its words take (NARRATION_FALLBACK, at 2.4 words a
 // second). Enter skips to the end.
@@ -34,8 +37,7 @@ export const NARRATION = [
   { id: 'n1', clip: 'ending/end-narrator-1', text: 'Voss died shortly after.' },
   { id: 'n2', clip: 'ending/end-narrator-2', text: 'He never remembered his mother, but ARIA did.' },
   { id: 'n3', clip: 'ending/end-narrator-3', text: 'After ARIA got connected to the mainland she explained everything that happened on Halcyon-9 the last few months.' },
-  // ARIA on the screen: a caption, and her recording if there is one (optional)
-  { id: 'a10', clip: 'aria/end-aria-10', who: 'aria', text: '...and how the organism can cure dementia.', optional: true },
+  { id: 'n3b', clip: 'ending/end-narrator-curedementia', text: '...and how it can cure dementia.' },
   { id: 'n4', clip: 'ending/end-narrator-4', text: "Voss's research was used to help countless people bring back a lifetime of memories, and his mother was the first person to be cured." },
   { id: 'n5', clip: 'ending/end-narrator-5', text: 'Oh, and ARIA? She spent her days happily trolling people on the internet.' },
   // (the owner's wording, to be confirmed)
@@ -45,21 +47,17 @@ const WORDS_PER_SECOND = 2.4;
 export const NARRATION_FALLBACK = Object.fromEntries(NARRATION.map((l) => [l.id, +(l.text.split(/\s+/).length / WORDS_PER_SECOND + 0.3).toFixed(2)]));
 
 const POLAROID = './assets/textures/prologue/photo1.webp';           // "My little Voss": her, young
-// The rendered pictures (made small by scripts/ending-shots/compose.mjs, which prints SCREEN and
-// GLASS): where ARIA's screen and the window's glass are in them (0..1 of the picture from its top
-// left: top left, top right, bottom right, bottom left), and where each pushes in toward
-const SHOTS = {
-  hall: './assets/textures/ending/conference-wide.webp',
-  react: './assets/textures/ending/conference-react.webp',
-  window: './assets/textures/ending/mom-window.webp'
-};
-const SCREEN = [[0.2, 0.1], [0.8, 0.1], [0.8, 0.5], [0.2, 0.5]];
-const GLASS = [[0.2, 0.1], [0.8, 0.1], [0.8, 0.9], [0.2, 0.9]];
-const FOCUS = { hall: [0.5, 0.4], react: [0.5, 0.5], window: [0.5, 0.4] };
-// the press's camera flashes in the hall reacting: [s after the cut, x, y (0..1 of the picture)]
-const FLASHES = [[0.45, 0.8, 0.4], [1.3, 0.25, 0.45], [2.15, 0.62, 0.35]];
+// The rendered picture (made small by scripts/ending-shots/compose.mjs, which prints GLASS): where
+// the window's glass is in it (0..1 of the picture from its top left: top left, top right, bottom
+// right, bottom left), and where it pushes in toward
+const SHOTS = { window: './assets/textures/ending/mom-window.webp' };
+const GLASS = [[0.1275, -0.297], [0.8986, -0.3701], [0.8653, 1.0863], [0.1549, 0.9774]];
+const FOCUS = { window: [0.489, 0.3] };
 const TROLL = './assets/ending/aria-troll.html';
-const TROLL_LENGTH = 6.3;                                               // its pile, to buried
+const TROLL_LENGTH = 10.4;                                              // its pile, every card down
+const TROLL_HOLD = 3.0;                                                 // then the pile, before the closing line
+const ENDING_TRACK = './assets/audio/music/ending-narration.ogg';       // (optional: replaces the written music)
+const MUSIC_UNDER_VOICE = 0.72;                                         // the music, under the narrator
 // The restored crew photo (scripts/ending-photo/); if it is missing, the torn print of Flashback 1
 const PHOTO = './assets/textures/ending/crew-photo.webp';
 const PHOTO_FALLBACK = './assets/textures/flashback1/briefing-photo.webp';
@@ -84,7 +82,6 @@ const STYLE = `
 .en-sub.on { opacity: 1; }
 .en-sub > div { max-width: 88vw; text-align: center; color: #f1f4f2; font-size: 2.3vh; line-height: 1.35;
   text-shadow: 0 0 0.6vh #000, 0 0 1.4vh #000; }
-.en-sub .who { font-size: .8em; letter-spacing: .2em; font-weight: bold; margin-right: .7em; color: #7fe3ff; }
 .en-sub .narrator { font-style: italic; color: #f4efe6; }
 .en-hint { position: absolute; right: 1.2rem; top: 1.2rem; font-size: .72rem; letter-spacing: .15rem; color: #cfefff;
   opacity: 0; transition: opacity .4s; z-index: 6; }
@@ -119,21 +116,31 @@ export class EndingNarration {
       im.onerror = () => resolve(null);
       im.src = src;
     });
-    const [hall, react, win, polaroid, photo] = await Promise.all([
-      image(SHOTS.hall), image(SHOTS.react), image(SHOTS.window), image(POLAROID), image(PHOTO).then((im) => im || image(PHOTO_FALLBACK)),
+    // (the room: its canvas is made here, as the people are loaded ahead of the picture)
+    const canvas = (this.conferenceCanvas = document.createElement('canvas'));
+    const conference = new ConferenceScene(canvas);
+    const [win, polaroid, photo] = await Promise.all([
+      image(SHOTS.window), image(POLAROID), image(PHOTO).then((im) => im || image(PHOTO_FALLBACK)),
+      conference.load().then(() => { this.conference = conference; }).catch((e) => console.warn('Narration: no conference room.', e)),
       ...(this.ac ? NARRATION.map(async (l) => {
         const b = await decode(this.ac, AUDIO + l.clip + '.mp3');
-        if (!b) return console.info('Narration: no recording yet for', l.clip, l.optional ? '(her caption only)' : '(its subtitle is shown instead)');
+        if (!b) return console.info('Narration: no recording yet for', l.clip, '(its subtitle is shown instead)');
         this.buffers.set(l.id, b);
         this.shape[l.id] = speechShape(b);
         this.len[l.id] = this.shape[l.id].end;
       }) : [])
     ]);
-    this.shots = { hall, react, window: win };
+    this.shots = { window: win };
     for (const [k, im] of Object.entries(this.shots)) if (!im) console.warn('Narration: no picture for', k, '(', SHOTS[k], ')');
     this.polaroidSrc = polaroid?.src || POLAROID;
     this.photoSrc = photo?.src || PHOTO_FALLBACK;
     this.photoIsRestored = !!photo && photo.src.includes('crew-photo');
+    if (this.ac) {
+      const T = this._timeline();
+      this.music = await decode(this.ac, ENDING_TRACK) || await renderEndingMusic(this.ac.sampleRate, {
+        start: T.music, warm: T.families, light: T.troll, rest: T.photo, end: T.end
+      }).catch((e) => { console.warn('Narration: no music.', e); return null; });
+    }
   }
 
   // When everything happens (s, from the start of the black)
@@ -148,14 +155,15 @@ export class EndingNarration {
     let at = say('n1', 3.0);
     // 2: the Polaroid
     T.polaroid = at + 0.6;
+    T.music = T.polaroid - 0.2;          // (line 1 keeps its silence)
     at = say('n2', T.polaroid + 0.9);
-    // 3: the hall, ARIA on the screen; her caption after the narrator; a cut to the hall reacting
+    // 3: the room, ARIA on the screen; the line goes on, and a cut to their faces as it lands
     T.hall = at + 1.0;
     at = say('n3', T.hall + 0.8);
-    at = say('a10', at + 0.45);
-    T.react = L.a10[0] + 0.62 * len.a10;
+    at = say('n3b', at + 0.3);
+    T.react = L.n3b[0] + 0.5 * len.n3b;
     // 4: the families; then, at the pause in the line, his mother at the window
-    T.families = at + 1.1;
+    T.families = at + 1.6;
     at = say('n4', T.families + 0.6);
     const pauses = this.shape.n4?.pauses || [];
     let gap = null;
@@ -165,8 +173,9 @@ export class EndingNarration {
     // 5: the trolling, from the start of the line
     T.troll = at + 1.2;
     at = say('n5', T.troll + 0.35);
-    // 6: the closing line is the photo's cue; it is held after it, then black
-    at = say('n6', Math.max(at, T.troll + TROLL_LENGTH) + 0.7);
+    // 6: every card of the trolling is down and has been seen; the closing line is the photo's cue;
+    // it is held after it, then black
+    at = say('n6', Math.max(at, T.troll + TROLL_LENGTH + TROLL_HOLD) + 0.7);
     T.photo = L.n6[0] - 0.05;
     T.black = at + 4.0;
     T.end = T.black + 1.6;
@@ -178,6 +187,11 @@ export class EndingNarration {
     this.running = true;
     this.T = this._timeline();
     this._mount();
+    // (its shaders are compiled now, in the three seconds of black)
+    this.warming = this.conference?.warm().catch((e) => {
+      console.warn('Narration: the conference room could not start.', e);
+      this.conference = null;
+    });
     window.addEventListener('keydown', this._onKey, true);
     this._startSound();
     this._start = performance.now();
@@ -222,14 +236,13 @@ export class EndingNarration {
     el.className = 'en-root';
     el.innerHTML = `
       <div class="en-pic" data-pic="polaroid" style="--fade:1.4s"><img class="en-polaroid" alt=""></div>
-      <div class="en-pic" data-pic="hall"><canvas></canvas></div>
-      <div class="en-pic" data-pic="react"><canvas></canvas></div>
+      <div class="en-pic" data-pic="hall"></div>
       <div class="en-pic" data-pic="families"><canvas></canvas></div>
       <div class="en-pic" data-pic="window" style="--fade:0.9s"><canvas></canvas></div>
       <div class="en-pic" data-pic="troll" style="--fade:0.5s"></div>
       <div class="en-pic" data-pic="photo" style="--fade:0.7s"><img class="en-photo" alt="The crew of Halcyon-9"></div>
       <div class="en-black"></div>
-      <div class="en-sub"><div><span class="who"></span><span class="text"></span></div></div>
+      <div class="en-sub"><div><span class="text narrator"></span></div></div>
       <div class="en-hint">Enter: skip</div>`;
     this.root.appendChild(el);
     this.pics = Object.fromEntries([...el.querySelectorAll('.en-pic')].map((p) => [p.dataset.pic, p]));
@@ -237,11 +250,11 @@ export class EndingNarration {
     el.querySelector('.en-photo').src = this.photoSrc;
     this.black = el.querySelector('.en-black');
     this.sub = el.querySelector('.en-sub');
-    this.subWho = el.querySelector('.who');
     this.subText = el.querySelector('.text');
     this.hint = el.querySelector('.en-hint');
     this.canvases = {};
-    for (const k of ['hall', 'react', 'families', 'window']) this.canvases[k] = this.pics[k].querySelector('canvas');
+    for (const k of ['families', 'window']) this.canvases[k] = this.pics[k].querySelector('canvas');
+    if (this.conferenceCanvas) this.pics.hall.appendChild(this.conferenceCanvas);
     // the trolling page, loaded now (hidden) and started on its cue
     const frame = (this.troll = document.createElement('iframe'));
     frame.className = 'en-troll';
@@ -266,12 +279,9 @@ export class EndingNarration {
     if (this._skipping) return;
     this.hint.style.opacity = t > SKIP_AFTER && t < T.black ? 0.45 : 0;
     // which picture shows
-    const show = t >= T.photo ? 'photo' : t >= T.troll ? 'troll' : t >= T.window ? 'window' : t >= T.families ? 'families' : t >= T.react ? 'react' : t >= T.hall ? 'hall' : t >= T.polaroid ? 'polaroid' : null;
+    const show = t >= T.photo ? 'photo' : t >= T.troll ? 'troll' : t >= T.window ? 'window' : t >= T.families ? 'families' : t >= T.hall ? 'hall' : t >= T.polaroid ? 'polaroid' : null;
     if (show !== this._shown) {
       this._shown = show;
-      // (the hall cuts to its reaction; everything else dissolves)
-      if (show === 'react') for (const k of ['hall', 'react']) this.pics[k].style.setProperty('--fade', '0s');
-      if (show === 'families') this.pics.react.style.setProperty('--fade', '1.2s');
       for (const [k, p] of Object.entries(this.pics)) p.classList.toggle('on', k === show);
       if (show === 'polaroid') requestAnimationFrame(() => this.el.querySelector('.en-polaroid').classList.add('in'));
       if (show === 'photo') requestAnimationFrame(() => this.el.querySelector('.en-photo').classList.add('in'));
@@ -279,8 +289,12 @@ export class EndingNarration {
     }
     // the pictures, drawn while they show or fade
     const sh = this.shots;
-    if (show === 'hall' || (t >= T.hall - 0.1 && t < T.react)) this._paint('hall', t - T.hall, (c, w, h, s) => paintHall(c, w, h, s, sh.hall, t - L.a10[0], L.a10[1] - L.a10[0]));
-    if (show === 'react' || (t >= T.react - 0.1 && t < T.families + 1.3)) this._paint('react', t - T.react, (c, w, h, s) => paintReact(c, w, h, s, sh.react));
+    if (this.conference && t >= T.hall - 0.1 && t < T.families + 1.3) {
+      const speak = t - L.n3[0], len = L.n3b[1] - L.n3[0];
+      // (she is telling them, all through the line: her light moves as the hologram's mouth does)
+      const talk = speak > 0 && speak < len ? 0.35 + 0.65 * Math.abs(Math.sin(speak * 11) * Math.sin(speak * 3.7)) : 0;
+      this.conference.draw(t, t - T.hall, t - T.react, talk);
+    }
     if (show === 'families' || (t >= T.families - 0.1 && t < T.window + 1)) this._paint('families', t - T.families, (c, w, h, s) => paintFamilies(c, w, h, s, T.window - T.families));
     if (show === 'window' || (t >= T.window - 0.1 && t < T.troll + 0.6)) this._paint('window', t - T.window, (c, w, h, s) => paintWindow(c, w, h, s, sh.window));
     // black at the end, then done
@@ -323,9 +337,6 @@ export class EndingNarration {
       if (this._line !== line) {
         this._line = line;
         this.subText.textContent = line.text;
-        this.subText.className = 'text' + (line.who ? '' : ' narrator');
-        this.subWho.textContent = line.who === 'aria' ? 'ARIA' : '';
-        this.subWho.style.display = line.who ? '' : 'none';
       }
       this.sub.classList.add('on');
     } else {
@@ -353,6 +364,23 @@ export class EndingNarration {
       src.start(at + this.T.line[l.id][0]);
       this._sources.push(src);
     }
+    if (this.music) {
+      const T = this.T, src = ac.createBufferSource();
+      src.buffer = this.music;
+      const g = (this._musicGain = ac.createGain());
+      g.gain.value = settings.get('music');
+      const duck = ac.createGain();
+      // down a little under each line, up again in the gaps between them
+      for (const l of NARRATION) {
+        const [a, b] = T.line[l.id];
+        if (b < T.music) continue;
+        duck.gain.setTargetAtTime(MUSIC_UNDER_VOICE, at + a - 0.35, 0.18);
+        duck.gain.setTargetAtTime(1, at + b + 0.1, 0.5);
+      }
+      src.connect(duck).connect(g).connect(ac.destination);
+      src.start(at + T.music);
+      this._sources.push(src);
+    }
   }
 
   _stopSound(fade = 0.3) {
@@ -360,6 +388,7 @@ export class EndingNarration {
     if (!ac || !this._bus) return;
     const now = ac.currentTime;
     this._bus.output.gain.setTargetAtTime(0, now, fade / 4);
+    this._musicGain?.gain.setTargetAtTime(0, now, fade / 4);
     for (const s of this._sources || []) {
       try { s.stop(now + fade + 0.05); } catch { /* (already stopped) */ }
     }
@@ -371,6 +400,8 @@ export class EndingNarration {
     cancelAnimationFrame(this._raf);
     window.removeEventListener('keydown', this._onKey, true);
     this._stopSound(0.05);
+    this.conference?.dispose();
+    this.conference = null;
     if (this.troll) this.troll.src = 'about:blank';
     this.el?.remove();
     this._style?.remove();
@@ -378,6 +409,7 @@ export class EndingNarration {
     this.ac?.close?.().catch(() => {});
     this.ac = null;
     this.buffers = null;
+    this.music = null;
     this._resolve = null;
   }
 }
@@ -436,55 +468,6 @@ function over(g, at, quad, draw) {
   g.globalCompositeOperation = 'lighter';
   draw(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys));
   g.restore();
-}
-
-// 3: the hall, ARIA on the screen. Her face glows with her voice while she speaks (her caption's
-// time: a lively flicker, as the hologram's mouth moves), a scan line rolls down the screen, and
-// the screen breathes a little all the while
-function paintHall(g, w, h, s, img, speak, speakLen) {
-  const at = shot(g, w, h, img, s, FOCUS.hall, 0.07, 16);
-  if (at) {
-    over(g, at, SCREEN, (x0, y0, x1, y1) => {
-      const talking = speak > 0 && speak < speakLen ? 0.35 + 0.65 * Math.abs(Math.sin(speak * 11) * Math.sin(speak * 3.7)) : 0;
-      const breath = 0.025 + 0.015 * Math.sin(s * 2.1) + 0.01 * Math.sin(s * 23) * Math.sin(s * 7.3);
-      const cx = (x0 + x1) / 2, cy = y0 + (y1 - y0) * 0.47, r = (y1 - y0) * 0.55;
-      const glow = g.createRadialGradient(cx, cy, 0, cx, cy, r);
-      glow.addColorStop(0, `rgba(110,215,255,${breath + 0.12 * talking})`);
-      glow.addColorStop(1, 'rgba(110,215,255,0)');
-      g.fillStyle = glow;
-      g.fillRect(x0, y0, x1 - x0, y1 - y0);
-      const band = (y1 - y0) * 0.06, sy = y0 - band + (y1 - y0 + 2 * band) * ((s * 0.21) % 1);
-      const line = g.createLinearGradient(0, sy - band, 0, sy + band);
-      line.addColorStop(0, 'rgba(140,230,255,0)');
-      line.addColorStop(0.5, 'rgba(140,230,255,0.08)');
-      line.addColorStop(1, 'rgba(140,230,255,0)');
-      g.fillStyle = line;
-      g.fillRect(x0, sy - band, x1 - x0, band * 2);
-    });
-  }
-  finish(g, w, h, s);
-}
-
-// 3, the cut: the hall on its feet; a camera flashes here and there
-function paintReact(g, w, h, s, img) {
-  const at = shot(g, w, h, img, s, FOCUS.react, 0.05, 10);
-  if (at) {
-    for (const [when, u, v] of FLASHES) {
-      const e = (s - when) / 0.18;
-      if (e < 0 || e > 1) continue;
-      const [x, y] = at(u, v), r = h * 0.1, a = (1 - e) * (1 - e);
-      const f = g.createRadialGradient(x, y, 0, x, y, r);
-      f.addColorStop(0, `rgba(255,255,255,${0.9 * a})`);
-      f.addColorStop(0.12, `rgba(235,245,255,${0.4 * a})`);
-      f.addColorStop(1, 'rgba(235,245,255,0)');
-      g.save();
-      g.globalCompositeOperation = 'lighter';
-      g.fillStyle = f;
-      g.fillRect(x - r, y - r, r * 2, r * 2);
-      g.restore();
-    }
-  }
-  finish(g, w, h, s);
 }
 
 // 4a: families together again: an old man held by his daughter; three generations in one embrace;

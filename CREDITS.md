@@ -110,6 +110,10 @@ Dr. Kessler (`public/assets/models/kessler.glb`) is built from these models by
 - *"Female scientist" by photon (that one larry) (https://sketchfab.com/Professor_E12), licensed under CC-BY-4.0. Modified (rigged to Voss's skeleton, clothes repainted, head and hair replaced, glasses removed; also Lindqvist's body, repainted again).*
 - *"Angelica - Female Head PBR Model with Animation" by Sell Asset Store (https://sketchfab.com/emraanalis), licensed under CC-BY-4.0. Modified (decimated, neck refitted, given expressions, skin warmed, hair, brows and eyes recoloured, eyelashes and eye highlights removed; the eyeballs also used for Lindqvist and Navarro).*
 
+The six people in the conference room at the end (`Blender/scripts/build_conference_people.py`)
+are made from the same models: three on Voss's model, three on Dr. Kessler's ("Female scientist" and
+"Angelica", above), each further modified (recoloured, thinned, heads reshaped, new hair built).
+
 Voss's mother, in the prologue's photos and at the window at the end
 (`Blender/scripts/prologue_common.py`, `render_ending_window.py`), is "Female scientist" (above)
 restyled, with this head (in `Blender/assets/woman_head/`, not in git: download it from the link to

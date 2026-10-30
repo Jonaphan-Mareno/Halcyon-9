@@ -500,6 +500,7 @@ export class DeckSession {
     prep.oxygen = 240;
     prep._outside = true;
     prep._suitTold = true;
+    if (this.swim) this.swim._told = true;   // (past the dive gate: the objective is the trench's, not "swim out through the gate")
     if (prep.rackSuit) prep.rackSuit.visible = false;
     if (prep.cableEnd) prep.cableEnd.visible = false;
     if (prep.rackGun) prep.rackGun.visible = false;

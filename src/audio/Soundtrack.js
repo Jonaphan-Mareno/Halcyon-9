@@ -25,7 +25,7 @@ export class Soundtrack {
     this.muted = false;
     this.ducked = false;
     this.volume = 1;           // the player's music volume (Options)
-    this.paused = false;       // the pause menu is open: the music drops low
+    this.paused = false;       // the pause menu is open: the music stops (and picks up where it was)
     this.tracks = {};          // name -> { el, vol, missing }
     window.addEventListener('aria-speaking', (e) => { this.ducked = !!e.detail; });
     setInterval(() => this._tick(), TICK * 1000);
@@ -79,12 +79,13 @@ export class Soundtrack {
 
   _tick() {
     const wanted = this._wanted();
-    const loud = this.muted ? 0 : VOLUME * this.volume * (this.ducked ? DUCKED : 1) * (this.paused ? 0.3 : 1);
+    const loud = this.muted ? 0 : VOLUME * this.volume * (this.ducked ? DUCKED : 1) * (this.paused ? 0 : 1);
     const step = VOLUME * TICK / FADE_SECONDS;
     for (const [name, t] of Object.entries(this.tracks)) {
       if (t.missing) continue;
       const goal = name === wanted ? loud : 0;
-      t.vol = goal > t.vol ? Math.min(goal, t.vol + step) : Math.max(goal, t.vol - step);
+      // (paused: silent at once, no fade; back on, it fades up from where it stopped)
+      t.vol = this.paused ? 0 : goal > t.vol ? Math.min(goal, t.vol + step) : Math.max(goal, t.vol - step);
       t.el.volume = t.vol;
       if (t.vol > 0 && t.el.paused) t.el.play().catch(() => {});
       else if (t.vol === 0 && !t.el.paused) t.el.pause();

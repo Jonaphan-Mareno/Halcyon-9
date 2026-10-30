@@ -105,12 +105,27 @@ export const FALLBACK_LENGTHS = Object.fromEntries(LINES.map((l) => [l.id, +(l.t
 //   n4         -18.1   -1.3   -19.4
 //   n5         -16.8   -2.6   -19.4
 //   n6         -19.6   +0.2   -19.4   the-end: "Well, wasn't that a wonderful story."
+// Scene C (level3/scene-c.js, the same bus), to the scene's -18.9 (measured 2026-10-29). v20 opens
+// on a laugh that peaks high: its gain is for the words, and scene-c.js rides the laugh down.
+//   v15        -26.9   +8.0   -18.9   (exhale) "Aria, first things first..."
+//   v16        -26.9   +8.0   -18.9
+//   v17        -27.8   +8.9   -18.9
+//   v18        -27.9   +9.0   -18.9
+//   v19        -25.8   +6.9   -18.9
+//   v20        -24.8   +5.9   -18.9   (haha) ... (giggle)
+//   a11        -21.1   +2.2   -18.9
+//   a12        -21.6   +2.7   -18.9
+//   a13        -22.0   +3.1   -18.9
 export const VOICE_GAIN_DB = {
   a1: 0.1, a2: 1.8, a3: -0.3, a4: -3.4, a5: -2.4, a6: -1.7, a7: -2.3,
   v1: 1.9, v2: -0.5, v3: 0.9, v4: 0.1, v5: -0.8, v6: 3.0, v7: 0.8, v8: 5.3,
   v9: 7.0, v10: 8.5, v11: 7.8, v12: 7.2, v13: 6.8, a8: 7.7, v14: 8.1,
-  n1: 0.5, n2: -2.6, n3: -1.8, n4: -1.3, n5: -2.6, n6: 0.2
+  n1: 0.5, n2: -2.6, n3: -1.8, n4: -1.3, n5: -2.6, n6: 0.2,
+  v15: 8.0, v16: 8.0, v17: 8.9, v18: 9.0, v19: 6.9, v20: 5.9, a11: 2.2, a12: 2.7, a13: 3.1
 };
+// Matched by loudness, Voss's low, hoarse voice still reads quieter than ARIA's (the owner's note,
+// on laptop speakers): every Voss line in Scenes A, B and C gets this much more on top of its gain
+export const VOSS_LIFT_DB = 1.5;
 const VOICE_BUS_DB = 1.5;     // the dialogue bus, after its compressor (the makeup)
 
 // Who cuts in on whom: the line (by id) whose speech starts this long (s) before the end of the
@@ -1722,7 +1737,7 @@ export class Confrontation {
       src.connect(an);
       this.analysers.set(l.id, an);
       const g = ac.createGain();
-      g.gain.value = dbGain(VOICE_GAIN_DB[l.id] || 0);
+      g.gain.value = dbGain((VOICE_GAIN_DB[l.id] || 0) + (l.who === 'voss' ? VOSS_LIFT_DB : 0));
       src.connect(g).connect(comp);
       src.start(at + L[l.id][0]);
       // cut off by the other's line: out in 40 ms

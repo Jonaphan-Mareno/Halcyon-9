@@ -42,7 +42,10 @@ const EXPRESSIONS = {
   // the ending (level3/Confrontation.js): broken is hesitant with the brows knit, near tears;
   // tender is a softer relief, the first time she looks at someone without calculating
   broken:    { brow_up: 0.7,  brow_down: 0.35, smile: 0.0,  lids: 0.3,  tilt: -0.08, pitch: 0.07,  gaze: 0.5,  life: 0.6 },
-  tender:    { brow_up: 0.35, brow_down: 0.0,  smile: 0.35, lids: 0.22, tilt: 0.06,  pitch: -0.02, gaze: 0.0,  life: 0.7 }
+  tender:    { brow_up: 0.35, brow_down: 0.0,  smile: 0.35, lids: 0.22, tilt: 0.06,  pitch: -0.02, gaze: 0.0,  life: 0.7 },
+  // the "Stay" ending: a real laugh, not the bubbly mask (her eyes narrowed by the smile, not wide;
+  // the brows only a little up; the head tipped to one side)
+  amused:    { brow_up: 0.25, brow_down: 0.0,  smile: 0.6,  lids: 0.28, tilt: 0.1,   pitch: -0.03, gaze: 0.0,  life: 0.85 }
 };
 const EASED = ['brow_up', 'brow_down', 'smile', 'lids', 'tilt', 'pitch', 'gaze', 'life'];
 

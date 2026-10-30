@@ -38,6 +38,8 @@ import { LockFlashback } from './LockFlashback.js';
 import { Confrontation } from './Confrontation.js';
 import { SceneB } from './SceneB.js';
 import { EndingNarration } from './EndingNarration.js';
+import { SceneC } from './scene-c.js';
+import { NarrationC } from './narration-c.js';
 import { showEndCredits } from '../ui/EndCredits.js';
 import { buildLockPanel, Sparks, crackle, PANEL_SIZE } from './LockPanel.js';
 import '../ui/level3.css';
@@ -81,6 +83,12 @@ const TEST_CONFRONTATION = new URLSearchParams(window.location.search).get('conf
 // ?ending=yes (with ?level=3): the confrontation run through out of sight to its choice, "Yes"
 // chosen, and the Save-ARIA ending from there (SceneB.js, then the narration and the credits)
 const TEST_ENDING = new URLSearchParams(window.location.search).get('ending');
+// ?ending=narration-no (with ?level=3): the confrontation run through out of sight, "No" chosen, and
+// straight to the Stay ending's narration (narration-c.js; Scene C itself goes before it)
+const TEST_NARRATION_C = TEST_ENDING === 'narration-no';
+// ?ending=no (with ?level=3): the same, and the Stay ending from the choice (scene-c.js, then its
+// narration and the credits)
+const TEST_STAY = TEST_ENDING === 'no' || TEST_NARRATION_C;
 // ?lock (with ?level=3): the reroute won and Voss already in the water lock: its scene at once, then
 // the confrontation (RelayLock.js)
 const TEST_LOCK = new URLSearchParams(window.location.search).has('lock');
@@ -170,7 +178,7 @@ export class DeckSession {
       const outside = this._deckReady.then(() => this._readyOutside());
       if (this._skipRelay) {
         this._skipToRelay();
-        if (TEST_CONFRONTATION !== null || TEST_ENDING === 'yes') this.startConfrontation();
+        if (TEST_CONFRONTATION !== null || TEST_ENDING === 'yes' || TEST_STAY) this.startConfrontation();
         else if (TEST_LOCK) this.trench.lock.test();
       }
       else if (TEST_FLASHBACK !== null) outside.then(() => this._testLockFlashback());
@@ -329,7 +337,7 @@ export class DeckSession {
     const params = new URLSearchParams(window.location.search);
     // (?afterkraken: the same, but standing in the clearing the moment the kraken has fled)
     this._afterKraken = params.has('afterkraken');
-    this._skipRelay = params.has('relay') || this._afterKraken || TEST_CONFRONTATION !== null || TEST_ENDING === 'yes' || TEST_LOCK;
+    this._skipRelay = params.has('relay') || this._afterKraken || TEST_CONFRONTATION !== null || TEST_ENDING === 'yes' || TEST_STAY || TEST_LOCK;
     if (!params.has('nochute') && !this._skipRelay && TEST_FLASHBACK === null) this.chute = new Chute(this);
   }
 
@@ -880,7 +888,7 @@ export class DeckSession {
     const playing = scene.play({ still: slow || TEST_CONFRONTATION === 'still' });
     // (the Save-ARIA ending readied while it plays: its recordings and its few new shaders)
     this._preloadEnding();
-    if (TEST_ENDING === 'yes') this._testChoice(scene);
+    if (TEST_ENDING === 'yes' || TEST_STAY) this._testChoice(scene, TEST_STAY ? 'no' : 'yes');
     const choice = await playing;
     if (import.meta.env.DEV) {
       const s = scene.stats;
@@ -897,8 +905,8 @@ export class DeckSession {
   onChoice(choice /* 'yes' | 'no' */) {
     console.info('Confrontation: the player chose', choice);
     if (choice === 'yes') return this.playEnding();
-    // TODO(owner): the "No" ending is not written yet (docs/ending-confrontation-script.md: "No is
-    // for later"). The scene goes on drawing its high wide shot, the state stays 'FLASHBACK'.
+    if (TEST_NARRATION_C) return this.playNarrationC();
+    return this.playStay();
   }
 
   // ------------------------------------------------------------------ the Save-ARIA ending
@@ -909,16 +917,80 @@ export class DeckSession {
     this.sceneB ||= new SceneB(this.confrontation);
     this.narration ||= new EndingNarration(document.body);
     this.narration.preload();
+    // (Scene C: only its recordings; its narration loads while the scene plays)
+    this.sceneC ||= new SceneC(this.confrontation);
+    this.sceneC.preload();
     return this.sceneB.preload(webgl);
   }
 
   // ?level=3&ending=yes: the confrontation run through out of sight (as its skip does), the prompt
   // shown for a moment, and Yes chosen
-  async _testChoice(scene) {
+  async _testChoice(scene, choice = 'yes') {
     scene._skip = { t: 0 };
     while (!scene._choiceShown && !this.disposed) await sleep(100);
     await sleep(1400);
-    if (!this.disposed && !scene.choice) scene._choose('yes');
+    if (!this.disposed && !scene.choice) scene._choose(choice);
+  }
+
+  // "No": Scene C in the confrontation's room (from its high wide shot), then its narration
+  // (playNarrationC), which goes on in the same room after a moment of black. The narration's rooms
+  // and recordings load while the scene plays.
+  async playStay() {
+    const g = this.game, conf = this.confrontation;
+    if (this._endingBusy || this.disposed || !conf?.ready) return;
+    this._endingBusy = true;
+    g.holdMusic?.('silence', 900);
+    const sceneC = (this.sceneC ||= new SceneC(conf));
+    await Promise.race([sceneC.preload(), sleep(8000)]);
+    if (this.disposed) return;
+    (this.narrationC ||= new NarrationC(conf, this)).preload(g.renderer.instance);
+    if (sceneC.ready) {
+      this.ending = { running: true, render: (r) => sceneC.render(r) };
+      const how = await sceneC.play();
+      if (import.meta.env.DEV) {
+        const s = sceneC.stats;
+        console.info('Scene C:', how, s.frames, 'frames,', (s.frames / Math.max(0.01, s.seconds)).toFixed(1), 'fps, worst',
+          (s.worst * 1000).toFixed(0), 'ms at', s.worstAt, s.still ? '(stills: ' + s.still + ')' : '');
+      }
+    } else {
+      console.warn('Scene C: not ready; on to the narration.');
+    }
+    if (this.disposed) return;
+    this.ending = { running: true, render: (r) => { r.setRenderTarget(null); r.setClearColor(0x000000, 1); r.clear(); } };
+    sceneC.dispose();
+    this.sceneC = null;
+    this._endingBusy = false;
+    return this.playNarrationC();
+  }
+
+  // The Stay ending's narration (narration-c.js), in the confrontation's room, then the credits.
+  // Scene C plays first (playStay) and calls this at its black. As playEnding: only once
+  // the credits have closed is the confrontation disposed and the state restored.
+  async playNarrationC() {
+    const g = this.game, conf = this.confrontation;
+    if (this._endingBusy || this.disposed || !conf?.ready) return;
+    this._endingBusy = true;
+    g.holdMusic?.('silence', 900);
+    const narration = (this.narrationC ||= new NarrationC(conf, this));
+    await Promise.race([narration.preload(g.renderer.instance), sleep(8000)]);
+    if (this.disposed) return;
+    this.ending = { running: true, render: (r) => narration.render(r) };
+    await narration.play();
+    if (this.disposed) return;
+    this.ending = { running: true, render: (r) => { r.setRenderTarget(null); r.setClearColor(0x000000, 1); r.clear(); } };
+    const credits = showEndCredits(document.body);
+    await sleep(1700);
+    narration.dispose();
+    this.narrationC = null;
+    await credits;
+    if (this.disposed) return;
+    conf.dispose();
+    this.ending = null;
+    document.body.classList.remove('fb3d');
+    g.state = 'PLAYING';
+    this.sfx?.setMuted(false);
+    this._endingBusy = false;
+    this._afterCredits();
   }
 
   // "Yes": Scene B in the confrontation's room (from its high wide shot), then the narration over
@@ -1138,6 +1210,8 @@ export class DeckSession {
     this.lockFlashback?.dispose();
     this.narration?.dispose();
     this.sceneB?.dispose();
+    this.sceneC?.dispose();
+    this.narrationC?.dispose();
     this.confrontation?.dispose();
     this.panel?.dispose();
     this.panelSparks?.dispose();

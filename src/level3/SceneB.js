@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { precompile } from '../core/precompile.js';
 import { settings } from '../core/Settings.js';
 import { clamp, seg, ease, v3 } from '../story/firstPersonRig.js';
-import { VOICE_GAIN_DB, FACE, HOLO, PORT, DESK, CABLE_R, keepInside, pushOut } from './Confrontation.js';
+import { VOICE_GAIN_DB, VOSS_LIFT_DB, FACE, HOLO, PORT, DESK, CABLE_R, keepInside, pushOut } from './Confrontation.js';
 import { voiceBus, dbGain, decode, speechShape } from './endingAudio.js';
 import { kneel, leanBack, curlFingers, bendBack, KNEEL } from './vossPoses.js';
 
@@ -1304,13 +1304,14 @@ export class SceneB {
       src.connect(an);
       this.analysers.set(l.id, an);
       const g = ac.createGain();
-      const db = VOICE_GAIN_DB[l.id] || 0;
+      const lift = l.who === 'voss' ? VOSS_LIFT_DB : 0;
+      const db = (VOICE_GAIN_DB[l.id] || 0) + lift;
       const start = at + L[l.id][0];
       g.gain.value = dbGain(db);
       if (l.id === 'v14') {
         // the "Ahh" as he falls, ridden down to sit with the rest
-        g.gain.setValueAtTime(dbGain(AHH_DB), start);
-        g.gain.setValueAtTime(dbGain(AHH_DB), start + AHH_END);
+        g.gain.setValueAtTime(dbGain(AHH_DB + lift), start);
+        g.gain.setValueAtTime(dbGain(AHH_DB + lift), start + AHH_END);
         g.gain.linearRampToValueAtTime(dbGain(db), start + AHH_END + 0.12);
       }
       src.connect(g).connect(bus.input);
@@ -1573,6 +1574,7 @@ const BAR_FRAG = /* glsl */`
   }`;
 
 // ------------------------------------------------------------------ helpers
+// (blank, copyGrip, blendGrip and ropeStep are shared with Scene C: level3/scene-c.js)
 
 function swap(src, pairs) {
   let out = src;
@@ -1604,11 +1606,11 @@ function canvasTexture(w, h, draw) {
   return tex;
 }
 
-function blank() {
+export function blank() {
   return { wrist: new THREE.Vector3(), fingers: new THREE.Vector3(), palm: new THREE.Vector3(), pole: new THREE.Vector3(), curl: [0, 0, 0], thumb: [0, 0, 0] };
 }
 
-function copyGrip(g, out) {
+export function copyGrip(g, out) {
   out.wrist.copy(g.wrist);
   out.fingers.copy(g.fingers);
   out.palm.copy(g.palm);
@@ -1619,7 +1621,7 @@ function copyGrip(g, out) {
 }
 
 // b becomes a's grip moved u of the way to b's
-function blendGrip(a, b, u) {
+export function blendGrip(a, b, u) {
   b.wrist.lerpVectors(a.wrist, b.wrist, u);
   b.fingers.lerpVectors(a.fingers, b.fingers, u).normalize();
   b.palm.lerpVectors(a.palm, b.palm, u).normalize();
@@ -1631,7 +1633,7 @@ function blendGrip(a, b, u) {
 // The confrontation's rope (Verlet, fixed lengths, under gravity, off the floor and out of his
 // legs), stepped with more of its points held: `pin` its first (null: let go), `pins` [index, point]
 const _d = new THREE.Vector3();
-function ropeStep(rope, dt, pin, pins, caps) {
+export function ropeStep(rope, dt, pin, pins, caps) {
   if (dt <= 0) return;
   const p = rope.p, o = rope.o, n = p.length, sub = 2, h = dt / sub;
   const held = new Set(pins.map(([i]) => i));

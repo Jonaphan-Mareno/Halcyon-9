@@ -305,7 +305,7 @@ export class Trench {
       if (!ev) continue;
       if (ev === 'end') {
         this.step = route.length;
-        this._startShow();
+        this._toClearing = true;
         return;
       }
       this.fight.hunt.trigger(ev, route[i].p.clone());
@@ -529,6 +529,10 @@ export class Trench {
     this.works.openShaft();
     this.checkpoint = this.pts.shaftTop.clone();
     this.game.ui.showToast("It's gone, down into the rock. The shaft's cover is open: get down to the relay.", 6000);
+    if (!this._postBossDescentPlayed) {
+      this._postBossDescentPlayed = true;
+      this._postBossDescentPromise = new Promise((r) => setTimeout(r, 1200)).then(() => this.s.say('postBossDescent'));
+    }
   }
 
   // ------------------------------------------------------------------ every frame
@@ -593,7 +597,8 @@ export class Trench {
           this.s.say('works');
         } else if (!this._toldDescend && p.y < TRENCH_TOP + 10) {
           this._toldDescend = true;
-          this.s.say('descend');
+          Promise.race([this.s.prep?.oceanTalk || Promise.resolve(), new Promise((r) => setTimeout(r, 25000))])
+            .then(() => { if (!this.s.disposed && this.stage === 'descend') this.s.say('descend'); });
         }
         if (this.inCave(p)) this._enterWorks();
         break;
@@ -602,6 +607,11 @@ export class Trench {
         break;
       case 'hunt':
         this._huntStep(p);
+        // (the route is done: the fight starts once he is well inside the clearing, past the shutter)
+        if (this._toClearing && this.works.inClearing(p, -2.5)) {
+          this._toClearing = false;
+          this._startShow();
+        }
         break;
       case 'free':
       case 'down': {
@@ -790,7 +800,7 @@ export class Trench {
       this.s.controls.velocity.set(0, 0, 0);
       this.fight.reset(kind);
       // (back at the works' entry: the maze from the start, what is in it happens again)
-      if (kind === 'hunt' && this.stage === 'hunt') this.step = 0;
+      if (kind === 'hunt' && this.stage === 'hunt') { this.step = 0; this._toClearing = false; }
       this._restoring = false;
     }, 1800);
   }

@@ -27,11 +27,11 @@ import { AudioManager } from '../audio/AudioManager.js';
 // music dips while ARIA speaks and under the kraken's roars.
 
 const DIR = './assets/audio/sfx/l3/';
-const MUSIC = {
+export const MUSIC = {
   base: './assets/audio/music/level3-kraken.ogg', intense: './assets/audio/music/level3-kraken-intense.ogg',
   sea: './assets/audio/music/level3-sea.ogg'          // out in the sea, quietly, whenever the fight's music is not playing
 };
-const FILES = [
+export const FILES = [
   'deck-ambience', 'bubbles-loop', 'bubbles-soft', 'bubble-1', 'bubble-2', 'creak-1', 'creak-2', 'creak-3', 'creak-4',
   'groan-1', 'groan-2', 'drip-1', 'drip-2', 'drip-3', 'clank-1', 'clank-2', 'door-creak-1', 'door-creak-2', 'door-shut',
   'hatch-open', 'hatch-shut', 'latch', 'click', 'belt', 'cloth-1', 'cloth-2', 'cloth-3', 'seal', 'air-hiss', 'pickup',

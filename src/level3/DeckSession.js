@@ -9,6 +9,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { Physics } from '../core/Physics.js';
 import { precompile } from '../core/precompile.js';
+import { clearPrefetched } from '../core/Prefetch.js';
 import { mergeStatic } from '../core/mergeStatic.js';
 import { PlayerController } from '../player/PlayerController.js';
 import { AriaManager } from '../entities/AriaManager.js';
@@ -150,12 +151,23 @@ export class DeckSession {
       // behind the title: only what he sees first (the chute, the deck, the crew); the outside
       // (hidden till the outer hatch opens) is readied while he rides the chute
       this.sea?.setShown(false);
-      await this._precompile([this.sea?.group]);
+      // Only what he sees first is made ready before the level starts: with the chute, just the
+      // chute (the rest of the deck and the crew are readied during the ride, below). Compiling
+      // every shader of the level up front was most of the wait at the hatch.
+      const chute = this.chute?.group;
+      const later = chute ? this.game.scene.children.filter((o) => o !== chute && !o.isLight && !o.isCamera) : [this.sea?.group];
+      await this._precompile(later);
       this.ready = true;
       game.applySettings?.();
       this.loadingEl.classList.remove('visible');
       // (the Flashback 3 test link waits for the outside to be readied: in play, the chute ride covers it)
-      const outside = this._readyOutside();
+      // the deck and the crew during the ride, then the outside (hidden till the outer hatch opens)
+      // (hidden meanwhile: anything of it in view during the ride would be compiled on the spot, a stall)
+      const waiting = chute ? later.filter((o) => o !== this.sea?.group && o.visible) : [];
+      for (const o of waiting) o.visible = false;
+      this._deckReady = (chute ? this._precompile([this.sea?.group]) : Promise.resolve())
+        .then(() => { for (const o of waiting) o.visible = true; });
+      const outside = this._deckReady.then(() => this._readyOutside());
       if (this._skipRelay) {
         this._skipToRelay();
         if (TEST_CONFRONTATION !== null || TEST_ENDING === 'yes') this.startConfrontation();
@@ -315,7 +327,9 @@ export class DeckSession {
     // (?nochute skips the ride; ?relay skips the whole level and starts inside the relay; so does
     // ?flashback3, which starts at the engine room window)
     const params = new URLSearchParams(window.location.search);
-    this._skipRelay = params.has('relay') || TEST_CONFRONTATION !== null || TEST_ENDING === 'yes' || TEST_LOCK;
+    // (?afterkraken: the same, but standing in the clearing the moment the kraken has fled)
+    this._afterKraken = params.has('afterkraken');
+    this._skipRelay = params.has('relay') || this._afterKraken || TEST_CONFRONTATION !== null || TEST_ENDING === 'yes' || TEST_LOCK;
     if (!params.has('nochute') && !this._skipRelay && TEST_FLASHBACK === null) this.chute = new Chute(this);
   }
 
@@ -458,6 +472,8 @@ export class DeckSession {
     if (this.chute) {
       await this.chute.ride();
       this.chute = null;
+      // (the deck is readied during the ride; on a slow machine it may need a moment more)
+      await Promise.race([this._deckReady, sleep(15000)]);
       if (this.disposed) return;
       this.controls.teleport(this.spawn.clone().add(new THREE.Vector3(0, 2.2, 0)));
     }
@@ -501,10 +517,17 @@ export class DeckSession {
     fight.wounds = WOUNDS;
     fight.state = 'gone';
     fight.kraken.root.visible = false;
-    trench.stage = 'inside';
-    trench._relayBriefingDone = true;
-    trench._open('front');
-    trench._showBoss(false);
+    if (this._afterKraken) {
+      // just after the fight: it has dug away, the shaft's cover opens, ARIA says her line
+      trench._open('front');
+      trench._showBoss(false);
+      trench.onFled();
+    } else {
+      trench.stage = 'inside';
+      trench._relayBriefingDone = true;
+      trench._open('front');
+      trench._showBoss(false);
+    }
     // Hide the deck and activate the sea environment: this spawn is far beyond the outer hatch,
     // so the position-based zone transition would not fire from the relay's coordinates.
     if (this.deck) this.deck.visible = false;
@@ -514,7 +537,9 @@ export class DeckSession {
     if (this.game.state === 'WAKING' || this.game.state === 'INIT') this.game.state = 'PLAYING';
     // PT_RelayInside is the Blender screenshot location, already converted by the GLB loader to
     // Three.js axes (10.729, -41.708, -22.5).
-    const spawn = trench.pts.inside.clone().add(new THREE.Vector3(0, 0.3, 0));
+    const spawn = this._afterKraken
+      ? trench._clearingEntry?.() || trench.pts.shaftTop.clone().add(new THREE.Vector3(0, 1, 3))
+      : trench.pts.inside.clone().add(new THREE.Vector3(0, 0.3, 0));
     this._relayStart = spawn.clone();
     this._relayStartPending = true;
     trench.checkpoint = spawn.clone();
@@ -1088,6 +1113,7 @@ export class DeckSession {
   }
 
   dispose() {
+    clearPrefetched();     // (the models Level 2 fetched ahead for this level)
     this.disposed = true;
     this.ready = false;
     document.removeEventListener('click', this._onClick);

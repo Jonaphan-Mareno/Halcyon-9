@@ -10,8 +10,9 @@
 - Tariro Muvevi
 
 Everything not listed here (the station, rooms, furniture, props, the organism, the drowned deck,
-shaders, the procedural textures and the sound effects) is our own work. The sound effects are
-synthesised in the browser (src/audio).
+shaders and the procedural textures) is our own work. A few small sounds (Level 1's clicks and
+hums, the arm fusebox's relay clicks, sparks and thuds) are synthesised in the browser; every
+recorded sound effect is credited below.
 
 ## ambientCG (CC0 1.0, public domain)
 
@@ -164,7 +165,7 @@ hologram's flicker, the scrape of the plug over the floor and the low hum's tone
 | Pack | Author | Used for | Link |
 |---|---|---|---|
 | RPG Audio | Kenney (kenney.nl) | creaks, doors, cloth (the suit), latches, clicks | https://kenney.nl/assets/rpg-audio |
-| Sci-fi Sounds | Kenney | hatches, the prep room's machine hum, the thrusters, the suit's seal, the slam, console beeps, the chute's low rumble, the weight under the metal bangs | https://kenney.nl/assets/sci-fi-sounds |
+| Sci-fi Sounds | Kenney | hatches, the prep room's machine hum (also the hum under Level 2's arm fusebox puzzle), the thrusters, the suit's seal, the slam, console beeps, the chute's low rumble, the weight under the metal bangs | https://kenney.nl/assets/sci-fi-sounds |
 | Impact Sounds | Kenney | pipe knocks, hits, the spear striking flesh and rock, the chute's joints clacking past and the dogs letting go | https://kenney.nl/assets/impact-sounds |
 | Interface Sounds | Kenney | the pickup chime, confirm/error beeps, the low-air tick | https://kenney.nl/assets/interface-sounds |
 | Tinysized SFX | Vehicle (Jan Schupke, vehiclemusic.eu) | floor creak, metal groans, water drops, the lock filling, air hiss, the harpoon, whooshes, the chute's metal grinding (knife and fork scrapes, slowed down) | https://opengameart.org/content/fantasy-sound-effects-tinysized-sfx |
@@ -177,6 +178,12 @@ hologram's flicker, the scrape of the plug over the floor and the low hum's tone
 | Sinister Boss Appears (music) | cynicmusic (cynicmusic.com, pixelsphere.org) | the kraken fight's base track (`level3-kraken.ogg`) | https://opengameart.org/content/sinister-boss-appears |
 | Dramatic Boss Encounter (music) | cynicmusic | the fight's rising drum layer (`level3-kraken-intense.ogg`) | https://opengameart.org/content/dramatic-boss-encounter |
 | Aquaria (music) | cynicmusic | the quiet music out in the sea (`level3-sea.ogg`) | https://opengameart.org/content/aquaria |
+
+## Character animations
+
+| Asset | Source | Used for |
+|---|---|---|
+| `Sprint.fbx`, `Swimming.fbx`, `Treading Water.fbx` (`public/assets/models/`) | Mixamo (Adobe, mixamo.com), free to use under Adobe's Mixamo terms | Voss's run (Levels 1 and 2), his swim and his treading water (Level 3) |
 
 ## Generated video
 
@@ -213,5 +220,14 @@ it; anything still owed belongs below.
   licence) as they arrive.
 - **ARIA's voice.** Confirm the exact ElevenLabs voice and the plan terms before submission: the
   row above names "Maisie" because that is what the Level 2 script says.
+- **Other voices.** Only ARIA's voice has a credit row. Add the source of every other recorded
+  voice: Voss (`public/assets/audio/voss/`), his mother in the prologue
+  (`public/assets/audio/lvl1-mom&voss/`), Kessler and the crew in the flashbacks
+  (`flashback1/`, `flashback2/`, `flashback3/`), the crew logs (`logs/`), and the narrator for the
+  endings once recorded (e.g. ElevenLabs, with the voice names).
+- **Two files of unknown source.** `public/assets/textures/bunker_bg.jpg` (the start screen's
+  background) and `public/assets/textures/aria_components/aria-idle.mp4` (ARIA's old face video, still
+  the fallback when her 3D head fails to load). Record where they came from (or confirm they are our
+  own) and add rows above.
 - **Sea creatures.** Sketchfab models for the final submission: record the model name, author,
   licence and link here, then add them to the tables above.

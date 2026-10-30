@@ -44,6 +44,8 @@ import { sleep, pauseClock } from '../core/PauseClock.js';
 import { vossSays, vossVoice } from '../audio/VossVoice.js';
 import { buildRoomProps } from './RoomProps.js';
 import { codeCardCanvas } from './CodeCard.js';
+import { prefetch } from '../core/Prefetch.js';
+import { LEVEL3_FILES } from '../level3/Level3Assets.js';
 import { applyBedroomShell } from './BedroomShell.js';
 import { disposeScene } from '../core/disposeScene.js';
 import '../ui/level2.css';
@@ -290,6 +292,9 @@ export class HabitatSession {
       this.loadingEl.classList.remove('visible');
       this.worldReady = this._readyWorld(held);     // (Flashback 3D waits for it: the rooms are in the scene)
       this.worldReady.then(() => this._setUpRooms());
+      // Level 3's files, fetched quietly while this level is played (once it has settled), so the
+      // way down the hatch does not wait on the network
+      this.worldReady.then(() => setTimeout(() => { if (!this.disposed) prefetch(LEVEL3_FILES); }, 20000));
       game.ui.showToast('WASD to move, Space to jump, E to use things, V to switch camera.', 7000);
       // ?flashback in the address (with ?level=2): Kessler's flashback plays as soon as the level is
       // in, for testing it (?flashback=2d: the drawn one)

@@ -21,7 +21,7 @@ const MUSIC_TRACKS = {
 // back in over MUSIC_FADE_IN seconds (the same fade as the very first start).
 // Switching to another track eases the old one out over MUSIC_CROSSFADE.
 const MUSIC_END_FADE = 3;
-const MUSIC_GAP = 3;
+const MUSIC_GAP = 30; // half a minute between loops: the room's own noise (its lights buzzing) carries the silence
 const MUSIC_FADE_IN = 1.2;
 const MUSIC_CROSSFADE = 3;
 

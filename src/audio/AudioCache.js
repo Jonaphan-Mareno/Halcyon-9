@@ -62,6 +62,7 @@ export const CLIPS = {
   hatch: DIR + 'sound-effects/hatch-opening.mp3',                       // Level 2's hatch lid landing open
   krakenScream: DIR + 'sound-effects/kraken-screaming.mp3',             // many voices, over the kraken's screams
   cellDoor: DIR + 'sound-effects/opening-cell-door.mp3',                // Level 1's cell door
+  flicker: DIR + 'sound-effects/freesound_community-lights-flicker-on-and-some-electrical-noises-33079.mp3', // its dying lights, looped
   paper: DIR + 'sound-effects/floraphonic-paper-collect-7-186721.mp3',  // picking up or looking at paper, a photo
   tech: DIR + 'sound-effects/button-press-tech.mp3',                    // pressing a machine's button: a log, a terminal, a panel
   ding: DIR + 'sound-effects/frigginmouse-ding-dong-new-267803.mp3', // the lift's doors opening or closing

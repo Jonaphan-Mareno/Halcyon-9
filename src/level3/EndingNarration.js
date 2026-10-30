@@ -2,7 +2,6 @@ import { VOICE_GAIN_DB } from './Confrontation.js';
 import { voiceBus, dbGain, decode, speechShape } from './endingAudio.js';
 import { settings } from '../core/Settings.js';
 import { ConferenceScene } from './ConferenceScene.js';
-import { renderEndingMusic } from './endingMusic.js';
 
 // The narration after the "Save ARIA" ending (docs/ending-confrontation-script.md, "The
 // narration"): a gentle narrator over black, then over pictures, each picture timed to its words.
@@ -18,10 +17,8 @@ import { renderEndingMusic } from './endingMusic.js';
 //                                            old and white haired, at the window of the memory care
 //                                            ward in the morning, looking out, pleased and proud
 //   5  "Oh, and ARIA? ..."                   ARIA's trolling (public/assets/ending/aria-troll.html)
-//   6  "Well, wasn't that a wonderful story." the cue for the restored crew photo, held after it
-//
-// Gentle music runs under it all from the Polaroid on (endingMusic.js, written for this; a file at
-// ENDING_TRACK is played instead if there is one), and comes to rest on the crew photo.
+//   6  "Well, wasn't that a wonderful story." the cue for the torn print of Level 1, which then
+//                                            heals into the restored crew photo, held after it
 //
 // The window is a render (Blender/scripts/render_ending_window.py: the prologue's model of his
 // mother), pushed slowly in, with the morning on the glass drawn over it; the families are drawn
@@ -51,16 +48,16 @@ const POLAROID = './assets/textures/prologue/photo1.webp';           // "My litt
 // the window's glass is in it (0..1 of the picture from its top left: top left, top right, bottom
 // right, bottom left), and where it pushes in toward
 const SHOTS = { window: './assets/textures/ending/mom-window.webp' };
-const GLASS = [[0.1275, -0.297], [0.8986, -0.3701], [0.8653, 1.0863], [0.1549, 0.9774]];
+const GLASS = [[0.2536, -0.0627], [0.7406, -0.086], [0.726, 0.9484], [0.2673, 0.8874]];
 const FOCUS = { window: [0.489, 0.3] };
 const TROLL = './assets/ending/aria-troll.html';
 const TROLL_LENGTH = 10.4;                                              // its pile, every card down
 const TROLL_HOLD = 3.0;                                                 // then the pile, before the closing line
-const ENDING_TRACK = './assets/audio/music/ending-narration.ogg';       // (optional: replaces the written music)
-const MUSIC_UNDER_VOICE = 0.72;                                         // the music, under the narrator
-// The restored crew photo (scripts/ending-photo/); if it is missing, the torn print of Flashback 1
+// The torn print of Level 1 (scripts/flashback1-photo/), and the restored crew photo it heals into
+// (scripts/ending-photo/): the same size, the same picture; without the second, the first stays
+const TORN = './assets/textures/flashback1/briefing-photo.webp';
 const PHOTO = './assets/textures/ending/crew-photo.webp';
-const PHOTO_FALLBACK = './assets/textures/flashback1/briefing-photo.webp';
+const HEAL = 4.0;                                                       // s, the one into the other
 const SKIP_AFTER = 1.0;
 
 const STYLE = `
@@ -73,9 +70,13 @@ const STYLE = `
 .en-polaroid { height: 80vh; max-width: 86vw; object-fit: contain; transform: rotate(-4deg) scale(1);
   transition: transform 16s linear; box-shadow: 0 2vh 6vh rgba(0, 0, 0, 0.7); }
 .en-polaroid.in { transform: rotate(-3deg) scale(1.13); }
-.en-photo { max-height: 74vh; max-width: 88vw; object-fit: contain; transform: rotate(1.5deg) scale(0.985);
-  transition: transform 9s ease-out; box-shadow: 0 2vh 7vh rgba(0, 0, 0, 0.75); }
-.en-photo.in { transform: rotate(0.6deg) scale(1.03); }
+.en-photo { position: relative; transform: translateY(2.5vh) rotate(2.2deg) scale(0.93);
+  filter: brightness(0.6) saturate(0.7); transition: transform 14s cubic-bezier(0.16, 0.6, 0.3, 1), filter 6s ease-out; }
+.en-photo.in { transform: translateY(0) rotate(0.6deg) scale(1); filter: none; }
+.en-photo img { display: block; max-height: 84vh; max-width: 88vw; }
+.en-photo .en-whole { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; opacity: 0;
+  transition: opacity var(--heal) ease-in-out; }
+.en-photo.healed .en-whole { opacity: 1; }
 .en-troll { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; background: #000; }
 .en-sub { position: absolute; left: 0; right: 0; bottom: 0; height: 9vh; display: flex; align-items: center; justify-content: center;
   opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 5; }
@@ -119,8 +120,8 @@ export class EndingNarration {
     // (the room: its canvas is made here, as the people are loaded ahead of the picture)
     const canvas = (this.conferenceCanvas = document.createElement('canvas'));
     const conference = new ConferenceScene(canvas);
-    const [win, polaroid, photo] = await Promise.all([
-      image(SHOTS.window), image(POLAROID), image(PHOTO).then((im) => im || image(PHOTO_FALLBACK)),
+    const [win, polaroid, torn, photo] = await Promise.all([
+      image(SHOTS.window), image(POLAROID), image(TORN), image(PHOTO),
       conference.load().then(() => { this.conference = conference; }).catch((e) => console.warn('Narration: no conference room.', e)),
       ...(this.ac ? NARRATION.map(async (l) => {
         const b = await decode(this.ac, AUDIO + l.clip + '.mp3');
@@ -133,14 +134,8 @@ export class EndingNarration {
     this.shots = { window: win };
     for (const [k, im] of Object.entries(this.shots)) if (!im) console.warn('Narration: no picture for', k, '(', SHOTS[k], ')');
     this.polaroidSrc = polaroid?.src || POLAROID;
-    this.photoSrc = photo?.src || PHOTO_FALLBACK;
-    this.photoIsRestored = !!photo && photo.src.includes('crew-photo');
-    if (this.ac) {
-      const T = this._timeline();
-      this.music = await decode(this.ac, ENDING_TRACK) || await renderEndingMusic(this.ac.sampleRate, {
-        start: T.music, warm: T.families, light: T.troll, rest: T.photo, end: T.end
-      }).catch((e) => { console.warn('Narration: no music.', e); return null; });
-    }
+    this.tornSrc = torn?.src || TORN;
+    this.photoSrc = photo?.src || this.tornSrc;
   }
 
   // When everything happens (s, from the start of the black)
@@ -155,7 +150,6 @@ export class EndingNarration {
     let at = say('n1', 3.0);
     // 2: the Polaroid
     T.polaroid = at + 0.6;
-    T.music = T.polaroid - 0.2;          // (line 1 keeps its silence)
     at = say('n2', T.polaroid + 0.9);
     // 3: the room, ARIA on the screen; the line goes on, and a cut to their faces as it lands
     T.hall = at + 1.0;
@@ -173,11 +167,12 @@ export class EndingNarration {
     // 5: the trolling, from the start of the line
     T.troll = at + 1.2;
     at = say('n5', T.troll + 0.35);
-    // 6: every card of the trolling is down and has been seen; the closing line is the photo's cue;
-    // it is held after it, then black
+    // 6: every card of the trolling is down and has been seen; the closing line is the cue for the
+    // torn print; as it ends the print heals into the whole photo, which is held, then black
     at = say('n6', Math.max(at, T.troll + TROLL_LENGTH + TROLL_HOLD) + 0.7);
     T.photo = L.n6[0] - 0.05;
-    T.black = at + 4.0;
+    T.heal = at - 0.6;
+    T.black = T.heal + HEAL + 3.5;       // (the whole photo and its caption want reading)
     T.end = T.black + 1.6;
     return T;
   }
@@ -240,14 +235,15 @@ export class EndingNarration {
       <div class="en-pic" data-pic="families"><canvas></canvas></div>
       <div class="en-pic" data-pic="window" style="--fade:0.9s"><canvas></canvas></div>
       <div class="en-pic" data-pic="troll" style="--fade:0.5s"></div>
-      <div class="en-pic" data-pic="photo" style="--fade:0.7s"><img class="en-photo" alt="The crew of Halcyon-9"></div>
+      <div class="en-pic" data-pic="photo" style="--fade:3s"><div class="en-photo" style="--heal:${HEAL}s"><img class="en-torn" alt="The crew of Halcyon-9"><img class="en-whole" alt=""></div></div>
       <div class="en-black"></div>
       <div class="en-sub"><div><span class="text narrator"></span></div></div>
       <div class="en-hint">Enter: skip</div>`;
     this.root.appendChild(el);
     this.pics = Object.fromEntries([...el.querySelectorAll('.en-pic')].map((p) => [p.dataset.pic, p]));
     el.querySelector('.en-polaroid').src = this.polaroidSrc;
-    el.querySelector('.en-photo').src = this.photoSrc;
+    el.querySelector('.en-torn').src = this.tornSrc;
+    el.querySelector('.en-whole').src = this.photoSrc;
     this.black = el.querySelector('.en-black');
     this.sub = el.querySelector('.en-sub');
     this.subText = el.querySelector('.text');
@@ -287,12 +283,14 @@ export class EndingNarration {
       if (show === 'photo') requestAnimationFrame(() => this.el.querySelector('.en-photo').classList.add('in'));
       if (show === 'troll') this._startTroll();
     }
+    this.el.querySelector('.en-photo').classList.toggle('healed', t >= T.heal);
     // the pictures, drawn while they show or fade
     const sh = this.shots;
     if (this.conference && t >= T.hall - 0.1 && t < T.families + 1.3) {
       const speak = t - L.n3[0], len = L.n3b[1] - L.n3[0];
-      // (she is telling them, all through the line: her light moves as the hologram's mouth does)
-      const talk = speak > 0 && speak < len ? 0.35 + 0.65 * Math.abs(Math.sin(speak * 11) * Math.sin(speak * 3.7)) : 0;
+      // (she is telling them, all through the line: syllables, and a breath between phrases)
+      const phrase = clamp01((Math.sin(speak * 1.05 + 0.9) + 0.72) * 5);
+      const talk = speak > 0 && speak < len ? phrase * (0.12 + 0.88 * Math.abs(Math.sin(speak * 8.3) * Math.sin(speak * 3.1 + 0.6))) : 0;
       this.conference.draw(t, t - T.hall, t - T.react, talk);
     }
     if (show === 'families' || (t >= T.families - 0.1 && t < T.window + 1)) this._paint('families', t - T.families, (c, w, h, s) => paintFamilies(c, w, h, s, T.window - T.families));
@@ -364,23 +362,6 @@ export class EndingNarration {
       src.start(at + this.T.line[l.id][0]);
       this._sources.push(src);
     }
-    if (this.music) {
-      const T = this.T, src = ac.createBufferSource();
-      src.buffer = this.music;
-      const g = (this._musicGain = ac.createGain());
-      g.gain.value = settings.get('music');
-      const duck = ac.createGain();
-      // down a little under each line, up again in the gaps between them
-      for (const l of NARRATION) {
-        const [a, b] = T.line[l.id];
-        if (b < T.music) continue;
-        duck.gain.setTargetAtTime(MUSIC_UNDER_VOICE, at + a - 0.35, 0.18);
-        duck.gain.setTargetAtTime(1, at + b + 0.1, 0.5);
-      }
-      src.connect(duck).connect(g).connect(ac.destination);
-      src.start(at + T.music);
-      this._sources.push(src);
-    }
   }
 
   _stopSound(fade = 0.3) {
@@ -388,7 +369,6 @@ export class EndingNarration {
     if (!ac || !this._bus) return;
     const now = ac.currentTime;
     this._bus.output.gain.setTargetAtTime(0, now, fade / 4);
-    this._musicGain?.gain.setTargetAtTime(0, now, fade / 4);
     for (const s of this._sources || []) {
       try { s.stop(now + fade + 0.05); } catch { /* (already stopped) */ }
     }
@@ -409,7 +389,6 @@ export class EndingNarration {
     this.ac?.close?.().catch(() => {});
     this.ac = null;
     this.buffers = null;
-    this.music = null;
     this._resolve = null;
   }
 }

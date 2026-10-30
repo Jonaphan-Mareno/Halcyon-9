@@ -34,23 +34,41 @@ const SEATS = {
 const SEAT_DROP = 0.42;       // how far the hips drop into a chair
 const TABLE_Y = 0.74;
 const WIDE = { from: v3(-2.3, 1.62, 2.75), to: v3(-2.05, 1.56, 2.4), aim: v3(0.42, 1.12, -1.25), fov: 52 };
+// (closer on the screen, over their shoulders, so her mouth can be seen)
+const SCREEN_SHOT = { from: v3(0.0, 1.3, 1.5), to: v3(0.03, 1.31, 1.2), aim: v3(0.28, 1.26, -2.57), fov: 36 };
+const SCREEN_CUT = 3.6;       // s into the picture
 const FACES = { from: v3(0.34, 1.26, -1.72), to: v3(0.34, 1.24, -1.42), aim: v3(0.05, 1.02, 1.25), fov: 44 };
 const SHOCK = { jaw_open: 0.5, mouth_wide: 0.06, brow_up: 1.4, brow_inner_up: 1.0, blink: 0 };
 
 // ARIA on the screen: her face in dots, as her hologram draws her, with her name along the bottom.
-// Her light follows her voice while she speaks; a scan line rolls down.
+// While she speaks her mouth moves (the picture is drawn apart at her lips, her chin drops, the dark
+// of her mouth shows between; MOUTH and FACE place it on the canvas of _faceTexture) and her light
+// moves with it; a scan line rolls down.
 const ARIA_SCREEN = {
-  uniforms: { tFace: { value: null }, uTime: { value: 0 }, uTalk: { value: 0 } },
+  uniforms: { tFace: { value: null }, uTime: { value: 0 }, uTalk: { value: 0 }, uWide: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: /* glsl */`
-    uniform sampler2D tFace; uniform float uTime, uTalk;
+    uniform sampler2D tFace; uniform float uTime, uTalk, uWide;
     varying vec2 vUv;
+    const vec2 MOUTH = vec2(0.5625, 0.228), FACE = vec2(0.5175, 0.92);
     void main() {
-      vec3 c = texture2D(tFace, vUv).rgb;
+      vec2 q = (vUv - MOUTH) / FACE;                     // from her lips, in shares of her face
+      float across = smoothstep(0.36, 0.14, abs(q.x));
+      float open = 0.048 * uTalk;
+      // her chin down (most at the lips, nothing past the chin), her top lip up a touch
+      float chin = smoothstep(0.012, -0.012, q.y) * smoothstep(-0.26, -0.1, q.y) * across;
+      float lip = smoothstep(-0.012, 0.012, q.y) * smoothstep(0.1, 0.02, q.y) * across;
+      vec3 c = texture2D(tFace, vUv + vec2(0.0, (chin * open - lip * open * 0.22) * FACE.y)).rgb;
+      // the dark of her mouth between them
+      vec2 m = vec2(q.x / (0.105 + 0.035 * uWide), (q.y + open * 0.4) / (open * 0.62 + 0.0005));
+      float inside = smoothstep(1.0, 0.55, dot(m, m)) * smoothstep(0.0, 0.12, uTalk);
+      // (never a black hole: a dim teal, and the light of her top teeth along its upper edge)
+      vec3 dark = mix(vec3(0.02, 0.09, 0.11), vec3(0.5, 0.8, 0.86), smoothstep(0.15, 0.6, m.y));
+      c = mix(c, dark, inside * 0.92);
       float roll = fract(uTime * 0.17);
       c += vec3(0.015, 0.04, 0.05) * smoothstep(0.03, 0.0, abs(vUv.y - 1.0 + roll));
       c *= 0.94 + 0.06 * sin(vUv.y * 420.0);
-      c *= 1.15 + 0.45 * uTalk + 0.04 * sin(uTime * 2.1);
+      c *= 1.15 + 0.3 * uTalk + 0.04 * sin(uTime * 2.1);
       gl_FragColor = vec4(c, 1.0);
     }`
 };
@@ -249,7 +267,7 @@ export class ConferenceScene {
   }
 
   // t: the narration's clock. shot: s since the picture came up. r: s from the reaction (negative
-  // before it). talk: how much she is talking (0..1).
+  // before it). talk: how far her mouth is open (0..1).
   draw(t, shot, r, talk) {
     if (!this.renderer) return;
     this._fit();
@@ -260,7 +278,8 @@ export class ConferenceScene {
     const steps = Math.min(45, Math.max(1, Math.ceil(dt / (1 / 30))));
     for (let i = 0; i < steps; i++) this._pose(t, r, dt / steps);
     // the camera: the slow push across the room, then its faces
-    const cam = this.camera, shotDef = r >= 0 ? FACES : WIDE, u = r >= 0 ? seg(r, 0, 3.4) : seg(shot, 0, 12);
+    const cam = this.camera, shotDef = r >= 0 ? FACES : shot >= SCREEN_CUT ? SCREEN_SHOT : WIDE;
+    const u = r >= 0 ? seg(r, 0, 3.4) : shot >= SCREEN_CUT ? seg(shot, SCREEN_CUT, SCREEN_CUT + 8) : seg(shot, 0, 7);
     cam.position.lerpVectors(shotDef.from, shotDef.to, u);
     cam.position.x += 0.006 * Math.sin(t * 0.63);
     cam.position.y += 0.004 * Math.sin(t * 0.91);
@@ -273,6 +292,7 @@ export class ConferenceScene {
     const su = this.screen.uniforms;
     su.uTime.value = t;
     su.uTalk.value = talk;
+    su.uWide.value = 0.5 + 0.5 * Math.sin(t * 4.3);
     this.room.screenGlow.intensity = 1.2 + 0.7 * talk;
     const room = this.room, u2 = room.post.material.uniforms;
     u2.uAspect.value = cam.aspect;

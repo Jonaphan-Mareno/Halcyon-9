@@ -64,6 +64,7 @@
   cursor: pointer;
 }
 .pm-btn:hover { background: rgba(0, 229, 255, 0.18); border-color: #00e5ff; }
+.pm-btn:disabled { opacity: 0.4; cursor: not-allowed; background: transparent; }
 .pm-primary { background: rgba(0, 229, 255, 0.16); border-color: #00e5ff; }
 .pm-quiet { margin-top: 1.2rem; opacity: 0.75; }
 .pm-row { display: flex; align-items: center; gap: 0.8rem; margin: 0.65rem 0; font-size: 0.88rem; }

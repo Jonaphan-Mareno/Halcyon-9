@@ -12,7 +12,7 @@ import { precompile } from '../core/precompile.js';
 import { mergeStatic } from '../core/mergeStatic.js';
 import { PlayerController } from '../player/PlayerController.js';
 import { AriaManager } from '../entities/AriaManager.js';
-import { PlayerStats } from '../player/PlayerStats.js';
+import { createSessionPlayer } from '../player/PlayerStats.js';
 import { HUD } from '../ui/HUD.js';
 import { Interact } from '../level2/Interact.js';
 import { projectWaypoint } from '../ui/waypoint.js';
@@ -92,7 +92,7 @@ export class DeckSession {
     this.controls.camDist = 3.2;
 
     const root = document.getElementById('ui-layer');
-    this.player = new PlayerStats();
+    this.player = createSessionPlayer(game.player);
     this.hud = new HUD(root, { onRestart: () => this.game.restartAfterGameOver() });
     this.loadingEl = document.createElement('div');
     this.loadingEl.id = 'level-loading';

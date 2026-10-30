@@ -17,6 +17,7 @@ class Settings {
   constructor() {
     this.values = { ...DEFAULTS };
     this.listeners = new Set();
+    this.difficultyLocked = false;
     try {
       const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
       for (const k of Object.keys(DEFAULTS)) if (typeof saved[k] === typeof DEFAULTS[k]) this.values[k] = saved[k];
@@ -28,6 +29,7 @@ class Settings {
   }
 
   set(key, value) {
+    if (key === 'difficulty' && this.difficultyLocked) return;
     if (!(key in DEFAULTS) || this.values[key] === value) return;
     this.values[key] = value;
     try { localStorage.setItem(KEY, JSON.stringify(this.values)); } catch (e) { /* not saved */ }
@@ -36,6 +38,11 @@ class Settings {
 
   reset() {
     for (const [k, v] of Object.entries(DEFAULTS)) this.set(k, v);
+  }
+
+  // A permadeath run keeps its rules until the player returns to the title (a page reload).
+  lockDifficulty() {
+    this.difficultyLocked = true;
   }
 
   // fn(key, value) is called whenever an option changes

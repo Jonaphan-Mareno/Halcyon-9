@@ -554,6 +554,66 @@ body, html {
 }
 #gameover-restart:hover { background: var(--primary-color); color: var(--bg-color); box-shadow: 0 0 18px var(--primary-color); }
 
+#gameover-mode, #gameover-backups, #gameover-final { display: none; }
+#gameover-screen.permadeath {
+  background:
+    repeating-linear-gradient(0deg, transparent 0 3px, rgba(255, 70, 70, 0.018) 3px 4px),
+    radial-gradient(ellipse at center, #210408 0%, #070102 58%, #000 100%);
+}
+#gameover-screen.permadeath::before {
+  content: '';
+  position: absolute;
+  inset: 1.5rem;
+  border: 1px solid rgba(255, 75, 75, 0.18);
+  pointer-events: none;
+}
+#gameover-screen.permadeath #gameover-mode {
+  display: block;
+  margin-bottom: 1rem;
+  color: #ff9b9b;
+  font-size: 0.75rem;
+  letter-spacing: 0.32rem;
+}
+#gameover-screen.permadeath #gameover-title {
+  max-width: calc(100vw - 3rem);
+  font-size: clamp(2rem, 5vw, 4.4rem);
+  letter-spacing: clamp(0.2rem, 1vw, 0.8rem);
+  text-align: center;
+}
+#gameover-screen.permadeath #gameover-backups {
+  display: grid;
+  width: min(28rem, calc(100vw - 4rem));
+  margin-top: 2rem;
+  border-top: 1px solid rgba(255, 85, 85, 0.3);
+  border-bottom: 1px solid rgba(255, 85, 85, 0.3);
+}
+#gameover-backups > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 0.7rem 0.9rem;
+  color: rgba(255, 220, 220, 0.65);
+  font-size: 0.72rem;
+  letter-spacing: 0.16rem;
+}
+#gameover-backups > div + div { border-top: 1px solid rgba(255, 85, 85, 0.14); }
+#gameover-backups b { color: #ff5555; font-weight: 400; }
+#gameover-screen.permadeath #gameover-aria { color: #9bbcff; }
+#gameover-screen.permadeath #gameover-final {
+  display: block;
+  margin-top: 1.4rem;
+  color: #ff8b8b;
+  font-size: 0.75rem;
+  letter-spacing: 0.18rem;
+  text-align: center;
+}
+#gameover-screen.permadeath #gameover-restart { color: #ffb0b0; border-color: #ff5555; }
+#gameover-screen.permadeath #gameover-restart:hover {
+  background: #ff5555;
+  color: #140305;
+  box-shadow: 0 0 18px rgba(255, 85, 85, 0.65);
+}
+
 #inventory {
   position: absolute;
   inset: 0;

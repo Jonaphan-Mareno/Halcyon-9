@@ -120,6 +120,17 @@ export class PauseMenu {
     this.inputs.difficulty.value = settings.get('difficulty');
     this.el.querySelector('[data-difficulty-note]').textContent = getDifficulty().description;
     this.inputs.fps.checked = settings.get('fps');
+    this.syncRunRules();
+  }
+
+  syncRunRules() {
+    const locked = settings.difficultyLocked;
+    this.inputs.difficulty.disabled = locked;
+    const restart = this.el.querySelector('[data-act="restart"]');
+    restart.disabled = locked;
+    restart.title = locked ? 'Level restarts are unavailable during a permadeath run.' : '';
+    this.el.querySelector('[data-difficulty-note]').textContent = getDifficulty().description +
+      (locked ? ' Difficulty is fixed for this run.' : '');
   }
 
   _buildControls() {
@@ -164,7 +175,9 @@ export class PauseMenu {
       case 'controls': this._page('controls'); break;
       case 'back': this._page('main'); break;
       case 'defaults': settings.reset(); break;
-      case 'restart': this._confirm('Restart this level from the beginning? Your progress in it will be lost.', () => this.hooks.restartLevel()); break;
+      case 'restart':
+        if (!settings.difficultyLocked) this._confirm('Restart this level from the beginning? Your progress in it will be lost.', () => this.hooks.restartLevel());
+        break;
       case 'title': this._confirm('Go back to the title screen? Your progress will be lost.', () => this.hooks.toTitle()); break;
       case 'yes': { const fn = this._yes; this._yes = null; fn?.(); break; }
       case 'no': this._page('main'); break;

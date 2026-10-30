@@ -1,4 +1,5 @@
 import { damageAmount, getDifficulty } from '../core/Difficulty.js';
+import { settings } from '../core/Settings.js';
 
 // Voss's condition and running statistics.
 //
@@ -8,6 +9,12 @@ import { damageAmount, getDifficulty } from '../core/Difficulty.js';
 
 export const MAX_INTEGRITY = 100;
 export const MAX_RESTORES = 3; // the standard (Medium) number, for displays that need a default
+
+// Only a running permadeath game carries its player into the next level. A new game must use
+// the title's current selection, which may differ from the preference when Game was constructed.
+export function createSessionPlayer(previous) {
+  return settings.difficultyLocked && previous.difficulty.permadeath ? previous : new PlayerStats();
+}
 
 export class PlayerStats {
   constructor() {

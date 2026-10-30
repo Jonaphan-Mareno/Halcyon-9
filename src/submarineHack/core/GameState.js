@@ -1,6 +1,9 @@
+import { puzzleSeconds } from "../../core/Difficulty.js";
+
 export class GameState {
   constructor() {
-    this.timeRemaining = 30;
+    this.timeLimit = puzzleSeconds(30);
+    this.timeRemaining = this.timeLimit;
     this.pingCooldown = 0;
     this.pingCooldownMax = 3;
     this.wardenTimer = 6;

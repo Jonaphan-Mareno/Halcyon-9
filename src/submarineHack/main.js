@@ -18,10 +18,13 @@ import { startWarden } from "./systems/warden.js";
 import { updateHud } from "./ui/hud.js";
 import { sfx } from "./audio/audio.js";
 
+const gameState = new GameState();
+document.querySelector("#round-time").textContent = String(gameState.timeLimit);
+document.querySelector("#timer").title = `Take control of ARIA's uplink before the ${gameState.timeLimit}-second breach window closes.`;
+
 const canvas = document.querySelector("#game");
 const { renderer, scene, camera, controls } = createScene(canvas);
 const graph = buildLayout(new Graph());
-const gameState = new GameState();
 gameState.activeNodeId = graph.blueCoreId;
 
 function playSeveredEffects(nodeIds = []) {
@@ -105,7 +108,7 @@ function showNodeTooltip(node, event) {
 function startRound() {
   if (roundStarted) return;
   roundStarted = true;
-  gameState.timeRemaining = 30;
+  gameState.timeRemaining = gameState.timeLimit;
   gameState.aiTimer = gameState.aiTickInterval;
   document.querySelector("#tutorial-screen").hidden = true;
   canvas.focus({ preventScroll: true });

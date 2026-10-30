@@ -205,6 +205,7 @@ export class Game {
 
   // Puzzle and story flags that start fresh on a new run
   _resetProgress() {
+    this._gameOverDifficulty = null;
     this._puzzleIntroSeen = false;
     this._tutorialSeen = false;
     this._dying = false;
@@ -362,6 +363,7 @@ export class Game {
     if (kind === '3') preloadVoices(3);
     else if (kind === '2') { preloadVoices(2); preloadVoices(3); }   // (Level 3's queue up behind Level 2's)
     this.level2 = new sessions[kind](this);
+    this.player = this.level2.player;
   }
 
   // ---------------------------------------------------------
@@ -378,27 +380,39 @@ export class Game {
   // All his lives spent in Level 2 or 3: ARIA's last words, then the level from its beginning
   // (the RESTART button on the game over screen)
   sessionGameOver(hud, player) {
+    if (this.state === 'DEAD' || this.state === 'GAME_OVER') return;
+    const session = this.level2;
+    this._gameOverDifficulty = player.difficulty;
+    this.state = 'DEAD';
+    this.pauseMenu.close();
+    session.controls?.stop?.();
+    if (session.controls?.instance) session.controls.instance.enabled = false;
+    this.reticle.classList.remove('visible');
+    hud.setVisible(false);
     hud.showDeath('SIGNAL LOST', 'Your health ran out...');
     setTimeout(() => {
-      if (!this.level2 || this.level2.disposed) return;
+      if (this.level2 !== session || session.disposed) return;
       hud.hideDeath();
       this.state = 'GAME_OVER';
       this.level2.controls?.instance?.unlock?.();
       document.exitPointerLock?.();
       playClip(ARIA_GAME_OVER_CLIP, 1);
       hud.showGameOver(ARIA_GAME_OVER_TEXT,
-        `Times revived ${player.deaths}   |   Time ${formatTime(player.playSeconds)}`);
+        `Times revived ${player.deaths}   |   Time ${formatTime(player.playSeconds)}`,
+        this._gameOverDifficulty);
     }, 2200);
   }
 
   restartSession() {
+    if (this.player.difficulty.permadeath) return;
     this._swapSession(this.startLevel);
   }
 
   // The game-over screen's action. Ordinary difficulties restart the current level; Super hard
   // ends the run altogether and returns to the title instead of offering another attempt.
   restartAfterGameOver() {
-    if (getDifficulty().permadeath) {
+    if (this.state !== 'GAME_OVER') return;
+    if ((this._gameOverDifficulty || this.player.difficulty).permadeath) {
       window.location.href = window.location.pathname;
       return;
     }
@@ -409,6 +423,7 @@ export class Game {
   // The running Level 2 or 3 session torn down (its scene, physics, listeners and screens) and
   // a fresh one of the given kind built in its place
   _swapSession(kind) {
+    this._gameOverDifficulty = null;
     this.state = 'DEPARTING';
     this.level2?.dispose?.();
     this.level2 = null;
@@ -544,12 +559,12 @@ export class Game {
     this.state = 'PLAYING';
   }
 
-  // Level 1 starts again in place; Level 2 reloads straight into its lift (until Level 2 can be
-  // torn down and rebuilt in place)
+  // Ordinary runs can restart the current level; permadeath runs must keep their remaining lives.
   restartLevel() {
+    if (this.player.difficulty.permadeath) return;
     if (this.level2Mode) {
       const debug = new URLSearchParams(window.location.search).has('debug');
-      window.location.href = window.location.pathname + '?level=2' + (debug ? '&debug' : '');
+      window.location.href = window.location.pathname + '?level=' + this.startLevel + (debug ? '&debug' : '');
       return;
     }
     this.pauseMenu.close();
@@ -562,6 +577,7 @@ export class Game {
   // Apply the options: volumes, mouse speed, quality, the frame counter
   applySettings() {
     const s = settings;
+    if (getDifficulty().permadeath) s.lockDifficulty();
     this.music?.setVolume(s.get('music'));
     this.audio?.setVolume(s.get('effects'));
     const garden = this.level2?.garden;
@@ -576,7 +592,8 @@ export class Game {
     document.body.classList.toggle('hide-fps', !s.get('fps'));
     this.perf?.setMode(s.get('quality'));
     this.level2?.setQualityMode?.(s.get('quality'));
-    for (const player of [this.player, this.level2?.player]) player?.setDifficulty?.();
+    for (const player of new Set([this.player, this.level2?.player])) player?.setDifficulty?.();
+    this.pauseMenu?.syncRunRules();
   }
 
   // ---------------------------------------------------------
@@ -1665,13 +1682,15 @@ export class Game {
 
     if (!this.player.hasRestoreLeft) {
       // No lives left
+      this._gameOverDifficulty = this.player.difficulty;
       this.state = 'GAME_OVER';
       document.exitPointerLock?.();
       const p = this.player;
       playClip(ARIA_GAME_OVER_CLIP, 1);
       this.hud.showGameOver(
         ARIA_GAME_OVER_TEXT,
-        `Overloads ${p.overloads}   |   Times revived ${p.deaths}   |   Puzzles solved ${p.puzzlesSolved}   |   Time ${formatTime(p.playSeconds)}`
+        `Overloads ${p.overloads}   |   Times revived ${p.deaths}   |   Puzzles solved ${p.puzzlesSolved}   |   Time ${formatTime(p.playSeconds)}`,
+        this._gameOverDifficulty
       );
       return;
     }
@@ -1695,6 +1714,7 @@ export class Game {
   // Start over without refreshing the page: tear the level down, rebuild it,
   // reset everything and wake Voss up again
   restart() {
+    if (this.player.difficulty.permadeath) return;
     this.hud.hideGameOver();
     this.hud.hideDeath();
     this.hud.hideTutorial();

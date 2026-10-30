@@ -67,9 +67,15 @@ export class HUD {
 
     this.gameOver = this._div('gameover-screen');
     this.gameOver.innerHTML = `
+      <div id="gameover-mode">LAST BACKUP // PERMADEATH</div>
       <div id="gameover-title">CONNECTION LOST</div>
+      <div id="gameover-backups" aria-label="Restore status">
+        <div><span>INITIAL INSTANCE</span><b>LOST</b></div>
+        <div><span>LAST BACKUP</span><b>LOST</b></div>
+      </div>
       <div id="gameover-aria"></div>
       <div id="gameover-stats"></div>
+      <div id="gameover-final">NO RESTORES REMAIN. THIS RUN IS OVER.</div>
       <button id="gameover-restart">RESTART</button>`;
     this.gameOverAria = this.gameOver.querySelector('#gameover-aria');
     this.gameOverStats = this.gameOver.querySelector('#gameover-stats');
@@ -157,10 +163,11 @@ export class HUD {
     this.death.classList.remove('visible');
   }
 
-  showGameOver(ariaText, statsText) {
-    const permadeath = getDifficulty().permadeath;
-    this.gameOverTitle.textContent = permadeath ? 'PERMADEATH' : 'CONNECTION LOST';
-    this.restartButton.textContent = permadeath ? 'BACK TO TITLE' : 'RESTART';
+  showGameOver(ariaText, statsText, difficulty = getDifficulty()) {
+    const permadeath = difficulty.permadeath;
+    this.gameOver.classList.toggle('permadeath', permadeath);
+    this.gameOverTitle.textContent = permadeath ? 'LAST BACKUP LOST' : 'CONNECTION LOST';
+    this.restartButton.textContent = permadeath ? 'RETURN TO TITLE' : 'RESTART';
     this.gameOverAria.textContent = ariaText;
     this.gameOverStats.textContent = statsText;
     this.gameOver.classList.add('visible');

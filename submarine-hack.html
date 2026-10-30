@@ -8,7 +8,7 @@
 <body>
   <div id="hud" aria-label="Game status">
     <div class="hud-label">ARIA UPLINK OVERRIDE</div>
-    <div id="timer" role="timer" aria-live="off" title="Take control of ARIA's uplink before the 30-second breach window closes.">00:30</div>
+    <div id="timer" role="timer" aria-live="off" title="Take control of ARIA's uplink before the breach window closes.">--:--</div>
     <div class="ping-row" title="Press Space while a powered Blue node is selected to reveal nearby nodes. Cooldown: 3 seconds.">
       <span>SONAR / SPACE</span>
       <span id="ping-state">READY</span>
@@ -36,7 +36,7 @@
   </aside>
   <section id="tutorial-screen" aria-labelledby="tutorial-title">
     <div class="tutorial-card">
-      <div class="tutorial-kicker">ARIA NETWORK · 30 SECOND OVERRIDE</div>
+      <div class="tutorial-kicker">ARIA NETWORK · <span id="round-time">…</span> SECOND OVERRIDE</div>
       <h1 id="tutorial-title">Take the network. Override ARIA.</h1>
       <p class="tutorial-summary">ARIA has sealed the cable uplink behind a live firewall. Fight through her network, seize the gold override node, and hold a powered connection to your access core before the breach window closes.</p>
       <ol class="tutorial-steps">

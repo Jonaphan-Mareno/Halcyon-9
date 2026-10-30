@@ -32,7 +32,7 @@ import { Gates } from './Gates.js';
 import { KeypadUI } from '../ui/KeypadUI.js';
 import { Garden } from './Garden.js';
 import { Robot } from '../entities/Robot.js';
-import { PlayerStats, MAX_INTEGRITY } from '../player/PlayerStats.js';
+import { createSessionPlayer, MAX_INTEGRITY } from '../player/PlayerStats.js';
 import { HUD } from '../ui/HUD.js';
 import { FightHelp } from '../ui/FightHelp.js';
 import { Readables } from './Readables.js';
@@ -155,7 +155,7 @@ export class HabitatSession {
 
     const root = document.getElementById('ui-layer');
     // Voss's health (integrity), the same as in Level 1, on the same HUD
-    this.player = new PlayerStats();
+    this.player = createSessionPlayer(game.player);
     this.hud = new HUD(root, { onRestart: () => this.game.restartAfterGameOver() });
     this.fightHelp = new FightHelp(root);
     // everything he reads, hears or watches upstairs (the game waits while it is open)

@@ -130,7 +130,8 @@ Voss's crewmates Lindqvist, Navarro and Park (`public/assets/models/lindqvist.gl
 on "Female scientist" above, recoloured; Navarro and Park on Voss's), built by
 `Blender/scripts/build_crew_head.py` (the sources are `Blender/assets/lindqvist.glb`, `navarro.glb`
 and `park.glb`). Their eyeballs are
-Angelica's (above), the irises recoloured.
+Angelica's (above), the irises recoloured. Navarro's and Park's models also play the two rescue divers
+in the "Stay" ending (in Level 3's dive suit, helmets off).
 
 | Model | Author | Used for | Link |
 |---|---|---|---|
@@ -169,16 +170,16 @@ hologram's flicker, the scrape of the plug over the floor and the low hum's tone
 | Pack | Author | Used for | Link |
 |---|---|---|---|
 | RPG Audio | Kenney (kenney.nl) | creaks, doors, cloth (the suit), latches, clicks | https://kenney.nl/assets/rpg-audio |
-| Sci-fi Sounds | Kenney | hatches, the prep room's machine hum (also the hum under Level 2's arm fusebox puzzle), the thrusters, the suit's seal, the slam, console beeps, the chute's low rumble, the weight under the metal bangs | https://kenney.nl/assets/sci-fi-sounds |
+| Sci-fi Sounds | Kenney | hatches, the prep room's machine hum (also the hum under Level 2's arm fusebox puzzle and in Voss's lab in the "Stay" ending), the thrusters (also the rescue submarines in the "Stay" ending), the suit's seal, the slam, console beeps, the chute's low rumble, the weight under the metal bangs | https://kenney.nl/assets/sci-fi-sounds |
 | Impact Sounds | Kenney | pipe knocks, hits, the spear striking flesh and rock, the chute's joints clacking past and the dogs letting go | https://kenney.nl/assets/impact-sounds |
 | Interface Sounds | Kenney | the pickup chime, confirm/error beeps, the low-air tick | https://kenney.nl/assets/interface-sounds |
 | Tinysized SFX | Vehicle (Jan Schupke, vehiclemusic.eu) | floor creak, metal groans, water drops, the lock filling, air hiss, the harpoon, whooshes, the chute's metal grinding (knife and fork scrapes, slowed down) | https://opengameart.org/content/fantasy-sound-effects-tinysized-sfx |
 | Loopable Dungeon Ambience | JaggedStone | the deck's rumble and drips (and, slowed, the deep sea's) | https://opengameart.org/content/loopable-dungeon-ambience |
-| Bubble sound effects | Brian MacIntosh (BMacZero) | bubbles: his breath, the lock, the sea | https://opengameart.org/content/bubble-sound-effects |
+| Bubble sound effects | Brian MacIntosh (BMacZero) | bubbles: his breath, the lock, the sea (and round the rescue submarines in the "Stay" ending) | https://opengameart.org/content/bubble-sound-effects |
 | CC0 Deep Monster Roar | trazzz123 | the kraken's roar | https://opengameart.org/content/cc0-deep-monster-roar |
 | 80 CC0 creature SFX | rubberduck | the kraken's screams, growls, hiss and snapping jaws (pitched down), its shrieks and siren scream (the screams layered high and low, stretched and roughened), and the chorus of shrill voices screaming at once | https://opengameart.org/content/80-cc0-creature-sfx |
 | Gunshot sounds | Tabasco (Vincent Sevedge) | the rifle's shots: an SKS and a Mosin-Nagant recorded at a range, cleaned of their background noise and layered (the page says CC0, the files' own note CC-BY 3.0: credited here either way) | https://opengameart.org/content/gunshot-sounds |
-| Pixabay sound effects | universfield, shakil10000, floraphonic, emilianodleon, freesound_community, frigginmouse (via pixabay.com, Pixabay Content License) | the window breaking in Level 1, its cell door opening, the lift's ding in Levels 1 and 2, Level 2's garden robots, the keypads' buttons, paper picked up, machines' buttons, the hatch opening in Level 2, the splash into Level 3's water, wading through it, the hits in the chute, and the crowd of screams in the kraken's (public/assets/audio/sound-effects/) | https://pixabay.com/sound-effects/ |
+| Pixabay sound effects | universfield, shakil10000, floraphonic, emilianodleon, freesound_community, frigginmouse (via pixabay.com, Pixabay Content License) | the window breaking in Level 1, its cell door opening, the lift's ding in Levels 1 and 2, Level 2's garden robots, the keypads' buttons, paper picked up (and Voss's research notes in the "Stay" ending), machines' buttons, the hatch opening in Level 2, the splash into Level 3's water, wading through it, the hits in the chute, and the crowd of screams in the kraken's (public/assets/audio/sound-effects/) | https://pixabay.com/sound-effects/ |
 | Sinister Boss Appears (music) | cynicmusic (cynicmusic.com, pixelsphere.org) | the kraken fight's base track (`level3-kraken.ogg`) | https://opengameart.org/content/sinister-boss-appears |
 | Dramatic Boss Encounter (music) | cynicmusic | the fight's rising drum layer (`level3-kraken-intense.ogg`) | https://opengameart.org/content/dramatic-boss-encounter |
 | Aquaria (music) | cynicmusic | the quiet music out in the sea (`level3-sea.ogg`) | https://opengameart.org/content/aquaria |

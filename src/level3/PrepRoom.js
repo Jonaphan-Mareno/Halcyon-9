@@ -39,6 +39,7 @@ const SUIT_HOLD = 2.0;              // seconds holding E to put the suit on
 const UP_HERE = -10.4, DOWN_THERE = -10.0;   // the stairwell's x where the room's lights take over (and back)
 const OUT_HERE = -25.7, IN_THERE = -25.3;    // past the outer hatch: outside (and back in)
 const PLATFORM_X = -28.8;                    // past the hull: on the platform
+const PLATFORM_EDGE = -34.6;                 // near its far edge (it ends at -36.4), before the water
 const VIEW_TIME = 20;                        // the first time out: seconds to take in the view (the air holds meanwhile)
 const LOOK_UP = 0.38;                        // ... and how far his head tilts up at it (radians)
 const PREP_LIGHTS = [               // colour, candela, range: the stairwell lamp, the two panels, the lock lamp
@@ -355,7 +356,14 @@ export class PrepRoom {
       this._outside = true;
       this._view = VIEW_TIME;
       this.s.sfx?.swellSea(VIEW_TIME + 6);
-      this.s.say('ocean');
+      this.oceanTalk = new Promise((r) => { this._oceanTalkDone = r; });   // (ARIA's line, then his)
+      this.s.say('ocean').then(() => { this._ariaSaidOcean = true; });
+    }
+    // and once ARIA has said it, out by the platform's edge (or already off it), his own "I feel
+    // so free", looking out over the water
+    if (this._ariaSaidOcean && !this._saidFree && (p.x < PLATFORM_EDGE || p.y < 0)) {
+      this._saidFree = true;
+      this.s.say('free').then(() => this._oceanTalkDone?.());
     }
     if (this._view > 0) this._viewStep(dt, playing);
   }

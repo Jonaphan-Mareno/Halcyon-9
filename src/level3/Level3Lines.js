@@ -80,7 +80,8 @@ export const TALKS = {
   suit: ['l3suit'],
   needSuit: ['v-need-suit'],
   needCable: ['v-need-cable'],
-  ocean: ['l3-ocean', 'v-free'],
+  ocean: ['l3-ocean'],
+  free: ['v-free'],             // (said later, at the platform's edge: PrepRoom)
   harpoon: ['v-harpoon'],
   needHarpoon: ['v-need-harpoon'],
   descend: ['l3-trench-1'],

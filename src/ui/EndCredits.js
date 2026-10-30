@@ -1,9 +1,14 @@
 import { CREDITS_HTML } from '../intro/credits.js';
+import { settings } from '../core/Settings.js';
+import { audioSrc } from '../audio/AudioCache.js';
 
 // The credits at the end of the game: CREDITS.md (the same text as the opening menu's CREDITS
 // screen, src/intro/credits.js, in the same look), rolling slowly up from below, under the game's
 // title. The wheel or the arrow keys scroll it by hand; Enter, Esc or the button closes it, as
 // does reaching its end (after a short hold). show() resolves when it has closed.
+//
+// The song fades in as they start, whichever ending came before, and out as they close. It follows
+// the Music slider and, through isMuted, the M key.
 
 const STYLE = `
 @font-face { font-family: 'Orbitron'; src: url('./assets/fonts/orbitron.ttf') format('truetype'); font-weight: 400 900; font-display: block; }
@@ -38,8 +43,38 @@ const STYLE = `
 
 const SPEED = 38;        // px a second
 const HOLD = 4;          // seconds held at the end before it closes
+export const CREDITS_SONG = './assets/audio/ending/credits.mp3';
+const SONG_LEVEL = 0.7;  // at full Music volume
+const SONG_IN = 4;       // seconds of fade in
+const SONG_OUT = 1.6;    // seconds of fade out, as the screen fades
 
-export function showEndCredits(root = document.body) {
+// Starts the song; returns a function that fades it out and stops it
+function playSong(isMuted) {
+  const audio = new Audio(audioSrc(CREDITS_SONG));
+  audio.loop = true;
+  audio.volume = 0;
+  audio.play().catch(() => {});
+  let fade = 0, closing = false, last = performance.now();
+  const timer = setInterval(() => {
+    const now = performance.now(), dt = (now - last) / 1000;
+    last = now;
+    // (the fade waits for the song: on a slow server it may take a moment to start)
+    if (closing) fade -= dt / SONG_OUT;
+    else if (audio.currentTime > 0) fade += dt / SONG_IN;
+    fade = Math.min(1, Math.max(0, fade));
+    audio.volume = isMuted() ? 0 : SONG_LEVEL * settings.get('music') * fade * fade;
+    if (closing && fade === 0) {
+      clearInterval(timer);
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    }
+  }, 50);
+  return () => { closing = true; };
+}
+
+export function showEndCredits(root = document.body, isMuted = () => false) {
+  const stopSong = playSong(isMuted);
   const style = document.createElement('style');
   style.textContent = STYLE;
   document.head.appendChild(style);
@@ -65,6 +100,7 @@ export function showEndCredits(root = document.body) {
       done = true;
       cancelAnimationFrame(raf);
       window.removeEventListener('keydown', onKey, true);
+      stopSong();
       el.classList.remove('on');
       setTimeout(() => {
         el.remove();

@@ -40,7 +40,8 @@ import { SceneB } from './SceneB.js';
 import { EndingNarration } from './EndingNarration.js';
 import { SceneC } from './scene-c.js';
 import { NarrationC } from './narration-c.js';
-import { showEndCredits } from '../ui/EndCredits.js';
+import { showEndCredits, CREDITS_SONG } from '../ui/EndCredits.js';
+import { preloadAudio } from '../audio/AudioCache.js';
 import { buildLockPanel, Sparks, crackle, PANEL_SIZE } from './LockPanel.js';
 import '../ui/level3.css';
 import { LINES, TALKS } from './Level3Lines.js';
@@ -914,6 +915,7 @@ export class DeckSession {
   _preloadEnding() {
     const webgl = this.game.renderer.instance;
     if (!this.confrontation?.ready) return null;
+    preloadAudio([CREDITS_SONG]);                  // (the credits' song, for either ending)
     this.sceneB ||= new SceneB(this.confrontation);
     this.narration ||= new EndingNarration(document.body);
     this.narration.preload();
@@ -978,7 +980,7 @@ export class DeckSession {
     await narration.play();
     if (this.disposed) return;
     this.ending = { running: true, render: (r) => { r.setRenderTarget(null); r.setClearColor(0x000000, 1); r.clear(); } };
-    const credits = showEndCredits(document.body);
+    const credits = showEndCredits(document.body, () => g.audio?.musicMuted);
     await sleep(1700);
     narration.dispose();
     this.narrationC = null;
@@ -1023,7 +1025,7 @@ export class DeckSession {
     await narration.play();
     if (this.disposed) return;
     // the credits; behind them, what is left of the ending is freed
-    const credits = showEndCredits(document.body);
+    const credits = showEndCredits(document.body, () => g.audio?.musicMuted);
     await sleep(1700);
     narration.dispose();
     sceneB?.dispose();

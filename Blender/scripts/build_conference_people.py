@@ -12,6 +12,10 @@ in small textures (the badge and the fold detail blurred away), the bodies thinn
 Run (from the repo root), then compress with the last line:
   blender -b --factory-startup --python Blender/scripts/build_conference_people.py -- [name] [preview dir]
   npm run optimize-models -- conf-man-1.glb conf-man-2.glb conf-man-3.glb conf-woman-1.glb conf-woman-2.glb conf-woman-3.glb
+
+Its FAMILY (old people and their young families, for render_ending_families.py; only the pictures
+ship) go to a folder of your own instead, with a smile among their morphs:
+  blender -b --factory-startup --python Blender/scripts/build_conference_people.py -- family <dir>
 """
 import os, sys, math
 import bpy, bmesh
@@ -21,8 +25,8 @@ from mathutils import Vector
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 MODELS = os.path.join(ROOT, 'public', 'assets', 'models')
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
-ONLY = argv[0] if argv and argv[0] != 'all' else None
-PREVIEW = argv[1] if len(argv) > 1 else None
+FAMILY_DIR = argv[1] if len(argv) > 1 and argv[0] == 'family' else None
+ONLY = argv[0] if argv and argv[0] not in ('all', 'family') else None
 
 KEEP_MORPHS = ('jaw_open', 'mouth_wide', 'mouth_frown', 'blink', 'brow_up', 'brow_inner_up')
 TEX = 256            # the clothes, the hands
@@ -37,6 +41,14 @@ PEOPLE = {
     'conf-woman-1': dict(base='kessler', suit='#f2efe8', shirt='#55606a', pants='#2d2f36', skin=(0.8, 0.66, 0.54), hair='bun', hair_col='#17130f', brows='#17130f', shape=dict(wide=0.3, long=-0.2)),
     'conf-woman-2': dict(base='kessler', suit='#5c1f2c', shirt='#ece4da', pants='#2a1a20', skin=(1.0, 0.92, 0.86), hair='bob', hair_col='#d8b56e', brows='#8c6e3f', shape=dict(wide=-0.2, long=0.5)),
     'conf-woman-3': dict(base='kessler', suit='#3a3d44', shirt='#d9dce0', pants='#26282d', skin=(0.46, 0.32, 0.24), hair='ponytail', hair_col='#120e0c', brows='#120e0c', shape=dict(wide=0.5, long=0.1)),
+}
+FAMILY = {
+    'old-man': dict(base='voss', suit='#7b6a55', shirt='#e9e2d4', pants='#4a4640', skin=(0.98, 0.9, 0.86), hair='short', hair_col='#e8e6e0', brows='#d8d6d0', shape=dict(wide=0.2, long=0.5, brow=0.5)),
+    'old-woman': dict(base='kessler', suit='#9c7f93', shirt='#efe7dc', pants='#4f4a4c', skin=(0.98, 0.9, 0.86), hair='bun', hair_col='#ecebe6', brows='#c9c7c2', shape=dict(wide=0.1, long=0.3)),
+    'gran': dict(base='kessler', suit='#5f8078', shirt='#ece4d6', pants='#3e4442', skin=(0.5, 0.36, 0.28), hair='short', hair_col='#e6e4de', brows='#b8b6b0', shape=dict(wide=0.5, long=0.1)),
+    'young-woman': dict(base='kessler', suit='#c4683a', shirt='#f0e8da', pants='#34405a', skin=(1.0, 0.9, 0.8), hair='bob', hair_col='#4a2f1c', brows='#3a2414', shape=dict(wide=-0.2, long=-0.1)),
+    'young-man': dict(base='voss', suit='#3b6a8c', shirt='#ece8e0', pants='#2c3038', skin=(0.86, 0.68, 0.54), hair='short', hair_col='#241a14', brows='#241a14', shape=dict(wide=0.3, long=-0.3, brow=0.1)),
+    'child': dict(base='kessler', suit='#e0b13c', shirt='#f4efe4', pants='#5c6f8c', skin=(1.0, 0.86, 0.74), hair='ponytail', hair_col='#6a3f1e', brows='#5a3518', shape=dict(wide=0.6, long=-0.8)),
 }
 FILES = {'voss': 'human_scientist_v2.glb', 'kessler': 'kessler.glb'}
 
@@ -185,7 +197,7 @@ def drop_morphs(o):
     if not keys:
         return
     for k in list(keys.key_blocks)[1:]:
-        if k.name not in KEEP_MORPHS:
+        if k.name not in KEEP_MORPHS and not (FAMILY_DIR and k.name == 'mouth_smile'):
             o.shape_key_remove(k)
 
 
@@ -287,7 +299,7 @@ def grow(o, frame, kind, material, thick, lumps=1.0):
     for v in new_verts:
         depth = hairline(v.co, frame, kind)
         k = float(smooth(0.0, 0.1, depth))
-        push = v.normal * thick * (0.12 + 0.88 * k) * (1 + lumps * 0.32 * noise(v.co, 95))
+        push = v.normal * thick * ((0.02 if FAMILY_DIR else 0.12) + (0.98 if FAMILY_DIR else 0.88) * k) * (1 + lumps * 0.32 * noise(v.co, 95))
         v.co += push
         for l in layers:
             v[l] += push
@@ -375,7 +387,7 @@ def build(name, c):
         for m in o.data.materials:
             n = m.name.split('.')[0]
             if n == 'M_Coat':
-                recolour_clothes(m, suit, soft=3)
+                recolour_clothes(m, suit, soft=12 if FAMILY_DIR else 3)   # (their clothes: no badge)
             elif n == 'M_Shirt':
                 recolour_clothes(m, shirt)
             elif n == 'M_Pants':
@@ -389,6 +401,32 @@ def build(name, c):
                 set_image(m, a)
             elif n == 'M_Head':
                 recolour_head(m, c['skin'], srgb(c['hair_col']), srgb(c['brows']), c['base'], bald=c['hair'] == 'fringe')
+
+    # (the family are not staff: the ID badge off the shirt's mesh, where it is a part of its own)
+    if FAMILY_DIR:
+        for o in [x for x in bpy.data.objects if x.type == 'MESH' and x.name.startswith('Shirt')]:
+            bm = bmesh.new()
+            bm.from_mesh(o.data)
+            bm.verts.ensure_lookup_table()
+            seen, parts = set(), []
+            for v in bm.verts:
+                if v in seen:
+                    continue
+                part, todo = [], [v]
+                seen.add(v)
+                while todo:
+                    u = todo.pop()
+                    part.append(u)
+                    for e in u.link_edges:
+                        w = e.other_vert(u)
+                        if w not in seen:
+                            seen.add(w)
+                            todo.append(w)
+                parts.append(part)
+            parts.sort(key=len, reverse=True)
+            bmesh.ops.delete(bm, geom=[v for part in parts[1:] for v in part], context='VERTS')
+            bm.to_mesh(o.data)
+            bm.free()
 
     # bodies thinned (no morphs on them)
     parts = [o for o in bpy.data.objects if o.type == 'MESH' and o is not head]
@@ -419,13 +457,13 @@ def build(name, c):
 
     # everything skinned, sharing one armature; the file
     bpy.ops.object.select_all(action='SELECT')
-    out = os.path.join(MODELS, name + '.glb')
+    out = os.path.join(FAMILY_DIR or MODELS, name + '.glb')
     bpy.ops.export_scene.gltf(filepath=out, export_format='GLB', use_selection=False, export_animations=True, export_animation_mode='NLA_TRACKS',
                               export_force_sampling=True, export_frame_step=4, export_skins=True, export_morph=True, export_morph_normal=False,
                               export_image_format='WEBP', export_image_quality=72, export_apply=False)
     print('wrote', out, os.path.getsize(out) // 1024, 'KB')
 
 
-for name, c in PEOPLE.items():
+for name, c in (FAMILY if FAMILY_DIR else PEOPLE).items():
     if not ONLY or ONLY == name:
         build(name, c)

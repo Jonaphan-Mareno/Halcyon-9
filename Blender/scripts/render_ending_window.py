@@ -30,7 +30,7 @@ for o in cast.V:
 
 # The window, in the ward's wall (her room: floor z 0, she looks out toward -y)
 WALL_IN, WALL_OUT = -0.35, -0.65                     # the wall's inside and outside faces (y)
-WIN_X0, WIN_X1, SILL, WIN_TOP = -0.62, 0.62, 0.9, 2.15
+WIN_X0, WIN_X1, SILL, WIN_TOP = -0.42, 0.42, 1.0, 1.95
 FRAME_Y = -0.47                                      # the frame, set back from the outside face
 HER = Vector((-0.08, -0.04, 0))                      # where she stands
 
@@ -234,20 +234,20 @@ box('FrameB', (0, FRAME_Y, SILL + fw / 2), (WIN_X1 - WIN_X0, fd, fw), frame_m, 0
 box('FrameT', (0, FRAME_Y, WIN_TOP - fw / 2), (WIN_X1 - WIN_X0, fd, fw), frame_m, 0.006)
 box('FrameL', (WIN_X0 + fw / 2, FRAME_Y, (SILL + WIN_TOP) / 2), (fw, fd, WIN_TOP - SILL), frame_m, 0.006)
 box('FrameR', (WIN_X1 - fw / 2, FRAME_Y, (SILL + WIN_TOP) / 2), (fw, fd, WIN_TOP - SILL), frame_m, 0.006)
-TRANSOM = WIN_TOP - 0.36
+TRANSOM = WIN_TOP - 0.12
 box('Transom', (0, FRAME_Y, TRANSOM), (WIN_X1 - WIN_X0, fd, 0.05), frame_m, 0.006)
 
 # ---------- flowers in a box on the sill outside ----------
 random.seed(4)
 pot = flat('Box', srgb('#b5643f'), 0.8)
-box('FlowerBox', (0, WALL_OUT - 0.1, SILL - 0.04), (1.04, 0.17, 0.13), pot, 0.01)
-box('Soil', (0, WALL_OUT - 0.1, SILL + 0.02), (1.0, 0.14, 0.01), flat('Soil', srgb('#3b2a1e'), 1.0))
+box('FlowerBox', (0, WALL_OUT - 0.1, SILL - 0.04), (0.84, 0.17, 0.13), pot, 0.01)
+box('Soil', (0, WALL_OUT - 0.1, SILL + 0.02), (0.8, 0.14, 0.01), flat('Soil', srgb('#3b2a1e'), 1.0))
 
 
 def flower_x():
     """Mostly toward the box's ends (the middle low and thin: she is behind it); and how much lower."""
     if random.random() < 0.8:
-        return random.choice((-1, 1)) * random.uniform(0.17, 0.48), 0.0
+        return random.choice((-1, 1)) * random.uniform(0.17, 0.38), 0.0
     return random.uniform(-0.17, 0.17), 0.05
 leaf = flat('Leaf', srgb('#4d7a3a'), 0.6)
 petals = [flat('Red', srgb('#d23a3c'), 0.55), flat('Pink', srgb('#e889a6'), 0.55), flat('White', srgb('#f4f1ea'), 0.55)]
@@ -289,8 +289,8 @@ def text(body, loc, size, mat, rot=(math.radians(90), 0, 0)):
 
 
 wy = BACK - 0.06
-box('Sign', (0.0, wy, 1.74), (1.1, 0.02, 0.18), flat('SignBlue', srgb('#1f4e79'), 0.4))
-text('MEMORY CARE UNIT', (0.0, wy - 0.015, 1.74), 0.088, flat('SignText', srgb('#f4f4f0'), 0.5))
+box('Sign', (-0.55, wy, 1.74), (1.1, 0.02, 0.18), flat('SignBlue', srgb('#1f4e79'), 0.4))
+text('MEMORY CARE UNIT', (-0.55, wy - 0.015, 1.74), 0.088, flat('SignText', srgb('#f4f4f0'), 0.5))
 # the foot of her bed, made, and a vase of flowers on the table beside it
 sheet = flat('Sheet', srgb('#e9ece8'), 0.85)
 box('Bed', (1.0, 1.6, 0.5), (1.0, 1.7, 0.22), sheet, 0.04)

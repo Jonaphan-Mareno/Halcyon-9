@@ -90,7 +90,7 @@ function card([t, likes, rep], x, y, top) {
 }
 
 // Spots: a jittered grid covering the whole screen (so no gaps are left), shuffled, then a
-// few extra on top. Slow at first, then faster and faster until the screen is buried (~6 s).
+// few extra on top. Quick at first, then faster and faster until the screen is buried (~5 s).
 let timers = [];
 function play() {
   // (wait until the page has a size: a page opened in the background can start at 0 x 0)
@@ -109,13 +109,13 @@ function play() {
   spots.length = 0; spots.push(...board, ...rest);
   for (let i = 0; i < 8; i++) spots.push([Math.random() * (W - cw), Math.random() * (H - H * .2)]);
   const order = [...TOP, ...[...REST].sort(() => Math.random() - .5)];
-  let t = 500, gap = 1100;
+  let t = 250, gap = 550;
   spots.forEach(([x, y], i) => {
     if (i >= order.length) return;
     const isTop = i < TOP.length ? i + 1 : 0;
     timers.push(setTimeout(() => card(order[i], x, y, isTop), t));
     // the TOP ones get time to be read; then the pile speeds up
-    t += gap; gap = i < 3 ? 1100 : Math.max(60, gap * 0.8);
+    t += gap; gap = i < 3 ? 550 : Math.max(45, gap * 0.78);
   });
 }
 document.body.onclick = play;

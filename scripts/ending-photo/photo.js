@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Player } from '../../src/entities/Player.js';
 import { FaceRig } from '../../src/entities/FaceRig.js';
+import { CAPTION_BAND, writeCaption } from '../flashback1-photo/caption.js';
 import { BriefingFlashback } from '../../src/story/BriefingFlashback.js';
 
 // The restored crew photo of the ending (public/assets/textures/ending/crew-photo.webp): Flashback
@@ -13,7 +14,8 @@ import { BriefingFlashback } from '../../src/story/BriefingFlashback.js';
 // Run `node scripts/ending-photo/render.mjs` (it starts the dev server and a headless Chrome, and
 // writes the file). Open this page in the dev server to see it.
 
-const W = 1200, H = 800;          // the print, 3:2 (as the torn one)
+const W = 1200, H = 800;          // the picture on the print, 3:2 with its border (as the torn one)
+const PRINT_H = H + CAPTION_BAND; // the print, with the paper under the picture and its caption
 const BORDER = 0.028;
 const SMILES = {
   voss: { smile: 0.85, brow: 0.2 }, lindqvist: { smile: 0.95, brow: 0.25 }, navarro: { smile: 1, brow: 0.15 },
@@ -55,11 +57,11 @@ async function main() {
 
   const c = document.createElement('canvas');
   c.width = W;
-  c.height = H;
+  c.height = PRINT_H;
   const g = c.getContext('2d');
   const b = Math.round(W * BORDER);
   g.fillStyle = '#f4efe4';
-  g.fillRect(0, 0, W, H);
+  g.fillRect(0, 0, W, PRINT_H);
   // warm, the colour a print keeps: less faded than the torn one, which lived in a pocket
   g.filter = 'sepia(0.16) saturate(0.95) contrast(1.06) brightness(1.02)';
   g.drawImage(renderer.domElement, b, b, inner[0], inner[1]);
@@ -76,7 +78,8 @@ async function main() {
   glow.addColorStop(1, 'rgba(255, 200, 130, 0)');
   g.fillStyle = glow;
   g.fillRect(b, b, inner[0], inner[1]);
-  const img = g.getImageData(0, 0, W, H);
+  writeCaption(g, H - b + 20);
+  const img = g.getImageData(0, 0, W, PRINT_H);
   for (let i = 0; i < img.data.length; i += 4) {
     const n = (rnd() - 0.5) * 10;
     img.data[i] += n;

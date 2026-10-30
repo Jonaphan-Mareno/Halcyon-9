@@ -1,6 +1,7 @@
 // The Save-ARIA narration's rendered pictures: the Blender renders graded and made small for the
 // game (1600 x 900 webp).
 //   Blender/scripts/render_ending_window.py     -> mom-window.webp
+//   Blender/scripts/render_ending_families.py   -> family-1.webp, family-2.webp, family-3.webp
 // Run (from the repo root): node scripts/ending-shots/compose.mjs [render dir]
 //   (default docs/reference-art, where the Blender scripts write by default)
 // Prints where the glass is, for GLASS in src/level3/EndingNarration.js.
@@ -12,7 +13,12 @@ const DIR = process.argv[2] || 'docs/reference-art';
 const OUT = 'public/assets/textures/ending';
 const W = 1600, H = 900;
 
+// the families: afternoon, warm and soft
+const warm = (s) => s.recomb([[1.08, 0.02, 0], [0.01, 1.0, 0], [0, 0.02, 0.84]]).linear(1.04, -2).modulate({ saturation: 1.1 });
 const shots = [
+  { src: 'family-1-render.png', out: 'family-1.webp', grade: warm },
+  { src: 'family-2-render.png', out: 'family-2.webp', grade: warm },
+  { src: 'family-3-render.png', out: 'family-3.webp', grade: warm },
   // the window: morning, warm and soft
   { src: 'ending-window-render.png', out: 'mom-window.webp',
     grade: (s) => s.recomb([[1.08, 0.02, 0], [0.01, 1.0, 0], [0, 0.02, 0.86]]).linear(0.98, 8).modulate({ saturation: 1.12 }) }

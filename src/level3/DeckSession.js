@@ -72,7 +72,7 @@ const DECK_KEEP = /^(DOOR_|PROP_|GATE_|PT_|SPAWN_|COL_)/;
 const TEST_FLASHBACK = new URLSearchParams(window.location.search).get('flashback3');
 const SEA_KEEP = /^(GATE_|PT_|SEA_Life|TERRAIN_Cave|TRENCH_|COL_|SPAWN_)/;
 // the drowned works: its doors, gates, the panel it bursts and the finale's pieces move; its weed sways
-const WORKS_KEEP = /^(GATE_|BURST_|FALL_|PT_|WL_|COL_|SEA_Weed)/;
+const WORKS_KEEP = /^(GATE_|BURST_|FALL_|PT_|WL_|COL_|SEA_Weed|PRESSURE_)/;
 
 export class DeckSession {
   constructor(game) {

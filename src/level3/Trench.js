@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { KrakenFight, WOUNDS as WOUNDS_TOTAL } from './KrakenFight.js';
 import { SEA } from './SeaScene.js';
 import { PLAN } from './Works.js';
+import { PressureSeal } from './PressureSeal.js';
 
 // The bottom of the trench and the drowned works behind the cliff (Level 3): the kraken, the maze,
 // the fight, and the shaft down to the buried relay. The works are Blender/scripts/build_l3_works.py
@@ -91,6 +92,7 @@ export class Trench {
     this.works.onSound = (name, p) => this.sfx?.cue(name, p);
     this.wrapPaths = [];             // (nothing for its arms to hold now: it is in the works)
     this._sign();
+    this.pressureSeal = new PressureSeal(this);
     this._spots();
     this._bossBar();
     this._dash = { cool: 0, iframes: 0 };
@@ -141,12 +143,17 @@ export class Trench {
     const it = this.s.interact, p = this.pts;
     it.add({ id: 'relayScreen', position: p.screen, radius: 0.8, reach: 3.2,
       label: 'Access ARIA uplink terminal',
-      when: () => this.stage === 'inside' && this.fight?.free && this._relayBriefingDone && !this._uplinkOverridden,
+      when: () => this._canOpenHack(),
       use: () => this._openHack() });
   }
 
+  _canOpenHack() {
+    return this.stage === 'inside' && this.fight?.free && this._relayBriefingDone &&
+      !!this.pressureSeal?.state.solved && !this._uplinkOverridden && !this._hackFrame;
+  }
+
   _openHack() {
-    if (this.stage !== 'inside' || !this.fight?.free || this._uplinkOverridden || this._hackFrame) return;
+    if (!this._canOpenHack()) return;
     // Level 3 normally owns a locked pointer for mouse-look. Release it and freeze its controls so
     // the embedded hack gets a normal cursor and the parent camera cannot respond to mouse input.
     this.game._relayHackActive = true;
@@ -521,6 +528,7 @@ export class Trench {
     this._held(dt, playing);
     if (playing && !this.fight.grabbing) this._solidKraken();
     this.works.update(dt, p, (dmg, from) => this.onHitPlayer(dmg, from));
+    this.pressureSeal?.update(dt);
     // (the safety net under the works: outside the shaft, the tunnel and the room, he is put back
     // where he last was inside them)
     if (this.works.below(p)) {
@@ -802,7 +810,11 @@ export class Trench {
       case 'fleeing': return { text: 'It is fleeing!', target: null };
       case 'free':
       case 'down': return { text: this.step < 2 ? 'Get down the shaft to the relay' : 'Follow the tunnel to the relay room', target: this._down[this.step] || P.inside, label: this.step < 2 ? 'SHAFT' : 'RELAY' };
-      case 'inside': return RELAY.guide?.(this) || { text: this._uplinkOverridden ? 'ARIA uplink overridden' : 'Access the ARIA terminal to override the cable uplink', target: this._uplinkOverridden ? null : P.screen, label: 'TERMINAL' };
+      case 'inside': return RELAY.guide?.(this) || this.pressureSeal?.guide() || {
+        text: this._uplinkOverridden ? 'ARIA uplink overridden' : 'Access the ARIA terminal to override the cable uplink',
+        target: this._uplinkOverridden ? null : P.screen,
+        label: 'TERMINAL'
+      };
       default: return { text: 'Uplink established', target: null };
     }
   }
@@ -1056,6 +1068,7 @@ export class Trench {
     this._inkEl?.remove();
     this.sea.ink = 0;
     this.fight?.dispose();
+    this.pressureSeal?.dispose();
     this._end?.remove();
   }
 }

@@ -210,7 +210,9 @@ export class Works {
       || (Math.abs(p.x - top.x) < 2.7 && Math.abs(p.z - top.z) < 2.7 && p.y > bot.y - 3 && p.y < bot.y + 3.5);
     const tunnel = Math.abs(p.x - top.x) < 2.3 && p.z > top.z - 1 && p.z < door.z + 1.5 && p.y > room.y - 1.5 && p.y < bot.y + 3;
     const inRoom = Math.abs(p.x - room.x) < 5.4 && Math.abs(p.z - room.z) < 5.4 && p.y > room.y - 1.5 && p.y < room.y + 5;
-    return shaft || tunnel || inRoom;
+    const beyond = P.PT_ContainmentBeyond;
+    const vestibule = beyond && Math.abs(p.x - beyond.x) < 1.4 && Math.abs(p.z - beyond.z) < 2.2 && p.y > room.y - 1.5 && p.y < room.y + 5;
+    return shaft || tunnel || inRoom || vestibule;
   }
 
   // the clearing's middle, its half sizes (x, z)
@@ -308,6 +310,15 @@ export class Works {
     this.onSound?.('shaftOpen', this.pts.PT_ShaftTop);
   }
 
+  // the containment pressure seal slides the buried relay's back hatch into its wall pocket
+  openRelayHatch() {
+    const d = this.doors.GATE_RelayHatch;
+    if (!d || d.target === 1) return false;
+    d.target = 1;
+    this.onSound?.('hatchOpen', this.pts.PT_RelayHatch);
+    return true;
+  }
+
   // ------------------------------------------------------------------ the clearing's lights
   floods(on) {
     this.floodTarget = on ? 1 : 0;
@@ -358,6 +369,12 @@ export class Works {
         const e = d.open * d.open * (3 - 2 * d.open);
         const sign = name.endsWith('A') ? -1 : 1;      // (each leaf up and outward)
         d.obj.quaternion.copy(d.quat).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), sign * e * 1.9));
+      } else if (name === 'GATE_RelayHatch' && d.open !== d.target) {
+        d.open = Math.min(1, d.open + dt / 2.0);
+        const e = d.open * d.open * (3 - 2 * d.open);
+        d.obj.position.x = d.base.x - e * 2.15;
+        // Keep the passage blocked until the leaf is fully inside its wall pocket.
+        if (d.open === 1) this._block(d, false);
       }
       if (d.flying) this._tumble(d, dt);
     }

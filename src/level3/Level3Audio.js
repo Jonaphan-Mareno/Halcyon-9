@@ -63,6 +63,7 @@ const CUES = {
     ['clank-1', { rate: 0.75, vol: 0.9, delay: 3.4, wet: 0.5 }]],
   hatchOpen: [['latch', { vol: 0.8 }], ['hatch-open', { vol: 0.9, rate: 0.85, delay: 0.1, wet: 0.3 }]],
   hatchShut: [['hatch-shut', { vol: 0.9, rate: 0.85, wet: 0.3 }], ['clank-2', { delay: 1.2, rate: 0.85, vol: 0.8, wet: 0.4 }]],
+  valveTurn: [['click', { vol: 0.75, rate: 0.8 }], ['air-hiss', { vol: 0.35, rate: 1.2, delay: 0.05, wet: 0.2 }], ['latch', { vol: 0.35, rate: 1.3, delay: 0.18 }]],
   // the relay's door, held shut by the kraken: it shifts, the hull groans, something hisses
   doorStuck: [['latch', { vol: 0.8 }], ['clank-1', { rate: 0.7, delay: 0.1 }], ['groan-1', { rate: 0.4, vol: 0.8, delay: 0.2, wet: 0.5 }],
     ['kraken-hiss', { rate: 0.45, vol: 0.5, delay: 0.7, wet: 0.6 }]],

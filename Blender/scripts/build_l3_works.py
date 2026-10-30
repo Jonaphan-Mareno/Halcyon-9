@@ -1130,7 +1130,12 @@ rq((rx0, ry0, ROOM_Z), (rx1, ry0, ROOM_Z), (rx1, ry1, ROOM_Z), (rx0, ry1, ROOM_Z
 rq((rx0, ry0, zt), (rx0, ry1, zt), (rx1, ry1, zt), (rx1, ry0, zt))                          # ceiling
 rq((rx0, ry0, ROOM_Z), (rx0, ry1, ROOM_Z), (rx0, ry1, zt), (rx0, ry0, zt))                   # west
 rq((rx1, ry0, ROOM_Z), (rx1, ry0, zt), (rx1, ry1, zt), (rx1, ry1, ROOM_Z))                   # east
-rq((rx0, ry0, ROOM_Z), (rx0, ry0, zt), (rx1, ry0, zt), (rx1, ry0, ROOM_Z))                   # south
+# south: a real opening for the containment hatch, not a decal on a solid wall
+hx = (rx0 + rx1) / 2 + 2.5
+hx0, hx1, hz1 = hx - 1.0, hx + 1.0, ROOM_Z + 2.65
+rq((rx0, ry0, ROOM_Z), (rx0, ry0, zt), (hx0, ry0, zt), (hx0, ry0, ROOM_Z))
+rq((hx1, ry0, ROOM_Z), (hx1, ry0, zt), (rx1, ry0, zt), (rx1, ry0, ROOM_Z))
+rq((hx0, ry0, hz1), (hx0, ry0, zt), (hx1, ry0, zt), (hx1, ry0, hz1))
 # north: the doorway from the tunnel (its width and height), wall round it
 dxl, dxr = s.x - TW, s.x + TW
 rq((rx0, ry1, ROOM_Z), (dxl, ry1, ROOM_Z), (dxl, ry1, zt), (rx0, ry1, zt))
@@ -1142,9 +1147,13 @@ face_toward(rb, rfaces, lambda c: Vector((rcx - c.x, rcy - c.y, ROOM_Z + ROOM_H 
 room = obj_from_bm('W_RoomShell', rb, 'l3_concrete')
 collider_copy('COL_WorksRoom', room)
 # its fittings: a dark wall band, the lamp strips, the console and its screen frame (the game draws
-# the screen), the air station, the empty bay for the puzzles (striped tape), the sealed back hatch
-for (a, b) in (((rx0 + 0.05, ry0 + 0.05), (rx1 - 0.05, ry0 + 0.12)), ((rx0 + 0.05, ry0), (rx0 + 0.12, ry1)), ((rx1 - 0.12, ry0), (rx1 - 0.05, ry1))):
+# the screen), the air station, the puzzle bay (striped tape), the sealed back hatch
+for (a, b) in (((rx0 + 0.05, ry0), (rx0 + 0.12, ry1)), ((rx1 - 0.12, ry0), (rx1 - 0.05, ry1))):
     box(rm, 'l3_wall', (a[0], a[1], ROOM_Z + 1.4), (b[0], b[1], ROOM_Z + 3.6))
+# (the south band stops at the hatch frame and continues above its opening)
+for (a, b) in (((rx0 + 0.05, ry0 + 0.05), (hx0, ry0 + 0.12)), ((hx1, ry0 + 0.05), (rx1 - 0.05, ry0 + 0.12))):
+    box(rm, 'l3_wall', (a[0], a[1], ROOM_Z + 1.4), (b[0], b[1], ROOM_Z + 3.6))
+box(rm, 'l3_wall', (hx0, ry0 + 0.05, hz1), (hx1, ry0 + 0.12, ROOM_Z + 3.6))
 for k in range(3):
     y = ry0 + 2 + k * 3
     box(lamps, 'l3_lamp', (rcx - 1.5, y - 0.12, zt - 0.12), (rcx + 1.5, y + 0.12, zt - 0.03))
@@ -1162,8 +1171,27 @@ cyl(lamps, 'l3_o2', (rx0 + 0.62, rcy, ROOM_Z + 1.4), 0.32, 0.06, 16, 'X')
 for (a, b) in (((rx0 + 0.6, ry0 + 0.6), (rx0 + 4.2, ry0 + 0.7)), ((rx0 + 0.6, ry0 + 3.6), (rx0 + 4.2, ry0 + 3.7)),
                ((rx0 + 0.6, ry0 + 0.6), (rx0 + 0.7, ry0 + 3.7)), ((rx0 + 4.1, ry0 + 0.6), (rx0 + 4.2, ry0 + 3.7))):
     box(rm, 'l3_hazard', (a[0], a[1], ROOM_Z + 0.01), (b[0], b[1], ROOM_Z + 0.03))
-cyl(rm, 'l3_rust', (rcx + 2.5, ry0 + 0.12, ROOM_Z + 1.3), 0.9, 0.2, 20, 'Y')
-cyl(rm, 'l3_hazard', (rcx + 2.5, ry0 + 0.24, ROOM_Z + 1.3), 0.25, 0.08, 12, 'Y')
+# the hatch's frame, its moving pressure leaf, and a short sealed vestibule beyond it
+for (a, b) in (((hx0 - 0.16, ry0 - 0.02, ROOM_Z), (hx0, ry0 + 0.28, hz1 + 0.16)),
+               ((hx1, ry0 - 0.02, ROOM_Z), (hx1 + 0.16, ry0 + 0.28, hz1 + 0.16)),
+               ((hx0 - 0.16, ry0 - 0.02, hz1), (hx1 + 0.16, ry0 + 0.28, hz1 + 0.16))):
+    box(rm, 'l3_hull', a, b)
+hatch = A('GATE_RelayHatch', origin=(hx, ry0 + 0.12, ROOM_Z))
+box(hatch, 'l3_rust', (hx0 + 0.04, ry0 + 0.03, ROOM_Z + 0.04), (hx1 - 0.04, ry0 + 0.21, hz1 - 0.04))
+box(hatch, 'l3_dark', (hx0 + 0.18, ry0 + 0.215, ROOM_Z + 0.2), (hx1 - 0.18, ry0 + 0.24, hz1 - 0.2))
+box(hatch, 'l3_hazard', (hx - 0.65, ry0 + 0.245, ROOM_Z + 1.12), (hx + 0.65, ry0 + 0.265, ROOM_Z + 1.43))
+# beyond is a finished pocket for the next containment stage, with collision on every side
+vy0 = ry0 - 3.2
+box(rm, 'l3_concrete', (hx0 - 0.12, vy0 - 0.12, ROOM_Z - 0.14), (hx1 + 0.12, ry0, ROOM_Z))
+col_box((hx0 - 0.12, vy0 - 0.12, ROOM_Z - 0.14), (hx1 + 0.12, ry0, ROOM_Z))
+box(rm, 'l3_concrete', (hx0 - 0.12, vy0 - 0.12, zt), (hx1 + 0.12, ry0, zt + 0.14))
+col_box((hx0 - 0.12, vy0 - 0.12, zt), (hx1 + 0.12, ry0, zt + 0.14))
+for (a, b) in (((hx0 - 0.12, vy0, ROOM_Z), (hx0, ry0, zt)),
+               ((hx1, vy0, ROOM_Z), (hx1 + 0.12, ry0, zt)),
+               ((hx0, vy0 - 0.12, ROOM_Z), (hx1, vy0, zt))):
+    box(rm, 'l3_wall', a, b)
+    col_box(a, b)
+box(lamps, 'l3_lamp', (hx - 0.65, vy0 + 0.25, zt - 0.12), (hx + 0.65, vy0 + 0.65, zt - 0.03))
 for k in range(4):
     y = ry0 + 1 + k * 2.3
     box(rm, 'l3_dark', (rx1 - 0.8, y, ROOM_Z), (rx1 - 0.05, y + 1.6, ROOM_Z + 2.2))
@@ -1174,7 +1202,8 @@ empty('PT_RelayPort', tuple(ROOM_PORT))
 empty('PT_RelayScreen', (cx_, ry1 - 0.14, ROOM_Z + 2.05))
 empty('PT_AirRefill', tuple(air))
 empty('PT_PuzzleBay', (rx0 + 2.4, ry0 + 2.1, ROOM_Z + 1.3))
-empty('PT_RelayHatch', (rcx + 2.5, ry0 + 0.3, ROOM_Z + 1.25))
+empty('PT_RelayHatch', (hx, ry0 + 0.3, ROOM_Z + 1.25))
+empty('PT_ContainmentBeyond', (hx, vy0 + 1.5, ROOM_Z + 1.25))
 empty('PT_RoomDoor', (s.x, ry1 + 0.5, ROOM_Z + 1.4))
 
 # ---------------------------------------------------------------- the works' entrance

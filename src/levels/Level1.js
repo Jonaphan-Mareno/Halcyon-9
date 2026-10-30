@@ -2587,10 +2587,13 @@ onRingPuzzleComplete() {
   }
 
   // ---------------------------------------------------------
-  // The power relay: three linked rings
+  // The power relay: four linked rings
   //
-  // The rings rotate independently; turnRing() applies the relay's linked-ring
-  // controls so one ring can turn selected others with it.
+  // Scene graph: each ring is a child of the ring below it, and every bolt,
+  // light and marker is a child of its ring. Turning a ring
+  // therefore carries everything above it (and all of its own parts) round with
+  // it: each ring's real orientation is the sum of its own turn and all the
+  // turns below it. That is what makes it a puzzle.
   // ---------------------------------------------------------
   _buildRelay() {
     if (this._generatorRadius <= 0) return;
@@ -2617,13 +2620,16 @@ onRingPuzzleComplete() {
     root.name = 'PowerRelay';
     root.position.set(centre.x, 0, centre.z);
 
-    const rings = new Array(RELAY_RING_HEIGHTS.length);
-    for (let index = 0; index < RELAY_RING_HEIGHTS.length; index++) {
-      const y = RELAY_RING_HEIGHTS[index];
+    const rings = [];
+    let parent = root;
+    let previousY = 0;
+    RELAY_RING_HEIGHTS.forEach((y, index) => {
       const group = new THREE.Group();
-      group.position.y = y;
+      group.position.y = y - previousY; // relative to the parent ring
+      previousY = y;
       group.userData.ringIndex = index;
-      root.add(group);
+      parent.add(group);
+      parent = group;
 
       const torus = new THREE.Mesh(torusGeometry, ringMaterial);
       torus.rotation.x = Math.PI / 2;
@@ -2654,8 +2660,8 @@ onRingPuzzleComplete() {
       slot.position.set(-(RELAY_RADIUS + 0.64), y, 0);
       root.add(slot);
 
-      rings[index] = { group, markerMaterial, slotMaterial, steps: 0, angle: 0, aligned: false };
-    }
+      rings.push({ group, markerMaterial, slotMaterial, steps: 0, angle: 0, aligned: false });
+    });
 
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.5, 0.16), boltMaterial);
     rail.position.set(-(RELAY_RADIUS + 0.72), 2.3, 0);
@@ -2678,10 +2684,13 @@ onRingPuzzleComplete() {
     this._rebuildInteractables();
   }
 
-  // Each ring's step count is its own world orientation; linked turns are
-  // applied directly to the affected rings.
+  // The real (absolute) orientation of each ring, in steps: the running sum of the turns
   _absoluteSteps(steps) {
-    return steps.map((step) => ((step % RELAY_STEPS) + RELAY_STEPS) % RELAY_STEPS);
+    let total = 0;
+    return steps.map((s) => {
+      total += s;
+      return ((total % RELAY_STEPS) + RELAY_STEPS) % RELAY_STEPS;
+    });
   }
 
   _isRelayPart(object) {
@@ -2693,7 +2702,7 @@ onRingPuzzleComplete() {
   }
 
   // Which ring a clicked object belongs to: the nearest ring group above it
-  // in the scene graph (bolts and markers are children of their own ring).
+  // (a bolt on ring 2 sits below ring 1 in the tree, but belongs to ring 2)
   _ringIndexOf(object) {
     for (let o = object; o; o = o.parent) {
       if (o.userData && o.userData.ringIndex !== undefined) return o.userData.ringIndex;
@@ -2701,20 +2710,10 @@ onRingPuzzleComplete() {
     return -1;
   }
 
-  // Ring order is bottom to top. Each dial turns itself and its linked rings:
-  // bottom -> third, second -> top, third -> second, top -> second and third.
+  // Turn one ring a step. Every ring above it in the tree turns with it.
   turnRing(index, direction = 1) {
     if (!this.relay || !this.cablesFixed || this.relaySolved) return;
-    const linkedRings = [
-      [0, 2],
-      [1, 3],
-      [2, 1],
-      [1, 2, 3],
-    ][index];
-    if (!linkedRings) return;
-    for (const ringIndex of linkedRings) {
-      this.relay.rings[ringIndex].steps += direction;
-    }
+    this.relay.rings[index].steps += direction;
     this.onRingTurned?.();
     this._relayCheckAt = this.time + 0.6; // after the turn has finished animating
   }
@@ -2726,7 +2725,8 @@ onRingPuzzleComplete() {
     const absolute = this._absoluteSteps(rings.map((r) => r.steps));
 
     rings.forEach((ring, i) => {
-      // Ease each independently controlled ring toward its own target turn.
+      // Ease toward the target turn. The child rings inherit the parent's
+      // motion on top of this, purely through the scene graph.
       const target = (ring.steps * Math.PI * 2) / RELAY_STEPS;
       ring.angle += (target - ring.angle) * ease;
       ring.group.rotation.y = ring.angle;
@@ -2749,7 +2749,7 @@ onRingPuzzleComplete() {
       }
     });
 
-    // All three in line: the relay engages
+    // All four in line: the relay engages
     if (this._relayCheckAt >= 0 && this.time >= this._relayCheckAt) {
       this._relayCheckAt = -1;
       if (!this.relaySolved && absolute.every((a) => a === 0)) this.finalRepair();

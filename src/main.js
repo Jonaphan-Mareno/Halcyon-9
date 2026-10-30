@@ -3,14 +3,42 @@ import { Game } from './Game.js';
 import { startIntro } from './intro/intro-cinematic.js';
 import { createOpeningSettings } from './ui/OpeningSettings.js';
 import { createDifficultyPicker } from './ui/DifficultyPicker.js';
+import { EndingNarration } from './level3/EndingNarration.js';
+import { showEndCredits } from './ui/EndCredits.js';
 import './ui/opening-settings.css';
 import './style.css';
 
 // Entry point for Halcyon-9
-const game = new Game();
+const params = new URLSearchParams(window.location.search);
+// ?voss-anim (dev only): the preview of Voss's acting clips (src/dev/voss-anim-preview.js) instead of the game
+const vossAnim = import.meta.env.DEV && params.has('voss-anim');
+if (vossAnim) import('./dev/voss-anim-preview.js').then((m) => m.startVossAnimPreview());
+
+// ?ending=narration: only the narration of the Save-ARIA ending and the credits after it
+// (level3/EndingNarration.js, ui/EndCredits.js), instead of the game; a click starts it (the
+// browser wants one before it plays sound)
+const narrationOnly = params.get('ending') === 'narration';
+if (narrationOnly) {
+  document.getElementById('welcome-screen')?.remove();
+  const n = new EndingNarration(document.body);
+  const loading = n.preload();
+  const gate = document.createElement('div');
+  gate.style.cssText = 'position:fixed;inset:0;z-index:80;background:#000;color:#cfefff;display:flex;align-items:center;justify-content:center;font:200 1.1rem sans-serif;letter-spacing:.3em;cursor:pointer';
+  gate.textContent = 'CLICK TO PLAY THE NARRATION';
+  document.body.appendChild(gate);
+  gate.addEventListener('click', async () => {
+    gate.remove();
+    await loading;
+    await n.play();
+    n.dispose();
+    await showEndCredits(document.body);
+    window.location.href = window.location.pathname;
+  }, { once: true });
+}
+
+const game = vossAnim || narrationOnly ? null : new Game();
 if (import.meta.env.DEV) window.__game = game;   // for poking at from the dev console
 
-const params = new URLSearchParams(window.location.search);
 // The opening cinematic plays as soon as the page loads, with no menu. It is skipped for the
 // test links (?level=2, ?level=3, ?flashback1...) and with ?nointro, which keep the old start screen.
 const classic = params.has('level') || params.has('nointro') || params.has('flashback1') || params.has('keypad');
@@ -59,7 +87,9 @@ function setUpStartScreen() {
   }
 }
 
-if (classic) {
+if (vossAnim || narrationOnly) {
+  // (nothing else starts)
+} else if (classic) {
   setUpStartScreen();
 } else {
   // The game is built once the screen has gone black after the video (building it stalls the page,

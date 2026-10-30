@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Narration preview</title>
+<base href="/">
+<style>html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }</style>
+<script>addEventListener('error', (e) => { window.__error = String(e.error?.stack || e.message); }); addEventListener('unhandledrejection', (e) => { window.__error = String(e.reason?.stack || e.reason); });</script>
+<script type="module">
+// The narration on its own (dev only). By hand: /scripts/scene-b/narration.html, then click (the
+// browser wants a click before it plays sound). Headless (narration-check.mjs): window.__at(t)
+// holds it at time t.
+import { EndingNarration } from '/src/level3/EndingNarration.js';
+
+const n = new EndingNarration(document.body);
+window.__n = n;
+await n.preload();
+const go = () => {
+  n.play().then((how) => console.log('narration:', how));
+};
+if (new URLSearchParams(location.search).has('headless')) {
+  n.play();
+  n.ac?.suspend?.();
+  window.__at = (t) => { n.clock = t; n._frame(); return JSON.stringify(n.T); };
+  window.__ready = true;
+} else {
+  document.body.insertAdjacentHTML('beforeend', '<div id="go" style="color:#cfefff;font:16px monospace;position:absolute;top:45%;width:100%;text-align:center">click to play</div>');
+  addEventListener('click', () => { document.getElementById('go')?.remove(); go(); }, { once: true });
+}
+</script>

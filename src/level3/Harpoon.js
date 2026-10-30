@@ -249,6 +249,7 @@ export class Harpoon {
   sling(model, attach) {
     if (!model || this.slung) return;
     const g = harpoonModel();
+    g.name = 'SlungRifle';                   // (found by name in a copy of the rig: level3/RelayLock.js)
     // (the model's own units: across his back from the right hip up over the left shoulder)
     g.scale.setScalar(0.62);
     g.position.set(0.02, 0.98, -0.27);

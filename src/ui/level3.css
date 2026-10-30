@@ -282,3 +282,8 @@
   color: #a9dbe5; border: 1px solid rgb(105 216 242 / 45%); background: #071926;
   font-size: 24px; cursor: pointer;
 }
+
+/* The water lock's scene (level3/RelayLock.js): the game's panels away; ARIA's subtitle and the
+   black at its end stay */
+body.l3-cutscene #ui-layer > *:not(#dialogue-box):not(.fb3d-hint),
+body.l3-cutscene .fps-counter { visibility: hidden !important; }

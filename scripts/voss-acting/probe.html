@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"><base href="/"></head><body>
+<script type="module">
+import * as THREE from 'three';
+import { createGLTFLoader, createFBXLoader } from '/src/core/loaders.js';
+const out = {};
+const files = ['Walkinginjured','Sad Idle','Reacting','Standing Up','Sitting Idle','Falling Forward Death'];
+const g = await createGLTFLoader().loadAsync('./assets/models/human_scientist_v2.glb');
+const vb = [];
+g.scene.updateMatrixWorld(true);
+g.scene.traverse(o=>{ if(o.isBone){ const p=new THREE.Vector3(); o.getWorldPosition(p); const q=new THREE.Quaternion(); o.getWorldQuaternion(q); vb.push([o.name,o.parent?.name,p.toArray().map(v=>+v.toFixed(3)),q.toArray().map(v=>+v.toFixed(3)), o.position.toArray().map(v=>+v.toFixed(4))]);} });
+out.voss = vb;
+out.vossTop = []; g.scene.traverse(o=>{ if(!o.isBone && !o.isMesh) out.vossTop.push([o.name,o.type,o.rotation.toArray().slice(0,3).map(v=>+v.toFixed(3)),o.scale.toArray()]); });
+out.vossClips = g.animations.map(c=>[c.name,c.duration,c.tracks.length]);
+for (const f of files) {
+  const fbx = await createFBXLoader().loadAsync('./assets/models/'+encodeURIComponent(f)+'.fbx');
+  fbx.updateMatrixWorld(true);
+  const bones=[];
+  fbx.traverse(o=>{ if(o.isBone){ const p=new THREE.Vector3(); o.getWorldPosition(p); const q=new THREE.Quaternion(); o.getWorldQuaternion(q); bones.push([o.name,o.parent?.name,p.toArray().map(v=>+v.toFixed(2)),q.toArray().map(v=>+v.toFixed(3))]);} });
+  const a = fbx.animations[0];
+  const info = { top:[fbx.name,fbx.scale.toArray(),fbx.rotation.toArray().slice(0,3)], nb:bones.length, clip:[a.name,a.duration,a.tracks.length], tracks:a.tracks.map(t=>t.name+':'+t.times.length) };
+  // hips path
+  const hip = a.tracks.find(t=>/Hips\.position/.test(t.name));
+  if (hip){ const v=hip.values, n=hip.times.length; info.hipStart=[v[0],v[1],v[2]]; info.hipEnd=[v[3*n-3],v[3*n-2],v[3*n-1]]; let mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9]; for(let i=0;i<n;i++)for(let k=0;k<3;k++){mn[k]=Math.min(mn[k],v[3*i+k]);mx[k]=Math.max(mx[k],v[3*i+k]);} info.hipMin=mn; info.hipMax=mx; }
+  info.bones = f==='Sad Idle'? bones : bones.length;
+  out[f]=info;
+}
+window.__out = out;
+</script></body></html>

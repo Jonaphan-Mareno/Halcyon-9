@@ -634,7 +634,8 @@ export class Game {
       this.mood.tension += (tension - this.mood.tension) * 0.03;
       return;
     }
-    else if (s === 'DEAD' || s === 'GAME_OVER' || s === 'FLASHBACK') { mood = 'silence'; tension = 0.6; }
+    // (CUTSCENE: a scene played in the level itself, which goes on updating: Level 3's water lock)
+    else if (s === 'DEAD' || s === 'GAME_OVER' || s === 'FLASHBACK' || s === 'CUTSCENE') { mood = 'silence'; tension = 0.6; }
     else if (!this.level2Mode && s === 'PUZZLE') {
       // a blackout after an overload is silent; otherwise the pressure follows the countdown
       mood = this.puzzle.frozen ? 'silence' : 'pressure';
@@ -1090,7 +1091,7 @@ export class Game {
                  this.state === 'RETURNING' || this.state === 'DIALOGUE' ||
                  this.state === 'TUTORIAL' || this.state === 'PUZZLE' || this.state === 'INVENTORY' ||
                  this.state === 'DEAD' || this.state === 'RING_PUZZLE' ||
-                 this.state === 'DEPARTING';
+                 this.state === 'DEPARTING' || this.state === 'CUTSCENE';
 
     if (this.state === 'PLAYING' && !this.currentLevel.cinematic) {
       this.controls.update(delta);

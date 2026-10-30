@@ -3,6 +3,7 @@ import { KrakenFight, WOUNDS as WOUNDS_TOTAL } from './KrakenFight.js';
 import { SEA } from './SeaScene.js';
 import { PLAN } from './Works.js';
 import { PressureSeal } from './PressureSeal.js';
+import { RelayLock } from './RelayLock.js';
 
 // The bottom of the trench and the drowned works behind the cliff (Level 3): the kraken, the maze,
 // the fight, and the shaft down to the buried relay. The works are Blender/scripts/build_l3_works.py
@@ -22,7 +23,11 @@ import { PressureSeal } from './PressureSeal.js';
 //      mast, the scaffolding), the lights swinging. Seven and it is beaten: it tears the east gate
 //      away and escapes into a crack in the rock
 //   4. the shaft's cover swings open: down the shaft and the sand tunnel to the buried relay room.
-//      What happens in there (the puzzles, the uplink, the two endings) is the team's: see RELAY
+//      He is spent after the fight: slower, out of breath, stopping now and then, and silent until
+//      the confrontation. In the room the control room's hatch is sealed and the flood has shorted
+//      the network (ARIA cannot reach it): he reroutes the power at the terminal (Simphiwe's
+//      minigame), the water lock behind the hatch opens, and in it the scene that leads into the
+//      confrontation (RelayLock.js). The rest of the room (the endings) is the team's: see RELAY
 //
 // A tap of Shift dashes him out of the way (a blow that lands during a dash misses). If his health
 // or his air runs out, ARIA restores him from backup at the last safe place (the works' entry, the
@@ -46,6 +51,15 @@ const REACH = 4.5;                  // metres from a route point that counts as 
 const FINALE_AT = 5;                // the wounds at which the finale begins
 // the finale: what comes down when (seconds into it), besides the gantry it crashes through
 const FINALE = [[8, 'FALL_Scaff_0'], [18, 'FALL_Crane'], [27, 'FALL_Scaff_1'], [36, 'FALL_Tower'], [46, 'FALL_Scaff_2']];
+// spent, after the fight: his swimming speed, and now and then a pause where he hangs in the water
+// to get his breath (every `every` seconds of swimming, for `pause` seconds, at `rest` of his speed)
+const SPENT = { speed: 0.8, rest: 0.18, pause: 1.1, every: [9, 14] };
+// the relay room's screen: before the reroute, and after (the third line: RELAY_LOCKDOWN_LINE)
+const SCREEN_SEALED = ['CONTROL ROOM SEALED', 'PUMPS: NO SIGNAL · FLOOD PROTOCOL'];
+const SCREEN_WON = ['PUMPS ONLINE', 'WATER LOCK: READY'];
+// Owner's choice (docs/relay-lock-plan.md, optional): the lockdown he is breaking is his own, set
+// the night of Flashback 3. true adds a quiet third line to the screen once the reroute is won
+const RELAY_LOCKDOWN_LINE = false;
 
 // Inside the relay room is the team's (the puzzles, the uplink, the endings). enter(trench) is
 // called once, when he first comes into the room (the uplink cable still trails behind him:
@@ -93,6 +107,7 @@ export class Trench {
     this.wrapPaths = [];             // (nothing for its arms to hold now: it is in the works)
     this._sign();
     this.pressureSeal = new PressureSeal(this);
+    this.lock = new RelayLock(this);   // the water lock behind the relay room, and the scene in it
     this._spots();
     this._bossBar();
     this._dash = { cool: 0, iframes: 0 };
@@ -137,12 +152,13 @@ export class Trench {
   }
 
   // ------------------------------------------------------------------ the relay room's terminal
-  // (Simphiwe's: the ARIA uplink override, the submarine hack minigame in src/submarineHack, opened
-  // in a window over the game; moved here from the old relay pod)
+  // (Simphiwe's: the manual reroute, the submarine hack minigame in src/submarineHack, opened in a
+  // window over the game; moved here from the old relay pod. Won, it brings back the water lock's
+  // pumps: RelayLock)
   _spots() {
     const it = this.s.interact, p = this.pts;
     it.add({ id: 'relayScreen', position: p.screen, radius: 0.8, reach: 3.2,
-      label: 'Access ARIA uplink terminal',
+      label: 'Reroute power at the relay terminal',
       when: () => this._canOpenHack(),
       use: () => this._openHack() });
   }
@@ -161,7 +177,7 @@ export class Trench {
     document.exitPointerLock?.();
     const shade = document.createElement('div');
     shade.className = 'l3-hack-overlay';
-    shade.innerHTML = '<section class="l3-hack-window" role="dialog" aria-modal="true" aria-label="ARIA uplink override"><button class="l3-hack-close" type="button" aria-label="Close hack">×</button><iframe title="ARIA uplink override" src="./submarine-hack.html"></iframe></section>';
+    shade.innerHTML = '<section class="l3-hack-window" role="dialog" aria-modal="true" aria-label="Relay manual reroute"><button class="l3-hack-close" type="button" aria-label="Close reroute">×</button><iframe title="Relay manual reroute" src="./submarine-hack.html"></iframe></section>';
     document.body.append(shade);
     this._hackFrame = shade.querySelector('iframe');
     const close = (event) => {
@@ -175,9 +191,11 @@ export class Trench {
     const onMessage = (event) => {
       if (event.origin !== window.location.origin || event.source !== this._hackFrame?.contentWindow || event.data?.type !== 'halcyon-submarine-hack-won') return;
       this._uplinkOverridden = true;
-      this._screenText = ['ARIA OVERRIDE ACCEPTED', 'CABLE UPLINK CONTROL: TRANSFERRED'];
+      this._screenText = RELAY_LOCKDOWN_LINE ? [...SCREEN_WON, 'LOCKDOWN AUTH: VOSS, E. · RELEASED'] : SCREEN_WON;
       this._drawSign();
       close();
+      // the pumps are back: the water lock opens (and in it, the way to the confrontation)
+      this.lock.unseal();
       this.s.say('relayWon');
     };
     window.addEventListener('message', onMessage);
@@ -199,7 +217,7 @@ export class Trench {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.85), new THREE.MeshBasicMaterial({ map: this._signTex, toneMapped: false }));
     m.position.copy(this.pts.screen).add(new THREE.Vector3(0, 0, 0.03));   // (it faces south, into the room: three's +z)
     this.sea.group.add(m);
-    this._screenText = ['UPLINK RELAY 3', 'ARIA TERMINAL: ACCESS LOCKED'];
+    this._screenText = SCREEN_SEALED;
     this._drawSign();
   }
 
@@ -217,6 +235,11 @@ export class Trench {
     g.font = 'bold 22px Courier New, monospace';
     g.fillStyle = '#cfefff';
     g.fillText(this._screenText[1], 256, 170);
+    if (this._screenText[2]) {
+      g.font = 'bold 16px Courier New, monospace';
+      g.fillStyle = '#7fe8ff';
+      g.fillText(this._screenText[2], 256, 212);
+    }
     this._signTex.needsUpdate = true;
   }
 
@@ -532,7 +555,7 @@ export class Trench {
     // (the safety net under the works: outside the shaft, the tunnel and the room, he is put back
     // where he last was inside them)
     if (this.works.below(p)) {
-      if (this.works.inWayDown(p)) (this._safe ||= new THREE.Vector3()).copy(p);
+      if (this.works.inWayDown(p) || this.lock.contains(p, 0.3)) (this._safe ||= new THREE.Vector3()).copy(p);
       else if (this._safe) {
         c.teleport(this._safe);
         c.velocity.set(0, 0, 0);
@@ -540,6 +563,8 @@ export class Trench {
     }
     this.shake = Math.max(this.shake, this.works.shake || 0);
     this._finaleStep(dt);
+    this.lock.update(dt, p);
+    this._spentStep(dt, playing);
     this._lights(p);
     this._air(dt, playing, p);
     this._sounds(dt, p);
@@ -596,10 +621,12 @@ export class Trench {
           this.stage = 'inside';
           this.checkpoint = P.inside.clone().add(new THREE.Vector3(0, 0.3, 0));
           RELAY.enter?.(this);
+          this.s.preloadConfrontation?.();       // (the confrontation's clips and its Voss, readied now)
+          this.lock.prepare();                    // (and the lock's scene: a copy of him in the suit)
           this._relayBriefingDone = false;
           (this._postBossDescentPromise || Promise.resolve()).then(() => {
             if (this.s.disposed || this.stage !== 'inside') return false;
-            return this.s.say('relayLinkCut');
+            return this.s.say('relayEnter');
           }).then(() => {
             if (!this.s.disposed && this.stage === 'inside') this._relayBriefingDone = true;
           });
@@ -635,12 +662,12 @@ export class Trench {
     const borrowed = this.s.prep?.borrowed;
     if (!borrowed || this.s.prep.zone !== 'sea') { this._region = null; return; }
     const W = this.works;
-    const region = W.below(p) ? 'relay' : (W.inHall(p) || this.inCave(p)) ? 'works' : (p.y < TRENCH_TOP && p.x > -16) ? 'trench' : 'sea';
+    const region = this.lock.lit(p) ? 'lock' : W.below(p) ? 'relay' : (W.inHall(p) || this.inCave(p)) ? 'works' : (p.y < TRENCH_TOP && p.x > -16) ? 'trench' : 'sea';
     if (region !== this._region) {
       this._region = region;
       borrowed.forEach((b, i) => {
-        const set = LIGHT_SETS[region];
-        const to = set ? (set.at[i] ? W.pts[set.at[i]] : null) : this.sea.lights[i];
+        const set = region === 'lock' ? this.lock.lightSet : LIGHT_SETS[region];
+        const to = set ? (set.at[i]?.isVector3 ? set.at[i] : set.at[i] ? W.pts[set.at[i]] : null) : this.sea.lights[i];
         const spec = set ? set.spec[i] : SEA.LIGHTS[i];
         if (to) b.light.position.copy(to);
         if (!spec) return;
@@ -649,6 +676,7 @@ export class Trench {
         b.light.distance = spec[2];
       });
     }
+    if (region === 'lock') return this.lock.lightStep(borrowed);
     if (region !== 'works') return;
     const S = LIGHT_SETS.works.spec;
     // the floodlights: on with the clearing's floods; in the finale they swing and stutter
@@ -810,8 +838,8 @@ export class Trench {
       case 'fleeing': return { text: 'It is fleeing!', target: null };
       case 'free':
       case 'down': return { text: this.step < 2 ? 'Get down the shaft to the relay' : 'Follow the tunnel to the relay room', target: this._down[this.step] || P.inside, label: this.step < 2 ? 'SHAFT' : 'RELAY' };
-      case 'inside': return RELAY.guide?.(this) || this.pressureSeal?.guide() || {
-        text: this._uplinkOverridden ? 'ARIA uplink overridden' : 'Access the ARIA terminal to override the cable uplink',
+      case 'inside': return RELAY.guide?.(this) || this.pressureSeal?.guide() || this.lock.guide() || {
+        text: this._uplinkOverridden ? 'Pumps online' : 'Reroute power at the relay terminal',
         target: this._uplinkOverridden ? null : P.screen,
         label: 'TERMINAL'
       };
@@ -1062,8 +1090,29 @@ export class Trench {
     }
   }
 
+  // After the fight he is spent: slower, and every so often he hangs in the water a moment to get
+  // his breath (only while he is swimming along). Swim breathes harder for it too (this.spent)
+  _spentStep(dt, playing) {
+    const c = this.s.controls;
+    const on = !!this.fight?.free && (this.stage === 'free' || this.stage === 'down' || this.stage === 'inside') && !this.lock.owns;
+    this.spent = on;
+    if (!on) {
+      if (this._spentOn) { c.speedScale = 1; this._spentOn = false; }
+      return;
+    }
+    this._spentOn = true;
+    if (playing && c.swimming && c.thrusting) this._restIn = (this._restIn ?? 6) - dt;
+    let want = SPENT.speed;
+    if (this._restIn < 0) {
+      want = SPENT.rest;
+      if (this._restIn < -SPENT.pause) this._restIn = SPENT.every[0] + Math.random() * (SPENT.every[1] - SPENT.every[0]);
+    }
+    c.speedScale += (want - c.speedScale) * (1 - Math.exp(-(want < c.speedScale ? 5 : 1.5) * dt));
+  }
+
   dispose() {
     window.removeEventListener('keydown', this._onKey);
+    this.lock?.dispose();
     this._bossEl?.remove();
     this._inkEl?.remove();
     this.sea.ink = 0;

@@ -55,6 +55,7 @@ export class Person {
     this.pos = new THREE.Vector3();
     this.yaw = 0;
     this.sit = 0;
+    this.lean = 0;                     // the upper body tipped forward (+, radians) or back (-)
     this.speed = 0;
     this.look = null;                  // a world point the head turns toward, or null
     this.lookYaw = 0;
@@ -114,6 +115,11 @@ export class Person {
       this._turn(this.b.rThigh, -0.08 * s, 1.5 * s);
       this._turn(this.b.rCalf, 0, -1.55 * s);
       this._turn(this.b.spine, 0, -0.06 * s);
+    }
+    // leaning: shared between the two spine bones
+    if (Math.abs(this.lean) > 0.001) {
+      this._turn(this.b.spine, 0, -0.55 * this.lean);
+      this._turn(this.b.spine2, 0, -0.45 * this.lean);
     }
 
     // the head toward what it is looking at (the neck takes some of it), smoothed

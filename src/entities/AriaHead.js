@@ -38,7 +38,11 @@ const EXPRESSIONS = {
   // hiding something: a thin smile, eyes sliding away (level 2)
   guarded:   { brow_up: 0.2,  brow_down: 0.3,  smile: 0.1,  lids: 0.38, tilt: 0.04,  pitch: 0.03,  gaze: 0.35, life: 0.7 },
   // the mask slips: a hard frown, narrowed eyes, chin down, staring straight out (level 2's snap)
-  hostile:   { brow_up: 0.0,  brow_down: 1.25, smile: 0.0,  lids: 0.46, tilt: 0.0,   pitch: 0.09,  gaze: 0.0,  life: 1.2, angry: true }
+  hostile:   { brow_up: 0.0,  brow_down: 1.25, smile: 0.0,  lids: 0.46, tilt: 0.0,   pitch: 0.09,  gaze: 0.0,  life: 1.2, angry: true },
+  // the ending (level3/Confrontation.js): broken is hesitant with the brows knit, near tears;
+  // tender is a softer relief, the first time she looks at someone without calculating
+  broken:    { brow_up: 0.7,  brow_down: 0.35, smile: 0.0,  lids: 0.3,  tilt: -0.08, pitch: 0.07,  gaze: 0.5,  life: 0.6 },
+  tender:    { brow_up: 0.35, brow_down: 0.0,  smile: 0.35, lids: 0.22, tilt: 0.06,  pitch: -0.02, gaze: 0.0,  life: 0.7 }
 };
 const EASED = ['brow_up', 'brow_down', 'smile', 'lids', 'tilt', 'pitch', 'gaze', 'life'];
 
@@ -177,6 +181,15 @@ export class AriaHead {
     } catch (e) {
       this.analyser = null; // fall back to the procedural mouth
     }
+  }
+
+  // Lip-sync to an AnalyserNode the caller plays her voice through (a decoded recording, with its
+  // own gain chain); null: the procedural mouth
+  attachAnalyser(analyser) {
+    this.analyser = analyser;
+    if (!analyser) return;
+    this._timeData = new Uint8Array(analyser.fftSize);
+    this._freqData = new Uint8Array(analyser.frequencyBinCount);
   }
 
   detachAnalyser() {

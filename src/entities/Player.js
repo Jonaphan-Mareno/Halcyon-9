@@ -155,8 +155,8 @@ export function showWound(root, visible) {
   });
 }
 
-// Plays clips on one copy of the rig with crossfades
-class Animator {
+// Plays clips on one copy of the rig with crossfades (also VossActor's mixer and actions)
+export class Animator {
   constructor(root, clips) {
     this.mixer = new THREE.AnimationMixer(root);
     this.actions = {};

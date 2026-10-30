@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ARIA Uplink Override</title>
+  <title>Relay Manual Reroute</title>
 </head>
 <body>
   <div id="hud" aria-label="Game status">
-    <div class="hud-label">ARIA UPLINK OVERRIDE</div>
-    <div id="timer" role="timer" aria-live="off" title="Take control of ARIA's uplink before the breach window closes.">--:--</div>
+    <div class="hud-label">RELAY CONTROL: MANUAL REROUTE</div>
+    <div id="timer" role="timer" aria-live="off" title="Power the lock's pump controller before the backup cell runs out.">--:--</div>
     <div class="ping-row" title="Press Space while a powered Blue node is selected to reveal nearby nodes. Cooldown: 3 seconds.">
       <span>SONAR / SPACE</span>
       <span id="ping-state">READY</span>
@@ -25,34 +25,34 @@
   </div>
   <aside id="help-panel" hidden aria-label="Field guide">
     <div class="help-panel-heading">
-      <strong>ARIA NETWORK FIELD GUIDE</strong>
+      <strong>RELAY NETWORK FIELD GUIDE</strong>
       <button id="help-close" type="button" aria-label="Close field guide">×</button>
     </div>
-    <p><b>Objective:</b> ARIA has locked the uplink behind her network firewall. Capture the gold override node and keep it connected to your blue access core.</p>
-    <p><b>Expand:</b> one click captures a neutral node beside your powered network.</p>
-    <p><b>Break through:</b> click a red firewall three times within 1.25 seconds. A half-second pause clears breach progress.</p>
-    <p><b>Sonar:</b> press Space from a selected, powered blue node to scan nearby connections. ARIA's Warden sweep hides them again every six seconds.</p>
+    <p><b>Objective:</b> the flood has shorted the relay's network. Connect the gold pump controller to your blue access core and keep it powered.</p>
+    <p><b>Expand:</b> one click brings a dead junction beside your powered path back online.</p>
+    <p><b>Reset breakers:</b> click a red tripped breaker three times within 1.25 seconds. A half-second pause lets it trip again.</p>
+    <p><b>Sonar:</b> press Space from a selected, powered blue node to scan nearby connections. The safety watchdog re-scans and hides them again every six seconds.</p>
     <small>The round continues while this guide is open.</small>
   </aside>
   <section id="tutorial-screen" aria-labelledby="tutorial-title">
     <div class="tutorial-card">
-      <div class="tutorial-kicker">ARIA NETWORK · <span id="round-time">…</span> SECOND OVERRIDE</div>
-      <h1 id="tutorial-title">Take the network. Override ARIA.</h1>
-      <p class="tutorial-summary">ARIA has sealed the cable uplink behind a live firewall. Fight through her network, seize the gold override node, and hold a powered connection to your access core before the breach window closes.</p>
+      <div class="tutorial-kicker">RELAY NETWORK · <span id="round-time">…</span> SECONDS OF BACKUP POWER</div>
+      <h1 id="tutorial-title">Reroute power to the lock's pumps.</h1>
+      <p class="tutorial-summary">The flood has shorted the relay's network. Bring dead junctions back online and connect your access core to the pump controller before the backup cell runs out.</p>
       <ol class="tutorial-steps">
-        <li><span class="step-number">01</span><span><b>Build an access route.</b> Capture neutral relays from powered blue nodes to extend your connection across ARIA's network.</span></li>
-        <li><span class="step-number">02</span><span><b>Break the firewall.</b> Click a red node three times within 1.25 seconds. A half-second pause resets your breach.</span></li>
-        <li><span class="step-number">03</span><span><b>Scan before the sweep.</b> Select a powered blue node and press Space. Sonar recharges in three seconds; ARIA's Warden sweeps every six.</span></li>
-        <li><span class="step-number">04</span><span><b>Hold your connection.</b> If ARIA severs your route, disconnected blue nodes go offline until you reconnect them.</span></li>
+        <li><span class="step-number">01</span><span><b>Build a path.</b> Bring dead junctions back online from powered blue nodes to extend your path across the relay's network.</span></li>
+        <li><span class="step-number">02</span><span><b>Reset the breakers.</b> Click a red tripped breaker three times within 1.25 seconds. A half-second pause lets it trip again.</span></li>
+        <li><span class="step-number">03</span><span><b>Scan before the sweep.</b> Select a powered blue node and press Space. Sonar recharges in three seconds; the safety watchdog re-scans every six.</span></li>
+        <li><span class="step-number">04</span><span><b>Keep it connected.</b> If seawater shorts your path, the blue nodes cut off from it go dark until you reconnect them.</span></li>
       </ol>
-      <button id="start-button" type="button" autofocus>BEGIN OVERRIDE</button>
-      <div class="tutorial-footnote">The timer and AI start when you do.</div>
+      <button id="start-button" type="button" autofocus>BEGIN REROUTE</button>
+      <div class="tutorial-footnote">The timer and the shorts start when you do.</div>
     </div>
   </section>
   <section id="end-screen" hidden aria-live="assertive" aria-labelledby="end-title">
     <div class="end-card">
-      <div id="end-kicker">ARIA NETWORK</div>
-      <h1 id="end-title">OVERRIDE FAILED</h1>
+      <div id="end-kicker">RELAY NETWORK</div>
+      <h1 id="end-title">REROUTE FAILED</h1>
       <p id="end-message"></p>
       <button id="restart-button" type="button">RUN AGAIN</button>
     </div>

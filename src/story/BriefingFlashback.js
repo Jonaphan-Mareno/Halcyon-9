@@ -185,10 +185,12 @@ body.fb1 #ui-layer, body.fb1 .fps-counter { visibility: hidden !important; }
 
 export class BriefingFlashback {
   // root: where the overlay goes (null: none, for the photo tool); source: Level 1's Voss (a
-  // loaded Player: bodyRoot and clips)
-  constructor(source, { root = document.body } = {}) {
+  // loaded Player: bodyRoot and clips); faces: everyone's own face, Voss's head too (only for the
+  // restored photo of the ending, scripts/ending-photo/: the flashback itself never shows a face)
+  constructor(source, { root = document.body, faces = false } = {}) {
     this.source = source;
     this.root = root;
+    this.faces = faces;
     this.running = false;
     this.ready = false;
     this.t = 0;
@@ -607,7 +609,7 @@ export class BriefingFlashback {
       const name = src.name;
       if (!look) {
         // Voss: no head, no hair, no glasses (the camera is where they would be)
-        if (/M_Head|M_Hair|M_Glasses|M_Mouth|M_Teeth|M_LipSeal|M_Wound/.test(name)) { o.visible = false; return; }
+        if (/M_Wound/.test(name) || (!this.faces && /M_Head|M_Hair|M_Glasses|M_Mouth|M_Teeth|M_LipSeal/.test(name))) { o.visible = false; return; }
         o.frustumCulled = false;
       } else if (hide.has(name) || (!look.glasses && name.startsWith('M_Glasses'))) {
         o.visible = false;
@@ -651,8 +653,8 @@ export class BriefingFlashback {
       if (!o.isMesh) return;
       let part = o;
       while (part.parent && part.parent !== model && !['Head', 'Eyes', 'Hands', 'Body', 'Glasses', 'Hair'].includes(part.name)) part = part.parent;
-      if (part.name === 'Eyes') { gone.push(o); return; }
-      const key = part.name === 'Head' ? 'face' : o.material;
+      if (part.name === 'Eyes' && !this.faces) { gone.push(o); return; }
+      const key = part.name === 'Head' && !this.faces ? 'face' : o.material;
       if (!made.has(key)) {
         let m;
         if (key === 'face') {
@@ -680,8 +682,8 @@ export class BriefingFlashback {
       if (!o.isMesh) return;
       let part = o;
       while (part.parent && part.parent !== model && !['Head', 'Eyes', 'Hands', 'Body', 'Glasses', 'Hair'].includes(part.name)) part = part.parent;
-      if (part.name === 'Eyes') { gone.push(o); return; }
-      const key = part.name === 'Head' ? 'face' : o.material;
+      if (part.name === 'Eyes' && !this.faces) { gone.push(o); return; }
+      const key = part.name === 'Head' && !this.faces ? 'face' : o.material;
       if (!made.has(key)) {
         let m;
         if (key === 'face') {

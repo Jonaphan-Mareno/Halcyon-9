@@ -1,0 +1,68 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Scene B: pose probe</title>
+<base href="/">
+<style>html, body { margin: 0; background: #000; }</style>
+<script type="module">
+// Voss's acting clips held at chosen frames (dev only; run by probe.mjs): where his bones are (in
+// the actor's root frame: +z his front, +x his left, metres) and pictures from the side and front,
+// for building Scene B's kneel, sit and fall (level3/SceneB.js).
+import * as THREE from 'three';
+import { Player } from '/src/entities/Player.js';
+import { loadVossActing, VossActor } from '/src/entities/vossActing.js';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.setSize(480, 480);
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x30343a);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x404040, 2.2));
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.MeshLambertMaterial({ color: 0x555a60 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+const grid = new THREE.GridHelper(6, 30, 0x88aaff, 0x6a7078);
+grid.position.y = 0.002;
+scene.add(grid);
+const player = new Player(new THREE.Scene());
+await player.load();
+const clips = await loadVossActing(player);
+const actor = new VossActor(player, clips, { preset: 'resigned' });
+window.__actor = actor;
+scene.add(actor.root);
+actor.breathing = actor.weightShift = actor.headDrift = false;
+const cam = new THREE.PerspectiveCamera(40, 1, 0.05, 20);
+const BONES = ['pelvis', 'spine4', 'head', 'leftHand', 'rightHand', 'leftCalf', 'rightCalf', 'leftFoot', 'rightFoot', 'leftToe', 'rightToe'];
+
+// a built pose on top (level3/vossPoses.js): window.__extra = 'kneel:1' (name:k) before a shot
+const P = await import('/src/level3/vossPoses.js');
+actor.onPose((a) => {
+  if (!window.__extra) return;
+  const [fn, k, ...rest] = window.__extra.split(':');
+  P[fn](a, +k, ...rest.map(Number));
+});
+function hold(name, at) {
+  actor.crossTo(name, { at, rate: 0, fade: 0, restart: true });
+  actor.update(0);
+  actor.update(1 / 60);
+}
+const local = (b) => actor.root.worldToLocal(actor.bone(b).getWorldPosition(new THREE.Vector3())).toArray().map((v) => +v.toFixed(3));
+window.__bones = (name, at) => {
+  hold(name, at);
+  return Object.fromEntries(BONES.map((b) => [b, local(b)]));
+};
+// a picture of the pose from a side: 'side' (from his right), 'front', 'three'
+window.__shot = (name, at, view = 'side', look = null) => {
+  hold(name, at);
+  const hip = actor.bone('pelvis').getWorldPosition(new THREE.Vector3());
+  const l = look ? new THREE.Vector3(...look) : new THREE.Vector3(hip.x, 0.6, hip.z);
+  const off = { side: [-3.2, 0.9, 0], front: [0, 0.9, 3.2], three: [-2.3, 1.4, 2.3], back: [0, 0.9, -3.2] }[view];
+  cam.position.copy(l).add(new THREE.Vector3(...off));
+  cam.lookAt(l);
+  renderer.render(scene, cam);
+  return renderer.domElement.toDataURL('image/jpeg', 0.8);
+};
+window.__clips = Object.fromEntries(clips.map((c) => [c.name, +c.duration.toFixed(2)]));
+window.__clips['FallForward@sit'] = +clips.find((c) => c.name === 'FallForward').userData.fromSeat.duration.toFixed(2);
+window.__ready = true;
+</script>

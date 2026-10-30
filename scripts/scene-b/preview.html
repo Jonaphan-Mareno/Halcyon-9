@@ -1,0 +1,120 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Scene B preview</title>
+<base href="/">
+<style>html, body { margin: 0; height: 100%; overflow: hidden; background: #000; } #ui-layer { position: fixed; inset: 0; pointer-events: none; }</style>
+<div id="ui-layer"></div>
+<script>addEventListener("error", (e) => { window.__error = String(e.error?.stack || e.message); }); addEventListener("unhandledrejection", (e) => { window.__error = String(e.reason?.stack || e.reason); });</script>
+<script type="module">
+// Scene B on its own (dev only): the confrontation is run through out of sight to its choice,
+// "Yes" is chosen, and Scene B plays from there. Opened by check.mjs (headless: frames at given
+// times), or by hand at /scripts/scene-b/preview.html?play to watch it at normal speed with sound
+// (click once: the browser wants a click before it plays sound). ?play&narration goes on to the
+// narration and the credits after it.
+import * as THREE from 'three';
+import { Confrontation } from '/src/level3/Confrontation.js';
+import { SceneB } from '/src/level3/SceneB.js';
+
+const params = new URLSearchParams(location.search);
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: !params.has('play') });
+renderer.setPixelRatio(1);
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+window.__r = renderer;
+const ui = document.getElementById('ui-layer');
+const conf = new Confrontation(ui);
+window.__conf = conf;
+window.__stage = "conf";
+await conf.preload(renderer);
+window.__stage = "run-through";
+// the confrontation, run through to its prompt (as its skip does)
+conf._mountOverlay();
+const step = (t1) => { while (conf.t < t1) { conf.t += 1 / 30; conf._animate(conf.t, 1 / 30); } };
+step(conf.T.prompt + 1.5);
+// (its sound as it is at the choice: the effects and the hum, the voices done)
+conf._startSound();
+conf._stopVoices();
+conf._settleSound();
+conf._showChoice();
+window.__stage = "scene-b";
+const sb = new SceneB(conf);
+window.__sb = sb;
+await sb.preload(renderer);
+window.__ready = conf.ready && sb.ready;
+
+// step Scene B to time t (s) at 30 frames a second, then draw it; view as in the confrontation's
+// preview ({ p, l, fov }: a point or 'R'/'L'/'head'/'hip' to look at, a point or 'head'+offset)
+let started = false;
+const start = () => {
+  if (started) return;
+  started = true;
+  // (its sound as its skip leaves it at the choice: the voices stopped, the hum low)
+  conf._startSound();
+  conf._stopVoices();
+  conf._settleSound();
+  conf._choose('yes');
+  sb.play();
+  if (!params.has('play')) {
+    // (headless: the frames' clock, not the sound's)
+    sb._t0 = undefined;
+    conf.ac?.suspend?.();
+  }
+};
+window.__frame = (t, view = null) => {
+  start();
+  while (sb.t < t - 1e-6) {
+    const dt = Math.min(1 / 30, t - sb.t);
+    sb.t += dt;
+    sb._animate(sb.t, dt);
+  }
+  sb._subtitles(sb.t);
+  if (view) {
+    const a = conf.actor, at = (k) => k === 'R' || k === 'L' ? a.bone(k === 'R' ? 'rightHand' : 'leftHand').getWorldPosition(new THREE.Vector3())
+      : k === 'head' ? a.bone('head').getWorldPosition(new THREE.Vector3()) : k === 'hip' ? a.bone('pelvis').getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(...k);
+    const l = at(view.l);
+    const p = Array.isArray(view.p) && typeof view.p[0] === 'string' ? at(view.p[0]).add(new THREE.Vector3(...view.p.slice(1))) : new THREE.Vector3(...view.p);
+    conf.camera.position.copy(p);
+    conf.camera.fov = view.fov || 40;
+    conf.camera.updateProjectionMatrix();
+    conf.camera.lookAt(l);
+  }
+  sb._draw(renderer, sb.t, view ? 0 : null);
+  return renderer.domElement.toDataURL('image/jpeg', 0.85);
+};
+window.__T = () => (start(), sb.T);
+// the camera, frame by frame from now to t1: [t, shot, x, y, z, qx, qy, qz, qw]
+window.__trace = (t1) => {
+  start();
+  const out = [];
+  while (sb.t < t1 - 1e-6) {
+    const dt = Math.min(1 / 30, t1 - sb.t);
+    sb.t += dt;
+    sb._animate(sb.t, dt);
+    const c = conf.camera;
+    out.push([+sb.t.toFixed(3), sb._shotIndex, ...c.position.toArray().map((v) => +v.toFixed(4)), ...c.quaternion.toArray().map((v) => +v.toFixed(5))]);
+  }
+  return out;
+};
+
+if (params.has('play')) {
+  ui.insertAdjacentHTML('beforeend', '<div id="go" style="color:#cfefff;font:16px monospace;position:absolute;top:45%;width:100%;text-align:center">click to play</div>');
+  addEventListener('click', async () => {
+    document.getElementById('go')?.remove();
+    sb.preload(renderer);
+    const loop = () => { sb.render(renderer); requestAnimationFrame(loop); };
+    start();
+    loop();
+    const end = await new Promise((r) => { sb._resolve = r; });
+    console.log('Scene B:', end, sb.stats);
+    if (params.has('narration')) {
+      const path = '/src/level3/EndingNarration.js';
+      const { EndingNarration } = await import(/* @vite-ignore */ path);
+      const n = new EndingNarration(document.body);
+      await n.preload();
+      await n.play();
+      n.dispose();
+    }
+  }, { once: true });
+}
+</script>

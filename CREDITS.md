@@ -109,6 +109,17 @@ Dr. Kessler (`public/assets/models/kessler.glb`) is built from these models by
 - *"Female scientist" by photon (that one larry) (https://sketchfab.com/Professor_E12), licensed under CC-BY-4.0. Modified (rigged to Voss's skeleton, clothes repainted, head and hair replaced, glasses removed; also Lindqvist's body, repainted again).*
 - *"Angelica - Female Head PBR Model with Animation" by Sell Asset Store (https://sketchfab.com/emraanalis), licensed under CC-BY-4.0. Modified (decimated, neck refitted, given expressions, skin warmed, hair, brows and eyes recoloured, eyelashes and eye highlights removed; the eyeballs also used for Lindqvist and Navarro).*
 
+Voss's mother, in the prologue's photos and at the window at the end
+(`Blender/scripts/prologue_common.py`, `render_ending_window.py`), is "Female scientist" (above)
+restyled, with this head (in `Blender/assets/woman_head/`, not in git: download it from the link to
+rebuild):
+
+| Model | Author | Used for | Link |
+|---|---|---|---|
+| Woman Head | Malcolm | Voss's mother's head, face and hair | https://sketchfab.com/3d-models/woman-head-63583f52e48b4553960a2061340e845b |
+
+- *This work is based on "Woman Head" (https://sketchfab.com/3d-models/woman-head-63583f52e48b4553960a2061340e845b) by Malcolm (https://sketchfab.com/unitedglazer1) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/). Modified (decimated, set on another character's body, shrunk, hair recoloured black or grey, given a smile, eyelids and lines of age).*
+
 Voss's crewmates Lindqvist, Navarro and Park (`public/assets/models/lindqvist.glb`, `navarro.glb`,
 `park.glb`) are the heads of these models on bodies already in the game (Lindqvist on Kessler's, so
 on "Female scientist" above, recoloured; Navarro and Park on Voss's), built by
@@ -145,7 +156,10 @@ cut, levelled and converted to ogg into `public/assets/audio/sfx/l3/` and `publi
 CC0 needs no credit, but the authors are named here (some ask for it). Flashback 3
 (`src/level3/LockFlashback.js`) uses some of the same clips (the engines' hum, the clunk of the main
 feed, the door's creak and slam, the latch, the seal's hiss, fists on the glass, the water); its sparks,
-low thuds, footsteps and the console's buzz are synthesised in the browser.
+low thuds, footsteps and the console's buzz are synthesised in the browser. The ending's confrontation
+(`src/level3/Confrontation.js`) uses the machine hum, a click (the plug rattling in his hand), a
+clank (the plug landing on the floor), a punch and a slide (his footsteps and the dragged foot); the
+hologram's flicker, the scrape of the plug over the floor and the low hum's tone are synthesised.
 
 | Pack | Author | Used for | Link |
 |---|---|---|---|

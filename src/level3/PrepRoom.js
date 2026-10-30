@@ -497,14 +497,16 @@ export class PrepRoom {
   }
 
   // Where the camera is: out in the sea (its fog, light from above), under the lock's water (the
-  // sea's colour, closer), or in the air
+  // sea's colour, closer), or in the air (here, or in the relay's water lock once it is drained:
+  // RelayLock)
   _underwater() {
     const cam = this.game.camera.instance.position;
     const open = this.lock === 'outer' || this.lock === 'open';
     const inLock = this._inLock(cam, 0.05);
-    const mode = this.zone === 'sea' && open && !inLock ? 'sea'
-      : cam.x < LOCK.minX ? (open ? 'sea' : 'air')
-        : inLock && cam.y < this.lockWater.level ? 'lock' : 'air';
+    const mode = this.s.trench?.lock?.inAir(cam) ? 'air'
+      : this.zone === 'sea' && open && !inLock ? 'sea'
+        : cam.x < LOCK.minX ? (open ? 'sea' : 'air')
+          : inLock && cam.y < this.lockWater.level ? 'lock' : 'air';
     if (mode === this._fogMode) return;
     this._fogMode = mode;
     this.s.sea?.setActive(mode === 'sea');

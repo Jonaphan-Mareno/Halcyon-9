@@ -1,0 +1,216 @@
+// The six of us as doodles (from devlog/doodles/team-sheet.html), drawn into an SVG group with
+// their feet at (0, 0), so the devlog's overlay can place, flip, scale and tilt them each frame.
+//   doodle(parent, 'naomi', { label, wave, armUp, pushing, blink })
+// White line on black, a slight hand-drawn wobble from the overlay's filter.
+
+const NS = 'http://www.w3.org/2000/svg';
+export function el(parent, tag, attrs) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  parent.appendChild(e);
+  return e;
+}
+const path = (g, d, cls = 'ink') => el(g, 'path', { d, class: cls });
+const GROUND = 0;
+
+function person(parent, h, o, pose) {
+  const g = el(parent, 'g', {});
+  const x = 0;
+  const r = o.head || 23;
+  const top = GROUND - h;
+  const hy = top + r;
+  const neck = top + 2 * r + 4;
+  const sh = neck + 10;
+  const hip = GROUND - h * 0.46;
+  const knee = GROUND - h * 0.24;
+  const lean = o.lean || 0;
+  const hx = x + lean;
+  const sw = o.shoulders || 22;
+  const hw = o.hips || 12;
+  const step = (o.stance || 14) * (pose.walk ? 1 + 0.9 * Math.sin(pose.walk) : 1);
+
+  for (const s of [-1, 1]) {
+    const sw2 = pose.walk ? s * 10 * Math.sin(pose.walk) : 0;
+    path(g, `M${x + s * hw * 0.6},${hip} L${x + s * step * 0.8 + sw2 * 0.5},${knee} L${x + s * step + sw2},${GROUND}`);
+    path(g, `M${x + s * step + sw2},${GROUND} l${s * 13},0`);
+  }
+  path(g, `M${hx},${hy + r} L${hx},${neck} Q${x + lean * 0.8},${(neck + hip) / 2} ${x},${hip}`);
+  o.clothes?.(g, { x, hx, sh, hip, knee, sw, hw, step, h });
+  // arms: [side, pose]; pose 0 down, 'wave' up and waving, 'push' straight out forward, 'up' raised
+  const arms = o.arms || [[-1, 0], [1, 0]];
+  for (const [s, a0] of arms) {
+    let a = a0;
+    if (pose.wave && s === 1) a = 'wave';
+    if (pose.push) a = 'push';
+    if (pose.armUp && s === (pose.armUp === 'L' ? -1 : 1)) a = 'up';
+    let ex = hx + s * (sw + 10), ey = sh + (hip - sh) * 0.45, wx = hx + s * (sw + 14), wy = hip + 6;
+    if (a === 1 || a === 'wave') {
+      const k = a === 'wave' ? Math.sin((pose.t || 0) * 9) * 10 : 0;
+      ex = hx + s * (sw + 12); ey = sh + 4; wx = hx + s * (sw + 26) + k; wy = sh - 30;
+    } else if (a === 'push') {
+      ex = hx + s * (sw * 0.4) + 22; ey = sh + 8; wx = hx + s * (sw * 0.3) + 48; wy = sh + 2;
+    } else if (a === 'up') {
+      ex = hx + s * (sw + 6); ey = sh - 20; wx = hx + s * (sw + 10); wy = sh - 52;
+    }
+    path(g, `M${hx + s * sw},${sh} L${ex},${ey} L${wx},${wy}`);
+    el(g, 'circle', { cx: wx, cy: wy, r: 3.5, class: 'fill' });
+    if (s === 1) g.dataset.hand = `${wx},${wy}`;
+  }
+  o.behind?.(g, { hx, hy, r });
+  if (o.shape) path(g, o.shape(hx, hy, r), 'cloth');
+  else if (o.square) path(g, `M${hx - r},${hy - r + 2} L${hx + r},${hy - r} L${hx + r - 1},${hy + r - 2} Q${hx},${hy + r + 3} ${hx - r + 1},${hy + r - 1} Z`, 'cloth');
+  else el(g, 'circle', { cx: hx, cy: hy, r, class: 'cloth' });
+  // face: dot eyes (closed for a blink or a squint), a small smile (open when talking)
+  if (pose.squint) {
+    path(g, `M${hx - 11},${hy - 2} l6,0 M${hx + 5},${hy - 2} l6,0`);
+  } else {
+    el(g, 'circle', { cx: hx - 8, cy: hy - 2, r: 2.6, class: 'fill' });
+    el(g, 'circle', { cx: hx + 8, cy: hy - 2, r: 2.6, class: 'fill' });
+  }
+  if (pose.talk) {
+    const open = 2 + 4 * Math.abs(Math.sin((pose.t || 0) * 11) * Math.sin((pose.t || 0) * 4.3));
+    el(g, 'ellipse', { cx: hx, cy: hy + 11, rx: 5, ry: open, class: 'cloth' });
+  } else if (pose.shout) {
+    el(g, 'ellipse', { cx: hx, cy: hy + 11, rx: 5, ry: 6, class: 'cloth' });
+  } else {
+    path(g, `M${hx - 6},${hy + 9} Q${hx},${hy + 14} ${hx + 6},${hy + 9}`);
+  }
+  o.face?.(g, { hx, hy, r });
+  o.hair?.(g, { hx, hy, r, top });
+  if (pose.label) {
+    const top2 = top - (o.hairUp || 0);
+    const ly = top2 - 46;
+    el(g, 'text', { x: hx, y: ly, 'font-size': 24, 'text-anchor': 'middle' }).textContent = o.name;
+    path(g, `M${hx},${ly + 8} Q${hx + 14},${ly + 28} ${hx + 4},${top2 - 8}`);
+    path(g, `M${hx - 4},${top2 - 16} L${hx + 4},${top2 - 8} L${hx + 12},${top2 - 15}`);
+  }
+  return g;
+}
+
+const tank = (g, p) => {
+  path(g, `M${p.hx - 9},${p.sh - 6} L${p.hx - 13},${p.sh + 8} Q${p.hx - 26},${p.hip - 10} ${p.x - 24},${p.hip + 4} Q${p.x},${p.hip + 12} ${p.x + 24},${p.hip + 4} Q${p.hx + 26},${p.hip - 10} ${p.hx + 13},${p.sh + 8} L${p.hx + 9},${p.sh - 6}`, 'cloth');
+  path(g, `M${p.hx - 13},${p.sh + 8} Q${p.hx},${p.sh + 16} ${p.hx + 13},${p.sh + 8}`);
+};
+const tee = (g, p, w = 1) => {
+  const a = p.sw * w;
+  path(g, `M${p.hx - a},${p.sh} L${p.hx - a - 12},${p.sh + 26} L${p.hx - a - 2},${p.sh + 30} L${p.hx - a + 2},${p.sh + 18} L${p.x - a + 2},${p.hip + 6} L${p.x + a - 2},${p.hip + 6} L${p.hx + a - 2},${p.sh + 18} L${p.hx + a + 2},${p.sh + 30} L${p.hx + a + 12},${p.sh + 26} L${p.hx + a},${p.sh} Q${p.hx},${p.sh + 10} ${p.hx - a},${p.sh}`, 'cloth');
+};
+const pants = (g, p, { to = 1, loose = 1, pockets = false } = {}) => {
+  const y = p.knee + (GROUND - p.knee) * to - (to < 1 ? 0 : 6);
+  const w = 10 * loose;
+  for (const s of [-1, 1]) {
+    const kx = p.x + s * p.step * 0.8, fx = p.x + s * p.step * (0.8 + 0.2 * to);
+    path(g, `M${p.x + s * 2},${p.hip + 4} L${p.x + s * (p.hw + 6) * loose},${p.hip} L${fx + s * w},${y} L${fx - s * w * 0.6},${y} L${kx - s * 4},${p.knee + 6} L${p.x + s * 2},${p.hip + 18}`, 'cloth');
+    if (pockets) path(g, `M${kx + s * 2},${p.knee - 14} l${s * 10},0 l0,14 l${-s * 10},0 Z`);
+  }
+};
+const leggings = (g, p) => {
+  const y = p.knee + (GROUND - p.knee) * 0.55;
+  for (const s of [-1, 1]) {
+    const hx = p.x + s * p.hw * 0.6, kx = p.x + s * p.step * 0.8, fx = kx + s * p.step * 0.2 * 0.55;
+    path(g, `M${p.x},${p.hip - 2} L${hx + s * 9},${p.hip - 2} L${kx + s * 6},${p.knee} L${fx + s * 5},${y} L${fx - s * 5},${y} L${kx - s * 5},${p.knee} L${p.x},${p.hip + 14} Z`, 'cloth');
+  }
+};
+const dress = (g, p) => {
+  path(g, `M${p.hx - 24},${p.sh + 4} Q${p.hx},${p.sh + 12} ${p.hx + 24},${p.sh + 4}`);
+  path(g, `M${p.hx - 20},${p.sh + 6} Q${p.hx - 14},${p.hip - 30} ${p.x - 15},${p.hip - 6} L${p.x - 34},${p.knee - 10} Q${p.x},${p.knee - 2} ${p.x + 34},${p.knee - 10} L${p.x + 15},${p.hip - 6} Q${p.hx + 14},${p.hip - 30} ${p.hx + 20},${p.sh + 6}`, 'cloth');
+};
+const block = (g, p) => {
+  path(g, `M${p.hx - 34},${p.sh - 2} L${p.hx + 34},${p.sh - 2} L${p.hx + 36},${p.hip + 8} L${p.hx - 36},${p.hip + 8} Z`, 'cloth');
+  path(g, `M${p.hx - 10},${p.sh - 2} Q${p.hx},${p.sh + 8} ${p.hx + 10},${p.sh - 2}`);
+};
+const lowBun = (g, { hx, hy, r }) => {
+  el(g, 'circle', { cx: hx + r * 0.78, cy: hy + r * 0.72, r: 12, class: 'cloth' });
+  path(g, `M${hx + r * 0.78 - 5},${hy + r * 0.72 - 4} q5,4 10,0 M${hx + r * 0.78 - 4},${hy + r * 0.72 + 3} q4,3 8,0`);
+};
+const bun = (g, { hx, hy, r }) => {
+  path(g, `M${hx - r + 1},${hy - 3} Q${hx - r + 3},${hy - r - 4} ${hx},${hy - r - 1} Q${hx + r - 3},${hy - r - 4} ${hx + r - 1},${hy - 3}`);
+  path(g, `M${hx},${hy - r - 1} Q${hx - 2},${hy - r + 6} ${hx - 1},${hy - r + 9}`);
+  path(g, `M${hx - r + 3},${hy + 2} q-4,8 -1,14`);
+};
+const softDiamond = (hx, hy, r) => {
+  const w = r * 0.8, t = r * 1.12, b = r * 1.18;
+  return `M${hx},${hy - t} C${hx + w * 0.62},${hy - t} ${hx + w},${hy - r * 0.45} ${hx + w},${hy - 2}`
+    + ` C${hx + w},${hy + r * 0.5} ${hx + w * 0.5},${hy + b} ${hx},${hy + b}`
+    + ` C${hx - w * 0.5},${hy + b} ${hx - w},${hy + r * 0.5} ${hx - w},${hy - 2}`
+    + ` C${hx - w},${hy - r * 0.45} ${hx - w * 0.62},${hy - t} ${hx},${hy - t} Z`;
+};
+const flatTop = (g, { hx, hy, r }) => {
+  path(g, `M${hx - r * 0.8},${hy - r * 0.5} Q${hx - 8},${hy - r * 0.62} ${hx},${hy - r * 0.38} Q${hx + 8},${hy - r * 0.62} ${hx + r * 0.8},${hy - r * 0.5}`);
+  for (let i = 0; i < 8; i++) {
+    const a = Math.PI * (0.16 + 0.68 * i / 7);
+    const cx = hx - Math.cos(a) * r * 0.86, cy = hy - Math.sin(a) * r * 1.0 - 3;
+    path(g, `M${cx - 4},${cy + 1} q1,-6 5,-4 q4,2 0,5 q-3,2 -2,-2`);
+  }
+};
+const moustache = (g, { hx, hy }) => {
+  path(g, `M${hx - 10},${hy + 6} Q${hx - 4},${hy + 2} ${hx},${hy + 5} Q${hx + 4},${hy + 2} ${hx + 10},${hy + 6}`);
+  for (const dx of [-3, 0, 3]) path(g, `M${hx + dx},${hy + 18} l0,3`);
+};
+const afro = (g, { hx, hy, r }) => {
+  let d = '';
+  const n = 13, R = r + 15, a0 = -0.55, a1 = Math.PI + 0.55;
+  const at = (a, k) => [hx + Math.cos(a) * R * k, hy - 2 - Math.sin(a) * R * k];
+  for (let i = 0; i <= n; i++) {
+    const a = a0 + (a1 - a0) * i / n, [px, py] = at(a, 1);
+    if (i === 0) d += `M${px},${py}`;
+    else { const [cx, cy] = at(a - (a1 - a0) / n / 2, 1.28); d += ` Q${cx},${cy} ${px},${py}`; }
+  }
+  path(g, d);
+};
+const glasses = (g, { hx, hy }) => {
+  el(g, 'circle', { cx: hx - 9, cy: hy - 2, r: 7, class: 'ink' });
+  el(g, 'circle', { cx: hx + 9, cy: hy - 2, r: 7, class: 'ink' });
+  path(g, `M${hx - 2},${hy - 3} L${hx + 2},${hy - 3}`);
+};
+const dreads = (g, { hx, hy, r }) => {
+  path(g, `M${hx - r},${hy - 4} Q${hx},${hy - r - 10} ${hx + r},${hy - 4}`);
+  for (const s of [-1, 1]) for (let i = 0; i < 4; i++) {
+    const a = -Math.PI / 2 - s * (0.95 + i * 0.32);
+    const sx = hx + Math.cos(a) * (r + 1), sy = hy + Math.sin(a) * (r + 1);
+    const out = -s * (5 + i * 4);
+    const d = `M${sx},${sy} q${out},14 ${out * 0.8},30 q${s * 3},14 ${out * 0.9},${32 + i * 5}`;
+    el(g, 'path', { d, fill: 'none', stroke: '#fff', 'stroke-width': 9, 'stroke-linecap': 'round' });
+    el(g, 'path', { d, fill: 'none', stroke: '#000', 'stroke-width': 3.4, 'stroke-linecap': 'round' });
+  }
+};
+const buzz = (g, { hx, hy, r }) => {
+  for (let i = 0; i < 14; i++) {
+    const a = Math.PI * (1.12 + 0.76 * i / 13);
+    el(g, 'circle', { cx: hx + Math.cos(a) * (r - 5), cy: hy + Math.sin(a) * (r - 5), r: 1.4, class: 'fill' });
+  }
+  path(g, `M${hx + 1},${hy - 1} Q${hx + 14},${hy + 8} ${hx + 3},${hy + 9}`);
+};
+const twists = (g, { hx, hy, r }) => {
+  for (let i = -3; i <= 3; i++) path(g, `M${hx + i * 6},${hy - r + 1} q${i % 2 ? 3 : -3},-6 ${i % 2 ? -1 : 1},-11`);
+};
+const scruff = (g, { hx, hy, r }) => {
+  const rnd = (i) => { const v = Math.sin(i * 12.9898) * 43758.5453; return v - Math.floor(v); };
+  for (let i = 0; i < 12; i++) {
+    const k = rnd(i), u = (i + k * 0.6) / 12;
+    if (k < 0.3) continue;
+    const x = hx - r + 4 + u * (2 * r - 8), y = hy + 9 + Math.sin(u * Math.PI) * 9 + k * 3;
+    path(g, `M${x},${y} l${(k - 0.5) * 3},${2 + k * 2}`);
+  }
+  for (const s of [-1, 1]) path(g, `M${hx + s * (r + 1)},${hy + 6} l${s * 5},3 l${-s * 1},7 l${-s * 6},-1 Z`);
+};
+
+export const PEOPLE = {
+  naomi: [300, { name: 'Naomi', hairUp: 4, hair: bun, behind: lowBun, clothes: (g, p) => { tank(g, p); leggings(g, p); }, hips: 13, shoulders: 19 }],
+  jonaphan: [317, { name: 'Jonaphan', hairUp: 8, shape: softDiamond, hair: flatTop, face: moustache, clothes: (g, p) => { tee(g, p); pants(g, p, { loose: 1.4, pockets: true }); } }],
+  tariro: [296, { name: 'Tariro', hairUp: 22, hair: afro, face: glasses, clothes: dress, shoulders: 19 }],
+  sivu: [345, { name: 'Sivu', head: 25, hair: dreads, clothes: (g, p) => { block(g, p); pants(g, p, { to: 0.5, loose: 1.6 }); }, shoulders: 34, stance: 18, hips: 18 }],
+  thabiso: [316, { name: 'Thabiso', shape: softDiamond, hair: buzz, lean: 10, clothes: (g, p) => { tee(g, p, 0.85); pants(g, p, { loose: 0.8 }); }, shoulders: 17, hips: 9, stance: 11 }],
+  simphiwe: [284, { name: 'Simphiwe', square: true, hairUp: 10, hair: twists, face: scruff, clothes: (g, p) => { tee(g, p, 1.15); pants(g, p, { to: 0.5, loose: 1.5 }); } }]
+};
+export const NAMES = Object.fromEntries(Object.entries(PEOPLE).map(([k, v]) => [k, v[1].name]));
+
+// one doodle, feet at (x, y), at scale s (1 = the team sheet's size), flipped with flip = -1, turned by rot (deg)
+export function doodle(parent, id, { x = 0, y = 0, s = 0.6, flip = 1, rot = 0, ...pose } = {}) {
+  const [h, o] = PEOPLE[id];
+  const g = el(parent, 'g', { transform: `translate(${x},${y}) rotate(${rot}) scale(${s * flip},${s})` });
+  person(g, h, o, pose);
+  if (pose.label && flip < 0) g.querySelectorAll('text').forEach((t) => t.setAttribute('transform', 'scale(-1,1)'));
+  return g;
+}
+export function heightOf(id) { return PEOPLE[id][0]; }

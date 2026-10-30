@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>devlog overlay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Gloria+Hallelujah&family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/glsl.min.js"></script>
+<style>
+  html, body { margin: 0; width: 1280px; height: 720px; overflow: hidden; background: transparent; }
+  #stage { position: absolute; inset: 0; }
+  svg { position: absolute; inset: 0; }
+  .ink { fill: none; stroke: #fff; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+  .fill { fill: #fff; stroke: none; }
+  .cloth { fill: #000; stroke: #fff; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+  text { fill: #fff; font-family: 'Gloria Hallelujah', cursive; }
+  .hand { font-family: 'Gloria Hallelujah', cursive; color: #fff; }
+  /* the code card */
+  .code { position: absolute; background: #0d1117; border: 2px solid #fff; border-radius: 10px; overflow: hidden;
+          font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 18.5px; color: #c9d1d9;
+          box-shadow: 0 8px 30px rgba(0,0,0,.6); }
+  .code .tab { height: 30px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; align-items: center;
+               padding: 0 12px; gap: 8px; font-family: 'Inter', sans-serif; font-size: 13px; color: #e6edf3; }
+  .code .tab .dot { width: 10px; height: 10px; border-radius: 50%; background: #30363d; }
+  .code .tab .name { margin-left: 8px; }
+  .code .tab .lines { margin-left: auto; color: #7d8590; }
+  .code pre { margin: 0; padding: 10px 0; }
+  .code .ln { display: block; padding: 0 14px 0 0; white-space: pre; transition: none; }
+  .code .ln .no { display: inline-block; width: 48px; text-align: right; padding-right: 14px; color: #484f58; }
+  .code .ln.on { background: rgba(56, 214, 255, .16); box-shadow: inset 3px 0 0 #38d6ff; }
+  .code .ln.on .no { color: #38d6ff; }
+  .code .ln.dim { opacity: .38; }
+  /* the Blender interface */
+  .bl { position: absolute; font-family: 'Inter', sans-serif; font-size: 11px; color: #ccc; }
+  .bl .top { position: absolute; left: 0; right: 0; top: 0; height: 22px; background: #303030; display: flex; align-items: center;
+             gap: 14px; padding: 0 10px; border-bottom: 1px solid #1d1d1d; }
+  .bl .top b { color: #fff; font-weight: 600; }
+  .bl .top .ws { padding: 2px 8px; border-radius: 4px; }
+  .bl .top .ws.on { background: #4772b3; color: #fff; }
+  .bl .tools { position: absolute; left: 0; top: 22px; bottom: 18px; width: 30px; background: #2b2b2b; }
+  .bl .tools i { display: block; width: 18px; height: 18px; margin: 7px 6px; border-radius: 4px; background: #3d3d3d; }
+  .bl .tools i.on { background: #4772b3; }
+  .bl .out { position: absolute; right: 0; top: 22px; bottom: 18px; width: 200px; background: rgba(40,40,40,.97); border-left: 1px solid #1d1d1d; overflow: hidden; }
+  .bl .out .hd { background: #303030; padding: 4px 8px; color: #e0e0e0; font-weight: 600; border-bottom: 1px solid #1d1d1d; }
+  .bl .out .row { padding: 2px 8px 2px 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bl .out .row.sel { background: #334d80; color: #fff; }
+  .bl .out .row:nth-child(odd) { background-color: rgba(255,255,255,.025); }
+  .bl .out .row .ic { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 2px; background: #e8a33c; vertical-align: -1px; }
+  .bl .out .row .ic.EMPTY { background: #9aa; } .bl .out .row .ic.ARMATURE { background: #4bb5c4; } .bl .out .row .ic.LIGHT { background: #e8e86c; } .bl .out .row .ic.CAMERA { background: #c07f7f; }
+  .bl .bot { position: absolute; left: 0; right: 0; bottom: 0; height: 18px; background: #232323; border-top: 1px solid #1d1d1d;
+             display: flex; align-items: center; gap: 10px; padding: 0 10px; color: #9a9a9a; }
+  .bl .vp { position: absolute; left: 36px; top: 28px; color: #ddd; text-shadow: 0 1px 2px #000; }
+  .bl .script { position: absolute; left: 30px; top: 22px; bottom: 18px; width: 430px; background: rgba(29,29,29,.97);
+                font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 15px; color: #d4d4d4; padding: 8px 10px; overflow: hidden; white-space: pre; }
+  .bl .script .kw { color: #c586c0; } .bl .script .st { color: #ce9178; } .bl .script .cm { color: #6a9955; }
+  /* tags */
+  .tag { position: absolute; padding: 3px 12px 4px; background: #fff; color: #000; font-family: 'Gloria Hallelujah', cursive;
+         font-size: 17px; border-radius: 4px; transform: rotate(-2deg); box-shadow: 2px 3px 0 rgba(0,0,0,.5); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script type="module" src="./overlay.js"></script>
+</body>
+</html>

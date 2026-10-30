@@ -1,4 +1,4 @@
-import { playClip, preloadAudio, CLIPS } from '../audio/AudioCache.js';
+import { playClip, preloadAudio, loopClip, CLIPS } from '../audio/AudioCache.js';
 import * as THREE from "three";
 import { createGLTFLoader } from '../core/loaders.js';
 import { Shaders } from "../graphics/Shaders";
@@ -2921,6 +2921,13 @@ onRingPuzzleComplete() {
     this.doorMixer?.update(delta);
     this.time += delta;
     this.power += (this.powerTarget - this.power) * Math.min(1, delta * 1.5);
+    // the dying lights buzz and crackle until the power comes back on
+    if (!this._buzz && this.powerTarget < 0.99 && !this._buzzDone) this._buzz = loopClip(CLIPS.flicker, 1.6);
+    if (this._buzz && this.powerTarget >= 0.99) {
+      this._buzz.stop(2.5);
+      this._buzz = null;
+      this._buzzDone = true;
+    }
     if (this.ariaManager) {
       this.ariaManager.update(delta, playerPosition);
     }

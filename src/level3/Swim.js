@@ -47,6 +47,13 @@ export class Swim {
     const c = this.c, p = c.position, prep = this.s.prep;
     // (outside is anywhere out in the sea but the collar, from the hull back in to the lock)
     const inCollar = p.x > HULL_X - 0.1 && p.y > 0.8 && p.z > DECK.minZ && p.z < DECK.maxZ;
+    // (the relay's water lock: its scene has him from the hatch shutting, and moves him itself; the
+    // cable stays out of its shots)
+    const lock = this.s.trench?.lock;
+    if (lock?.owns) {
+      this.rope.visible = false;
+      return;
+    }
     const out = prep.zone === 'sea' && !inCollar;
     const overDeck = p.x > DECK.minX && p.x < DECK.maxX && p.z > DECK.minZ && p.z < DECK.maxZ;
     if (!c.swimming) {
@@ -216,8 +223,8 @@ export class Swim {
       // breathing: a handful of bubbles from the helmet every few seconds
       this._nextBreath -= dt;
       if (this._nextBreath <= 0) {
-        // (quicker when he is working hard: boosting, or fighting the kraken)
-        const exert = this.s.trench?.stage === 'fight' || c.keys.sprint ? 1 : 0;
+        // (quicker when he is working hard: boosting, fighting the kraken, or spent after it)
+        const exert = this.s.trench?.stage === 'fight' || this.s.trench?.spent || c.keys.sprint ? 1 : 0;
         this._nextBreath = (exert ? 2.3 : 3.8) + Math.random() * 0.8;
         this.s.sfx?.breath(exert);
         const n = 6 + Math.floor(Math.random() * 5);

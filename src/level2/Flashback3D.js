@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { FaceRig } from '../entities/FaceRig.js';
+import { FaceCreases } from '../entities/FaceCreases.js';
 import { Kessler } from '../entities/Kessler.js';
 import { EYE } from '../entities/Player.js';
 import { precompile } from '../core/precompile.js';
 import { settings } from '../core/Settings.js';
 import { Person, Walk, Eyes, turnTo, SCALE, seg, yawOf } from '../story/firstPersonRig.js';
+import { pose, grip } from '../story/gestures.js';
 
 // Flashback 2, "The shutdown" (docs/flashback-2-plan.md, docs/flashback-2-script.md), played when
 // Voss reads the code card in Dr. Kessler's room, and set in that same room, as it was: first person
@@ -217,6 +219,10 @@ export class Flashback3D {
     this.kes = new Person('kessler', this.kessler.model, this.kessler.clips);
     this.cast.add(this.kes.group);
     this.kFace = new FaceRig(this.kessler.model, 'composed');
+    // (the folds in her brow as it knits: her anger reads)
+    const head = this.kessler.parts.Head?.find((m) => m.morphTargetDictionary);
+    this.creases = head ? new FaceCreases(head) : null;
+    this.kFace.attachCreases(this.creases);
     // Voss: a copy of the player's skeleton, nothing of it drawn, for his eyes and his walk (his
     // meshes go, so none of his materials, which the player's body shares, is compiled here)
     const model = cloneSkinned(this.player.bodyRoot);
@@ -268,18 +274,33 @@ export class Flashback3D {
       [L.dots[0] + 0.4, down], [L.dots[0] + 1.5, light], [L.dots[1] - 0.3, face],
       [T.out - 0.6, (out) => out.copy(this.doorAt)], [T.desk, (out) => out.copy(this.deskAt)]
     ];
-    // her face for each stretch: the preset, and a passing expression on top
+    // her face for each stretch: the preset, and a passing expression on top. She is angry with
+    // him and holding it down: the brows hard down (the creases show past brow -1), the mouth
+    // pulled down, the lids a little narrowed, the head lowered; it softens only for her question.
+    const len = (id) => L[id][1] - L[id][0];
     this.acting = [
-      [0, 'composed', { frown: 0.1, brow: -0.1 }],
-      [L.k1[0], 'composed', { frown: 0.2, brow: -0.2, tired: 0.25 }],             // flat and final
-      [L.v1[0] + 0.6, 'composed', { frown: 0.3, brow: 0.25, worry: 0.2 }],       // he shouts; it hurts her
-      [L.k2[0], 'calm', { frown: 0.25, brow: -0.3 }],                            // firm
-      [L.v2[0] + 0.5, 'calm', { frown: 0.1, brow: 0.2, worry: 0.3 }],            // she hears him out
-      [L.k3[0], 'calm', { frown: 0.15, brow: 0.15, worry: 0.2, tired: 0.3 }],    // quiet: the thing she held back
-      [L.k4[0], 'calm', { frown: 0, brow: 0.35, worry: 0.4, smile: 0.05 }],      // gentle: she wants to know
-      [L.dots[0], 'composed', { frown: 0.15, brow: 0.2, worry: 0.35, tired: 0.3 }],
-      [L.k5[0], 'resigned', { frown: 0.25, brow: 0.05, tired: 0.45 }]            // resigned
+      [0, 'composed', { frown: 0.3, brow: -0.5 }],
+      [L.k1[0], 'composed', { frown: 0.5, brow: -0.95, tired: 0.25 }],                     // flat, final, hard
+      [L.v1[0] + 0.6, 'arguing', { frown: 0.65, brow: -1.25, tired: 0.15, bow: 0.04 }],    // he shouts: it angers her
+      [L.k2[0], 'arguing', { frown: 0.75, brow: -1.4, tired: 0.2, bow: 0.05 }],            // firm
+      [L.k2[0] + 0.6 * len('k2'), 'arguing', { frown: 0.85, brow: -1.6, tired: 0.25, bow: 0.06 }],   // "we scanned our own crew"
+      [L.v2[0] + 0.5, 'composed', { frown: 0.6, brow: -1.0, skew: -0.3 }],                 // she hears him out, unconvinced
+      [L.k3[0], 'composed', { frown: 0.55, brow: -1.15, tired: 0.2, bow: 0.04 }],          // quiet, pointed
+      [L.k3[0] + 0.7 * len('k3'), 'composed', { frown: 0.5, brow: -0.45, worry: 0.4 }],    // "Is that trust?"
+      [L.k4[0], 'calm', { frown: 0.25, brow: 0.35, worry: 0.6 }],                          // gentle: she wants to know
+      [L.dots[0], 'composed', { frown: 0.5, brow: -0.75, worry: 0.3, tired: 0.3 }],        // his silence: she hardens
+      [L.k5[0], 'resigned', { frown: 0.5, brow: -0.6, tired: 0.45 }]                       // resigned, cold
     ];
+    // her body: [from, to, right hand, left hand, lean, options], each eased in and out (story/gestures)
+    const chest = (out) => out.copy(this.camera.position).setY(this.camera.position.y - 0.4);
+    this.body = [
+      [L.k1[0] + 0.5, L.v1[1] + 0.3, 'cross', 'cross', 0],                                  // arms folded as he shouts
+      [L.k2[0] + 0.55 * len('k2'), L.k2[1] + 0.4, 'point', null, 0.1, { at: chest, reach: 0.4 }],   // at him
+      [L.v2[0] + 0.6, L.k3[0] + 0.5, 'hip', 'hip', 0],                                      // exasperated
+      [L.k3[0] + 0.65 * len('k3'), L.k3[1] + 0.5, 'open', null, 0.06],                      // "Is that trust?"
+      [L.dots[0] + 0.3, L.k5[0] + 1.0, 'cross', 'cross', 0]                                 // waiting for an answer
+    ];
+    this._grips = {};
     // Voss's blinks, every few seconds
     this.blinks = [];
     for (let t = 1.8, i = 0; t < T.end - 1; i++) {
@@ -461,6 +482,24 @@ export class Flashback3D {
     if (t > L.dots[0] + 1.6 && !this._nod) { this._nod = true; this.kFace.gesture('nod', 0.35); }
     this._mouth(t);
 
+    // her hands and body (this.body): where two gestures meet on one hand, the stronger has it
+    k.grips.R = k.grips.L = null;
+    let lean = 0;
+    for (const [i, [t0, t1, right, left, ln, opts]] of this.body.entries()) {
+      const w = seg(t, t0 - 0.35, t0) * (1 - seg(t, t1, t1 + 0.4));
+      if (w <= 0) continue;
+      lean += ln * w;
+      const at = opts?.at && opts.at(this._v);
+      for (const [side, kind] of [['R', right], ['L', left]]) {
+        if (!kind) continue;
+        const g = (this._grips[`${i}${side}`] ||= grip());
+        pose(k, kind, side, g, { at, reach: opts?.reach });
+        g.w = w;
+        if (!k.grips[side] || k.grips[side].w < w) k.grips[side] = g;
+      }
+    }
+    k.lean = lean;
+
     k.update(step);
     v.update(step);
     this.kFace.update(step);
@@ -577,6 +616,8 @@ export class Flashback3D {
     this.overlay?.remove();
     this.overlay = null;
     if (this.cast) {
+      this.creases?.dispose();
+      this.creases = null;
       this.cast.removeFromParent();
       this.cast.traverse((o) => { if (o.isSkinnedMesh) o.skeleton.dispose(); });
       for (const p of [this.kes, this.voss]) {

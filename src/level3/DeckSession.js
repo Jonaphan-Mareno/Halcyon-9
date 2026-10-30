@@ -34,6 +34,10 @@ import { Level3Audio } from './Level3Audio.js';
 import { Headlamp } from './Headlamp.js';
 import { Chute } from './Chute.js';
 import { LockFlashback } from './LockFlashback.js';
+import { Confrontation } from './Confrontation.js';
+import { SceneB } from './SceneB.js';
+import { EndingNarration } from './EndingNarration.js';
+import { showEndCredits } from '../ui/EndCredits.js';
 import { buildLockPanel, Sparks, crackle, PANEL_SIZE } from './LockPanel.js';
 import '../ui/level3.css';
 import { LINES, TALKS } from './Level3Lines.js';
@@ -70,6 +74,15 @@ const WINDOW_NEAR = 3.0;                // this close to the window, the crew ar
 const DECK_KEEP = /^(DOOR_|PROP_|GATE_|PT_|SPAWN_|COL_)/;
 // ?flashback3 (with ?level=3): Flashback 3 at once, for testing; ?flashback3=still: its slow-machine stills
 const TEST_FLASHBACK = new URLSearchParams(window.location.search).get('flashback3');
+// ?confrontation (with ?level=3): straight into the relay and the confrontation (Confrontation.js);
+// ?confrontation=still: its slow-machine stills
+const TEST_CONFRONTATION = new URLSearchParams(window.location.search).get('confrontation');
+// ?ending=yes (with ?level=3): the confrontation run through out of sight to its choice, "Yes"
+// chosen, and the Save-ARIA ending from there (SceneB.js, then the narration and the credits)
+const TEST_ENDING = new URLSearchParams(window.location.search).get('ending');
+// ?lock (with ?level=3): the reroute won and Voss already in the water lock: its scene at once, then
+// the confrontation (RelayLock.js)
+const TEST_LOCK = new URLSearchParams(window.location.search).has('lock');
 const SEA_KEEP = /^(GATE_|PT_|SEA_Life|TERRAIN_Cave|TRENCH_|COL_|SPAWN_)/;
 // the drowned works: its doors, gates, the panel it bursts and the finale's pieces move; its weed sways
 const WORKS_KEEP = /^(GATE_|BURST_|FALL_|PT_|WL_|COL_|SEA_Weed|PRESSURE_)/;
@@ -143,7 +156,11 @@ export class DeckSession {
       this.loadingEl.classList.remove('visible');
       // (the Flashback 3 test link waits for the outside to be readied: in play, the chute ride covers it)
       const outside = this._readyOutside();
-      if (this._skipRelay) this._skipToRelay();
+      if (this._skipRelay) {
+        this._skipToRelay();
+        if (TEST_CONFRONTATION !== null || TEST_ENDING === 'yes') this.startConfrontation();
+        else if (TEST_LOCK) this.trench.lock.test();
+      }
       else if (TEST_FLASHBACK !== null) outside.then(() => this._testLockFlashback());
       else this._arrive();
     }).catch((e) => console.error('Level 3 failed to load.', e));
@@ -188,6 +205,10 @@ export class DeckSession {
     g.renderer.render = () => {
       // (Flashback 3 draws its own scene instead of the deck while it plays)
       if (this.lockFlashback?.running) return this.lockFlashback.render(webgl);
+      // (and the ending once it takes over: Scene B, then black under the narration and credits)
+      if (this.ending?.running) return this.ending.render(webgl);
+      // (and the confrontation, from its start until the ending takes over)
+      if (this.confrontation?.running) return this.confrontation.render(webgl);
       this.composer.render();
       this.visorAria?.render(webgl);
     };
@@ -294,7 +315,7 @@ export class DeckSession {
     // (?nochute skips the ride; ?relay skips the whole level and starts inside the relay; so does
     // ?flashback3, which starts at the engine room window)
     const params = new URLSearchParams(window.location.search);
-    this._skipRelay = params.has('relay');
+    this._skipRelay = params.has('relay') || TEST_CONFRONTATION !== null || TEST_ENDING === 'yes' || TEST_LOCK;
     if (!params.has('nochute') && !this._skipRelay && TEST_FLASHBACK === null) this.chute = new Chute(this);
   }
 
@@ -507,6 +528,7 @@ export class DeckSession {
     this.controls.facing = yaw;
     this.controls.setSwimming(true);
     RELAY.enter?.(trench);
+    this.preloadConfrontation();
     this.game.ui.showToast('Skipped inside the relay station. The kraken is beaten.', 6000);
   }
 
@@ -549,7 +571,7 @@ export class DeckSession {
     const p = this.controls.position;
     // in the water he wades (slower), and every few steps the water rings round his legs (in the
     // water lock, its own water)
-    const lockLevel = this.prep?.waterAt(p) ?? null;
+    const lockLevel = this.prep?.waterAt(p) ?? this.trench?.lock?.waterAt(p) ?? null;
     const level = lockLevel ?? this.water.level;
     const inWater = p.y < level - 0.15;
     this.controls.surface = inWater ? 'wade' : 'normal';
@@ -599,13 +621,15 @@ export class DeckSession {
     this.trench?.update(dt, playing);
     this.sfx?.update(dt);
     this.visorAria?.update(dt, playing && !!this.prep?.suited);
-    // (the plankton stirs round him as he swims)
-    const outside = this.prep?.zone === 'sea';
+    // (the plankton stirs round him as he swims; in the relay's water lock once it is drained, and
+    // the corridor beyond, he is out of the sea)
+    const lockAir = !!this.trench?.lock?.inAir(g.camera.instance.position);
+    const outside = this.prep?.zone === 'sea' && !lockAir;
     const stir = this.controls.swimming ? Math.min(1, this.controls.velocity.length() / 4.6) : 0;
     const suited = !!this.prep?.suited;
     this.sea?.update(dt, g.camera.instance, outside ? p : null, stir, suited);
     // (the lamp's beam shows in the murk: out in the sea and in the flooded lock)
-    this.headlamp?.update(dt, suited, outside ? 1 : this.prep?._fogMode === 'lock' ? 0.6 : 0);
+    this.headlamp?.update(dt, suited && !this.trench?.lock?.owns, outside ? 1 : this.prep?._fogMode === 'lock' ? 0.6 : 0);
     if (this.grade) this.grade.uniforms.uAmount.value += ((outside ? 1 : 0) - this.grade.uniforms.uAmount.value) * (1 - Math.exp(-2 * dt));
     this._holding(dt, playing);
 
@@ -781,6 +805,149 @@ export class DeckSession {
     if (!this.disposed) this._seeCrew();
   }
 
+  // ------------------------------------------------------------------ the confrontation
+  // Readied in good time: on entering the relay room (it loads Voss's acting clips and a fresh copy
+  // of him: a second or two of work)
+  preloadConfrontation() {
+    if (this.disposed || this._confDone) return null;
+    this.confrontation ||= new Confrontation(document.getElementById('ui-layer'));
+    return this.confrontation.preload(this.game.renderer.instance);
+  }
+
+  // The confrontation (Confrontation.js, Scene A of docs/ending-confrontation-script.md), after the
+  // water lock's scene (RelayLock: the reroute won, the lock drained, his helmet off, the black).
+  // Down to black (or on from the lock's black: `veil`, taken away as the scene starts), the scene
+  // in the relay's control room, then the choice; the choice goes to onChoice. The scene stays on
+  // its last shot until the ending takes over and disposes it.
+  async startConfrontation({ veil = null } = {}) {
+    if (this._confBusy || this._confDone || this.disposed) return;
+    const g = this.game, webgl = g.renderer.instance;
+    this._confBusy = true;
+    this._talkToken++;
+    if (this.aria.speaking) this.aria.skip();
+    vossVoice.stop();
+    g.ui.hideDialogue();
+    g.state = 'FLASHBACK';
+    this.controls.stop?.();
+    document.exitPointerLock?.();
+    // (out of the suit: it came off in the lock's black)
+    const black = veil || this._veil();
+    if (!veil) await sleep(500);
+    this.sfx?.setMuted(true);
+    const conf = this.preloadConfrontation();
+    const ready = !!conf && await Promise.race([conf.then(() => this.confrontation?.ready), sleep(15000).then(() => false)]);
+    if (!ready || this.disposed) {
+      console.warn('Confrontation: not ready; back to the level.');
+      this._confBusy = false;
+      this.sfx?.setMuted(false);
+      black.remove();
+      if (!this.disposed) g.state = 'PLAYING';
+      return;
+    }
+    const scene = this.confrontation;
+    document.body.classList.add('fb3d');
+    g.holdMusic?.('silence', 600);
+    scene.warm(webgl);
+    await sleep(50);
+    black.remove();
+    const slow = this._avgFrames > 120 && this.frameAverage > 1 / 24;
+    const playing = scene.play({ still: slow || TEST_CONFRONTATION === 'still' });
+    // (the Save-ARIA ending readied while it plays: its recordings and its few new shaders)
+    this._preloadEnding();
+    if (TEST_ENDING === 'yes') this._testChoice(scene);
+    const choice = await playing;
+    if (import.meta.env.DEV) {
+      const s = scene.stats;
+      console.info('Confrontation:', s.frames, 'frames,', (s.frames / Math.max(0.01, s.seconds)).toFixed(1), 'fps, worst',
+        (s.worst * 1000).toFixed(0), 'ms at', s.worstAt, s.still ? '(stills: ' + s.still + ')' : '');
+    }
+    this._confDone = true;
+    this._confBusy = false;
+    if (!this.disposed) this.onChoice(choice);
+  }
+
+  // The confrontation is still drawing its last shot (the high wide) when this is called: an ending
+  // takes over from it and calls this.confrontation.dispose() when it no longer needs it.
+  onChoice(choice /* 'yes' | 'no' */) {
+    console.info('Confrontation: the player chose', choice);
+    if (choice === 'yes') return this.playEnding();
+    // TODO(owner): the "No" ending is not written yet (docs/ending-confrontation-script.md: "No is
+    // for later"). The scene goes on drawing its high wide shot, the state stays 'FLASHBACK'.
+  }
+
+  // ------------------------------------------------------------------ the Save-ARIA ending
+  // Scene B and the narration, readied while the confrontation plays
+  _preloadEnding() {
+    const webgl = this.game.renderer.instance;
+    if (!this.confrontation?.ready) return null;
+    this.sceneB ||= new SceneB(this.confrontation);
+    this.narration ||= new EndingNarration(document.body);
+    this.narration.preload();
+    return this.sceneB.preload(webgl);
+  }
+
+  // ?level=3&ending=yes: the confrontation run through out of sight (as its skip does), the prompt
+  // shown for a moment, and Yes chosen
+  async _testChoice(scene) {
+    scene._skip = { t: 0 };
+    while (!scene._choiceShown && !this.disposed) await sleep(100);
+    await sleep(1400);
+    if (!this.disposed && !scene.choice) scene._choose('yes');
+  }
+
+  // "Yes": Scene B in the confrontation's room (from its high wide shot), then the narration over
+  // black, then the credits. Only once the credits have closed is the confrontation disposed, the
+  // state restored and the level's sound unmuted (the report's order).
+  async playEnding() {
+    const g = this.game, webgl = g.renderer.instance;
+    if (this._endingBusy || this.disposed) return;
+    this._endingBusy = true;
+    g.holdMusic?.('silence', 900);
+    const sceneB = this.sceneB || (this._preloadEnding(), this.sceneB);
+    if (sceneB) await Promise.race([sceneB.preload(webgl), sleep(8000)]);
+    if (sceneB?.ready && !this.disposed) {
+      this.ending = { running: true, render: (r) => sceneB.render(r) };
+      const how = await sceneB.play();
+      if (import.meta.env.DEV) {
+        const s = sceneB.stats;
+        console.info('Scene B:', how, s.frames, 'frames,', (s.frames / Math.max(0.01, s.seconds)).toFixed(1), 'fps, worst',
+          (s.worst * 1000).toFixed(0), 'ms at', s.worstAt, s.still ? '(stills: ' + s.still + ')' : '');
+      }
+    } else {
+      console.warn('Scene B: not ready; on to the narration.');
+    }
+    if (this.disposed) return;
+    // the narration over black (nothing drawn under it)
+    this.ending = { running: true, render: (r) => { r.setRenderTarget(null); r.setClearColor(0x000000, 1); r.clear(); } };
+    const narration = this.narration || (this.narration = new EndingNarration(document.body));
+    await Promise.race([narration.preload(), sleep(8000)]);
+    if (this.disposed) return;
+    await narration.play();
+    if (this.disposed) return;
+    // the credits; behind them, what is left of the ending is freed
+    const credits = showEndCredits(document.body);
+    await sleep(1700);
+    narration.dispose();
+    sceneB?.dispose();
+    this.narration = null;
+    this.sceneB = null;
+    await credits;
+    if (this.disposed) return;
+    this.confrontation?.dispose();
+    this.ending = null;
+    document.body.classList.remove('fb3d');
+    g.state = 'PLAYING';
+    this.sfx?.setMuted(false);
+    this._endingBusy = false;
+    this._afterCredits();
+  }
+
+  // TODO(owner): what comes after the credits. For now: back to the title (the opening), as a new
+  // game would start.
+  _afterCredits() {
+    window.location.href = window.location.pathname;
+  }
+
   // The objective and the marker: up the corridor to the window, then left to the bulkhead
   _guide(playing) {
     const ui = this.game.ui;
@@ -942,6 +1109,9 @@ export class DeckSession {
     this.aria?.dispose?.();
     this.crew?.dispose();
     this.lockFlashback?.dispose();
+    this.narration?.dispose();
+    this.sceneB?.dispose();
+    this.confrontation?.dispose();
     this.panel?.dispose();
     this.panelSparks?.dispose();
     this.water?.dispose();

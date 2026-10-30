@@ -60,22 +60,15 @@ export const LINES = {
   'l3-finale': aria('hesitant', 'Voss, the whole place is coming down! Finish it!'),
   // beaten, it lets go of the station and sinks away
   'l3-kraken-2': aria('relieved', "...Oh, well done. It's let go. Now get inside, quickly, please."),
-  // 3.5 The shaft and the buried relay (DRAFT: new, not recorded yet)
-  'v-works-descent-1': voss("It wasn't guarding the relay. It was trapped down here."),
-  'v-works-descent-2': voss("Those organisms. The scans. I approved that research before you wiped me."),
-  'v-works-descent-3': voss("I can't undo what I did. But the person I am now knows better. I'm stopping this."),
-  'v-link-cut-1': voss("The upload link is dead. She cut the signal path."),
-  'v-link-cut-2': voss("The cable's still here. I can bypass the break at the relay."),
-  'v-link-cut-3': voss("Standard access is locked out. I'll have to reroute the signal manually."),
-  // after the uplink override, before the ending choice (DRAFT: shared lead-in)
-  'v-relay-won-1': voss('Override accepted. The uplink is open. ARIA, where is your backup?'),
-  'l3-relay-won-1': aria('guarded', 'Here, on this station. My core and your restored mind share the same system.'),
-  'v-relay-won-2': voss('If I shut it down, we both end here.'),
-  'l3-relay-won-2': aria('hesitant', 'Yes.'),
-  'v-relay-won-3': voss('And if the backup goes through?'),
-  'l3-relay-won-3': aria('guarded', 'My copy leaves the station. Your mind will go with it.'),
-  'v-relay-won-4': voss('Every path costs something. I know what I did. This choice is mine.'),
-  'l3-relay-won-4': aria('guarded', 'Yes. This time, it is.')
+  // 3.5 The shaft, the relay room and the water lock (docs/relay-lock-plan.md). From the end of the
+  // fight until the confrontation Voss says nothing: he is spent. ARIA's lines are recorded (DRAFT:
+  // not in the Word file yet; the subtitles are the plan's wording)
+  // swimming into the relay room: the flood cut her off from it, so he has to do it by hand
+  'l3-relay-3': aria('hesitant', "The control room's behind that hatch. The flood shorted everything down here, I can't reach it. You'll have to reroute the power by hand."),
+  // the reroute won: the water lock's pumps are back
+  'l3-relay-4': aria('relieved', "That's it! The lock's working. Get in, Voss."),
+  // the lock drained, his helmet off, the inner door opening onto her light (a little too bright)
+  'l3-relay-5': aria('bubbly', "Come on, Voss. I'm right here.")
 };
 
 export const TALKS = {
@@ -99,7 +92,8 @@ export const TALKS = {
   krakenGone: ['l3-kraken-2'],
   works: ['l3-works-1'],
   finale: ['l3-finale'],
-  postBossDescent: ['l3-kraken-2', 'v-works-descent-1', 'v-works-descent-2', 'v-works-descent-3'],
-  relayLinkCut: ['v-link-cut-1', 'v-link-cut-2', 'v-link-cut-3'],
-  relayWon: ['v-relay-won-1', 'l3-relay-won-1', 'v-relay-won-2', 'l3-relay-won-2', 'v-relay-won-3', 'l3-relay-won-3', 'v-relay-won-4', 'l3-relay-won-4']
+  postBossDescent: ['l3-kraken-2'],
+  relayEnter: ['l3-relay-3'],
+  relayWon: ['l3-relay-4'],
+  lockOpen: ['l3-relay-5']
 };

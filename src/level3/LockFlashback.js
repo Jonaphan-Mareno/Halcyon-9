@@ -2,29 +2,35 @@ import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { FaceRig } from '../entities/FaceRig.js';
+import { FaceCreases } from '../entities/FaceCreases.js';
 import { CrewMember } from '../entities/CrewMember.js';
 import { EYE, showWound } from '../entities/Player.js';
 import { precompile } from '../core/precompile.js';
 import { settings } from '../core/Settings.js';
 import { Person, Walk, Eyes, turnTo, SCALE, clamp, seg, ease, yawOf, v3 } from '../story/firstPersonRig.js';
+import { pose, grip } from '../story/gestures.js';
 import { buildLockPanel, Sparks, crackle, PANEL_SIZE } from './LockPanel.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { EyeShader } from '../intro/intro-cinematic.js';
 import { heartbeat } from '../story/BriefingFlashback.js';
 
-// Flashback 3, "The lock" (docs/flashback-3-script.md): played the first time Voss looks through the
-// engine room door's window in Level 3 (headache() is the way in, on the level's own frame). First person through his eyes, in the engine room
-// as it was, dry and lit: Kessler confesses the scans to the crew and warns them about ARIA; they
-// take her side; Park cuts the main feed, the hum dies, and ARIA's light on the corner console stays
-// on. Voss, cold, tells them he moved her to the emergency power. They rush him; he steps out,
-// swings the door shut and tears the lock out of its panel (his hands, sparks); they hammer on the
-// glass and plead; "Stay here until I finish my research." He walks away. As the door seals,
-// Navarro calls after him that there is water in the corner. He does not turn. Cut to black.
+// Flashback 3, "The lock" (docs/flashback-3-script.md, revision 2): played the first time Voss looks
+// through the engine room door's window in Level 3 (headache() is the way in, on the level's own
+// frame). First person through his eyes, in the engine room as it was, dry and lit: Kessler
+// confesses the scans to the crew in a few words and tells them ARIA goes off tonight; Park cuts the
+// main feed, the hum dies, four seconds of silence, and ARIA's light on the corner console stays on.
+// One by one they turn and stare at Voss. He tells them he moved her to the emergency supply;
+// Kessler turns on him, he flares up ("one last chance"), Lindqvist and Navarro round on him, Park
+// hides his face. "Guess that settles it." They rush him; he steps out, swings the door shut and
+// tears the lock out of its panel (his hands, sparks); then his hands shake and his breath goes
+// ragged, until he steadies. "Stay here until I finish my research." He walks away; as the door
+// seals, Park asks why the floor is wet. Voss stops, does not turn, and walks on. Cut to black.
 //
 // The four crew are their own models (CrewMember: kessler, lindqvist, navarro, park), their mouths
-// driven by their recordings through FaceRig. Voss is a copy of the player's body without its
-// head (the camera is there), so his arms and hands are his own, posed by ArmIK (firstPersonRig).
-// ARIA says nothing: she is the light on the console.
+// driven by their recordings through FaceRig, creases in their brows (FaceCreases) and their hands
+// and bodies acting (story/gestures). Voss is a copy of the player's body without its head (the
+// camera is there), so his arms and hands are his own, posed by ArmIK (firstPersonRig). ARIA says
+// nothing: she is the light on the console.
 //
 // Its own small scene (like Flashback 1's room), laid out as l3-drowned.glb's engine room and the
 // end of its corridor (Blender/scripts/build_l3_drowned.py, in the game's axes: the door at
@@ -45,30 +51,28 @@ import { heartbeat } from '../story/BriefingFlashback.js';
 const AUDIO = './assets/audio/';
 const SFX = './assets/audio/sfx/l3/';       // Level 3's own effects (CC0, see CREDITS.md)
 const LINES = [
-  { id: 'k1', who: 'kessler', clip: 'flashback3/fb3-kessler-1', text: "Thank you for coming. I need you to hear this from me, and I need you not to interrupt until I've finished." },
-  { id: 'k2', who: 'kessler', clip: 'flashback3/fb3-kessler-2', text: "The scans in B-lab. We told you they were routine calibration. They weren't. We copied your minds to teach the organism how a human brain works. You never agreed, because nobody asked you. I signed it off. I am so sorry. I'll be sorry for the rest of my life." },
-  { id: 'l1', who: 'lindqvist', clip: 'flashback3/fb3-lindqvist-1', text: 'You did what?' },
+  { id: 'k1', who: 'kessler', clip: 'flashback3/fb3-kessler-1', text: "The B-lab scans weren't calibration. We copied your minds. Nobody asked you. I signed it." },
+  { id: 'l1', who: 'lindqvist', clip: 'flashback3/fb3-lindqvist-1', text: 'You signed it?' },
   { id: 'p1', who: 'park', clip: 'flashback3/fb3-park-1', text: 'The headaches. The ones we all had after B-lab. That was…?' },
-  { id: 'k3', who: 'kessler', clip: 'flashback3/fb3-kessler-3', text: "And ARIA is not a program anymore. She's awake. She knows more than all of us together, and she knows exactly what she is. We never controlled her. A mind like that, with her reach… I can't trust her. And neither should you." },
-  { id: 'n1', who: 'navarro', clip: 'flashback3/fb3-navarro-1', text: "Elena… you could have kept this from us. You didn't. Thank you." },
-  { id: 'l2', who: 'lindqvist', clip: 'flashback3/fb3-lindqvist-2', text: '…Then we fix it. Tell us what you need.' },
-  { id: 'k4', who: 'kessler', clip: 'flashback3/fb3-kessler-4', text: 'Park. The main feed.' },
-  { id: 'p2', who: 'park', clip: 'flashback3/fb3-park-2', text: 'Cutting it now.' },
-  { id: 'p3', who: 'park', clip: 'flashback3/fb3-park-3', text: "It's still on. We cut the main feed and she's still… Elena, she's still on." },
-  { id: 'n2', who: 'navarro', clip: 'flashback3/fb3-navarro-2', text: "That's not possible. It's off. We cut it." },
-  { id: 'k5', who: 'kessler', clip: 'flashback3/fb3-kessler-5', text: 'Voss.' },
-  { id: 'l3', who: 'lindqvist', clip: 'flashback3/fb3-lindqvist-3', text: 'What did you do, Voss?' },
-  { id: 'v1', who: 'voss', clip: 'voss/fb3-voss-1', text: 'I connected her to the emergency power. Two days ago. Before any of you thought to ask.' },
-  { id: 'v2', who: 'voss', clip: 'voss/fb3-voss-2', text: "Somewhere you won't be going." },
-  { id: 'k6', who: 'kessler', clip: 'flashback3/fb3-kessler-6', text: 'Look at their faces. Do you hear yourself? These are your friends.' },
-  { id: 'v3', who: 'voss', clip: 'voss/fb3-voss-3', text: "I know exactly who they are. That's why I'm asking you to stay out of my way." },
+  { id: 'k2', who: 'kessler', clip: 'flashback3/fb3-kessler-2', text: 'Yes.' },
+  { id: 'k3', who: 'kessler', clip: 'flashback3/fb3-kessler-3', text: "And ARIA's awake. Whatever she wants, it isn't what we want. She goes off tonight." },
+  { id: 'l2', who: 'lindqvist', clip: 'flashback3/fb3-lindqvist-2', text: 'Then we do it now. Park.' },
+  { id: 'p2', who: 'park', clip: 'flashback3/fb3-park-2', text: 'Cutting it—' },
+  { id: 'p3', who: 'park', clip: 'flashback3/fb3-park-3', text: "…She's still on." },
+  { id: 'k4', who: 'kessler', clip: 'flashback3/fb3-kessler-4', text: 'Voss.' },
+  { id: 'l3', who: 'lindqvist', clip: 'flashback3/fb3-lindqvist-3', text: 'What did you do?' },
+  { id: 'v1', who: 'voss', clip: 'voss/fb3-voss-1', text: 'Moved her to the emergency supply. Two days ago.' },
+  { id: 'k5', who: 'kessler', clip: 'flashback3/fb3-kessler-5', text: 'Why are you doing things behind my back, Voss?!' },
+  { id: 'v2', who: 'voss', clip: 'voss/fb3-voss-2', text: 'Look, I want to give you guys one last chance. Just a few more days of research, okay?' },
+  { id: 'l4', who: 'lindqvist', clip: 'flashback3/fb3-lindqvist-4', text: "Voss, you're senile." },
+  { id: 'n1', who: 'navarro', clip: 'flashback3/fb3-navarro-1', text: 'Voss, who do you think you are?!' },
+  { id: 'v3', who: 'voss', clip: 'voss/fb3-voss-3', text: 'Guess that settles it.' },
   // (through the glass, once the door is shut: muffled)
-  { id: 'l4', who: 'lindqvist', clip: 'flashback3/fb3-lindqvist-4', text: "You can't leave us in here! Voss! VOSS!", glass: true },
-  { id: 'n3', who: 'navarro', clip: 'flashback3/fb3-navarro-3', text: 'I have a family up there, Voss. Please.', glass: true },
-  { id: 'p4', who: 'park', clip: 'flashback3/fb3-park-4', text: "We're friends, Voss. We were friends.", glass: true },
-  { id: 'k7', who: 'kessler', clip: 'flashback3/fb3-kessler-7', text: "Voss, open the door. Whatever you think she's given you, it isn't worth this. Open the door.", glass: true },
+  { id: 'k6', who: 'kessler', clip: 'flashback3/fb3-kessler-6', text: 'VOSS! Open it!', glass: true },
+  { id: 'p4', who: 'park', clip: 'flashback3/fb3-park-4', text: "Please, we're your friends—", glass: true },
+  { id: 'n2', who: 'navarro', clip: 'flashback3/fb3-navarro-2', text: 'Oh no.', glass: true },
   { id: 'v4', who: 'voss', clip: 'voss/fb3-voss-4', text: 'Stay here until I finish my research.' },
-  { id: 'n4', who: 'navarro', clip: 'flashback3/fb3-navarro-4', text: 'Wait, Voss! There is water in the corner of the room, I think there is a leak!', glass: true, far: true }
+  { id: 'p5', who: 'park', clip: 'flashback3/fb3-park-5', text: 'Elena… why is the floor wet?', glass: true, far: true }
 ];
 // Until a recording is there (or if it cannot be decoded): its length from its words, at about
 // 2.4 words a second, and a breath
@@ -91,11 +95,12 @@ const PANEL_AT = v3(1.34, 1.12, DOOR_Z + PANEL_SIZE.d / 2);
 const LUG = v3(1.33, 1.2, -27.45);          // the main feed's coupling: the nut the wrench goes on
 const ARIA_AT = v3(2.62, 1.2, -24.86);       // her light, on the corner console
 const P = {
-  voss: { door: [0, -24.12], out: [[0, -24.12], [0.05, -23.0], [-0.1, -21.95]], panel: [0.98, -23.42], watch: [0.18, -22.75] },
-  kessler: { start: [1.05, -25.85], near: [0.3, -25.25], close: [0.15, -25.0], glass: [0.24, -24.66] },
+  voss: { door: [0, -24.12], in: [0.1, -24.36], out: [[0.1, -24.36], [0, -24.12], [0.05, -23.0], [-0.1, -21.95]], panel: [0.98, -23.42], watch: [0.18, -22.75] },
+  // (her near and close spots are off to his right, so the others are seen past her)
+  kessler: { start: [1.05, -25.85], near: [0.78, -25.4], close: [0.58, -25.02], glass: [0.24, -24.66] },
   lindqvist: { start: [-0.55, -26.45], fore: [-0.65, -25.85], glass: [-0.36, -24.62] },
   navarro: { start: [-0.05, -27.25], glass: [-0.62, -25.2] },
-  park: { start: [0.6, -27.2], feed: [0.98, -27.45], back: [0.5, -26.95], glass: [0.72, -25.2] }
+  park: { start: [0.6, -27.2], feed: [0.98, -27.45], back: [0.5, -26.95], recoil: [0.6, -27.3], glass: [0.72, -25.2] }
 };
 const CREW_MID = v3(0.0, 1.6, -26.95);
 const SCENE_MID = v3(0.45, 1.55, -26.4);       // the crew and Kessler, all in one look
@@ -214,17 +219,17 @@ export class LockFlashback {
       T.line[id] = [at, at + len[id]];
       at += len[id];
     };
+    // the confession, short
     say('k1');
-    say('k2', 0.55);
-    say('l1', 0.25);
-    say('p1', 0.6);
-    say('k3', 0.6);
-    say('n1', 0.9);
-    say('l2', 0.8);
-    say('k4', 0.55);
+    say('l1', 0.3);
+    say('p1', 0.55);
+    say('k2', 0.5);
+    T.signed = T.line.k1[0] + 0.78 * (T.line.k1[1] - T.line.k1[0]);   // "I signed it" (by its share of the words)
+    say('k3', 0.9);
+    say('l2', 0.45);
     const L = T.line;
-    // Park goes to the main feed and puts the wrench on its coupling; he heaves; it gives
-    T.parkGo = L.k4[1] - 0.6;
+    // Park goes to the main feed on "Park." and puts the wrench on its coupling; he heaves; it gives
+    T.parkGo = L.l2[1] - 0.3;
     T.parkThere = T.parkGo + 1.1;
     T.wrenchOn = [T.parkThere + 0.05, T.parkThere + 0.65];
     at = Math.max(at + 0.35, T.wrenchOn[1] + 0.15);
@@ -232,19 +237,25 @@ export class LockFlashback {
     T.heave = [L.p2[0] + 0.1, L.p2[0] + 1.8];
     T.cut = T.heave[0] + 0.62 * (T.heave[1] - T.heave[0]);   // (stuck, stuck, then it goes)
     T.parkBack = T.cut + 1.5;
-    // the silence; ARIA's light still on
-    at = T.cut + 3.8;
+    // four seconds of silence; ARIA's light still on
+    at = T.cut + 4.0;
     say('p3');
-    say('n2', 0.15);
-    T.turn = L.n2[1] - 0.5;                        // Kessler turns to Voss
-    say('k5', 1.2);
-    say('l3', 0.6);
+    // one by one they turn to him and stare; nobody speaks. Park takes half a step back.
+    T.turn = L.p3[1] + 0.5;
+    T.turnOf = { kessler: T.turn, lindqvist: T.turn + 0.45, navarro: T.turn + 0.8, park: T.turn + 1.2 };
+    T.recoil = T.turn + 1.5;
+    at = T.turn + 2.5;
+    say('k4');
+    say('l3', 0.7);
     say('v1', 0.8);
-    say('v2', 1.5);
-    say('k6', 0.9);
-    say('v3', 0.9);
+    say('k5', 0.45);
+    say('v2', 0.55);
+    say('l4', 0.4);
+    say('n1', 0.25);
+    T.hide = L.n1[0] + 0.4;                        // Park's hands over his face
+    say('v3', 1.0);
     // they rush him: he backs out, swings the door shut, tears the lock out
-    T.rush = at + 0.35;
+    T.rush = at + 0.3;
     T.grab = T.rush + 1.0;                         // his hand on the door's handle
     T.swing = [T.rush + 1.15, T.rush + 1.6];       // he swings it (and lets go)
     T.shut = T.rush + 1.95;                        // it slams
@@ -253,20 +264,23 @@ export class LockFlashback {
     T.coverOff = T.shut + 1.95;                    // torn off
     T.module = T.shut + 2.4;                       // his hand in, round the lock's module
     T.rip = T.shut + 3.0;                          // ripped out: the lock is dead
-    T.watch = T.rip + 0.55;                        // he steps back to the window
-    at = T.shut + 0.55;
-    say('l4');
-    say('n3', 0.35);
-    say('p4', 0.3);
-    say('k7', 0.45);
-    say('v4', 1.1);
-    T.leave = L.v4[1] + 0.4;                       // he turns and walks away
+    T.shake = [T.rip + 0.35, T.rip + 3.6];         // his hands shake, his breath goes ragged; then he steadies
+    T.watch = T.shake[1] - 0.3;                    // he steps back to the window
+    // through the glass, over each other; the pounding stops on "Oh no"
+    at = T.shut + 0.45;
+    say('k6');
+    say('p4', -0.25);
+    at = Math.max(at + 0.2, T.rip + 0.8);
+    say('n2');
+    at = Math.max(at + 0.6, T.watch + 1.3);
+    say('v4');
+    T.leave = L.v4[1] + 0.6;                       // he turns and walks away
     T.seal = T.leave + 0.7;                        // the door seals behind him
-    at = T.leave + 1.0;
-    say('n4');
-    // the tiny hitch in his stride, on "water" (by its share of the words)
-    T.hitch = L.n4[0] + (4 / 18) * (L.n4[1] - L.n4[0]) + 0.25;
-    T.end = L.n4[1] + 1.2;
+    at = T.leave + 1.7;
+    say('p5');
+    // on "wet" he stops, does not turn, and walks on
+    T.stop = [L.p5[1] - 0.15, L.p5[1] + 1.9];
+    T.end = T.stop[1] + 2.4;
     return T;
   }
 
@@ -592,12 +606,19 @@ export class LockFlashback {
   _cast() {
     this.people = {};
     this.faces = {};
+    this.creases = [];
     for (const n of CREW) {
       const src = this.src[n];
       const p = new Person(n, src.model, src.clips);
       this.people[n] = p;
       this.scene.add(p.group);
       this.faces[n] = new FaceRig(src.model, 'neutral');
+      const head = src.parts.Head?.find((m) => m.morphTargetDictionary);
+      if (head) {
+        const c = new FaceCreases(head);
+        this.creases.push(c);
+        this.faces[n].attachCreases(c);
+      }
     }
     // Voss: a copy of the player's body without its head (the camera is there): his arms and hands
     // are seen, his own clips carry his eyes. (His materials are copies: this is another scene.)
@@ -640,109 +661,181 @@ export class LockFlashback {
     const len = (id) => L[id][1] - L[id][0];
     // the walks (the first one's start is where each stands before it)
     this.walks = {
-      kessler: [W([P.kessler.start, P.kessler.near], L.v1[0] + 1.0, L.v1[0] + 2.6, 0.6), W([P.kessler.near, P.kessler.close], L.k6[0] - 0.3, L.k6[0] + 0.7, 0.45),
-        W([P.kessler.close, P.kessler.glass], T.shut + 0.5, T.shut + 2.0, 0.5)],
+      kessler: [W([P.kessler.start, P.kessler.near], L.v1[0] + 0.6, L.v1[0] + 2.2, 0.6), W([P.kessler.near, P.kessler.close], L.k5[0] - 0.25, L.k5[0] + 0.7, 0.35),
+        W([P.kessler.close, P.kessler.glass], T.rush + 0.5, T.shut + 0.9, 0.4)],
       lindqvist: [W([P.lindqvist.start, P.lindqvist.fore], L.l3[0] - 0.4, L.l3[0] + 0.6, 0.35),
-        W([P.lindqvist.fore, [-0.45, -25.0], P.lindqvist.glass], T.rush + 0.35, T.shut + 0.1, 0.3)],
-      navarro: [W([P.navarro.start, [-0.6, -26.0], P.navarro.glass], T.rush + 0.55, T.shut + 0.7, 0.35)],
+        W([P.lindqvist.fore, [-0.45, -25.0], P.lindqvist.glass], T.rush + 0.1, T.shut + 0.1, 0.3)],
+      navarro: [W([P.navarro.start, [-0.6, -26.0], P.navarro.glass], T.rush + 0.45, T.shut + 0.7, 0.35)],
       park: [W([P.park.start, P.park.feed], T.parkGo, T.parkThere, 0.4), W([P.park.feed, P.park.back], T.parkBack, T.parkBack + 1.0, 0.4),
-        W([P.park.back, [0.65, -25.9], P.park.glass], T.rush + 0.6, T.shut + 0.8, 0.35)],
-      voss: [W(P.voss.out, T.rush, T.rush + 1.15, 0.35), W([[-0.1, -21.95], [0.55, -22.5], P.voss.panel], T.toPanel, T.toPanel + 1.15, 0.4),
+        W([P.park.back, P.park.recoil], T.recoil, T.recoil + 1.0, 0.4),
+        W([P.park.recoil, [0.65, -25.9], P.park.glass], T.rush + 0.7, T.shut + 0.9, 0.35)],
+      voss: [W([P.voss.door, P.voss.in], L.v2[0] + 0.2, L.v2[0] + 1.1, 0.4),             // (half a step in, as he flares up)
+        W(P.voss.out, T.rush, T.rush + 1.15, 0.35), W([[-0.1, -21.95], [0.55, -22.5], P.voss.panel], T.toPanel, T.toPanel + 1.15, 0.4),
         W([P.voss.panel, P.voss.watch], T.watch, T.watch + 1.0, 0.45),
         W([P.voss.watch, [0.3, -21.8], [0.35, -18.0], [0.25, -14.0]], T.leave, T.leave + 7.6, 0.8)]
     };
-    // his stride falters for a moment at "water" (the walk's own clock held back a little)
-    const away = this.walks.voss[3];
-    away.warp = (t) => t - 0.24 * seg(t, T.hitch - 0.1, T.hitch + 0.5);
+    // on "wet" he stops dead (the walk's own clock held), then walks on
+    const away = this.walks.voss[4];
+    const [s0, s1] = T.stop, held = [];
+    for (let t = s0, h = 0; t <= s1 + 0.01; t += 0.01) {
+      held.push(h);
+      h += 0.01 * seg(t, s0, s0 + 0.35) * (1 - seg(t, s1 - 0.6, s1));
+    }
+    away.warp = (t) => t - (t < s0 ? 0 : held[Math.min(held.length - 1, Math.round((t - s0) / 0.01))]);
 
     // what Voss looks at: his gaze is fixed, it moves rarely
     const head = (n) => (out) => this.people[n].at('head', out, 0.09);
     const point = (p) => (out) => out.copy(p);
     const coupling = v3(LUG.x, LUG.y + 0.15, LUG.z);
     const glassMid = (out) => out.set(0.0, 1.6, -24.6);
+    // (as he flares up: his eyes jitter on her face, as in Flashback 2)
+    const agitated = (n) => (out) => {
+      this.people[n].at('head', out, 0.09);
+      return out.set(out.x + 0.035 * Math.sin(this.t * 7.3), out.y + 0.025 * Math.sin(this.t * 9.1 + 1), out.z);
+    };
+    // his own shaking hands, between them
+    const hands = (out) => {
+      this.voss.ik.R.hand.getWorldPosition(out);
+      return out.add(this.voss.ik.L.hand.getWorldPosition(this._v3)).multiplyScalar(0.5);
+    };
+    const ahead = (out) => out.set(this.voss.pos.x * 0.5, 1.62, this.voss.pos.z + 6);
+    // when he stops: down and over his right shoulder, as if he would turn (he walks toward +z: his right is -x)
+    const aside = (out) => out.set(this.voss.pos.x - 0.8, 1.3, this.voss.pos.z + 0.9);
     this.attention = [
-      [0, point(SCENE_MID)], [L.k2[0] + 1.4, head('kessler')], [L.k2[0] + 3.4, point(SCENE_MID)],
-      [L.l1[0], head('lindqvist')], [L.p1[0] + 0.2, head('park')], [L.k3[0] + 0.3, head('kessler')],
-      [L.k3[0] + 0.12 * len('k3'), point(ARIA_AT)], [L.k3[0] + 0.12 * len('k3') + 1.7, head('kessler')],
-      [L.n1[0] + 0.2, head('navarro')], [L.l2[0] + 0.1, head('lindqvist')], [L.k4[0], head('kessler')],
-      [T.parkGo + 0.2, head('park')], [L.p2[0], point(coupling)],
-      [T.cut + 0.9, point(v3(0, 3.6, -27.2))], [T.cut + 2.2, point(ARIA_AT)],
-      [L.k5[0] - 0.3, head('kessler')], [L.l3[0] + 0.1, head('lindqvist')], [L.v1[0] + 1.5, head('kessler')],
-      [L.k6[0] + 0.5, point(CREW_MID)], [L.k6[0] + 1.8, head('kessler')],
+      [0, point(SCENE_MID)], [L.k1[0] + 1.0, head('kessler')],
+      [L.l1[0], head('lindqvist')], [L.p1[0] + 0.2, head('park')], [L.k2[0] - 0.1, head('kessler')],
+      [L.k3[0] + 0.25 * len('k3'), point(ARIA_AT)], [L.k3[0] + 0.25 * len('k3') + 1.5, head('kessler')],
+      [L.l2[0] + 0.1, head('lindqvist')], [T.parkGo + 0.2, head('park')], [L.p2[0], point(coupling)],
+      [T.cut + 0.9, point(v3(0, 3.6, -27.2))], [T.cut + 2.2, point(ARIA_AT)], [L.p3[0] + 0.3, head('park')],
+      [T.turn + 0.2, head('kessler')], [T.turn + 1.1, point(CREW_MID)],
+      [L.k4[0] - 0.2, head('kessler')], [L.l3[0] + 0.1, head('lindqvist')], [L.v1[0] + 1.2, head('kessler')],
+      [L.v2[0], agitated('kessler')], [L.l4[0] + 0.1, head('lindqvist')], [L.n1[0] + 0.1, head('navarro')],
+      [T.hide + 0.3, head('park')], [L.v3[0] + 0.2, head('kessler')],
       [T.rush + 0.1, head('lindqvist')], [T.rush + 0.75, (out) => this.door.localToWorld(out.copy(this.doorLook))],
       [T.swing[0] - 0.1, glassMid], [T.toPanel + 0.35, point(PANEL_AT)],
-      [T.watch + 0.1, head('lindqvist')], [L.n3[0], head('navarro')], [L.p4[0], head('park')], [L.k7[0], head('kessler')],
-      [T.leave + 0.2, (out) => out.set(this.voss.pos.x * 0.5, 1.62 - 0.05 * seg(this.t, T.hitch - 0.1, T.hitch + 0.2) * (1 - seg(this.t, T.hitch + 0.3, T.hitch + 0.8)), this.voss.pos.z + 6)]
+      [T.rip + 0.5, hands], [T.shake[1] - 0.5, head('kessler')], [T.watch + 1.2, head('park')], [L.v4[0] - 0.3, head('kessler')],
+      [T.leave + 0.2, ahead], [T.stop[0] + 0.25, aside], [T.stop[1] - 0.5, ahead]
     ];
 
-    // each face, stretch by stretch: the preset, and an expression on top (from the directions)
-    const k2s = L.k2[0] + 0.4 * len('k2');
+    // each face, stretch by stretch: the preset, and an expression on top (from the directions).
+    // Anger is the brows hard down (brow -1 and past it: the creases show), the mouth pulled down,
+    // the lids a little narrowed (tired) and the head lowered (bow); fear and grief are the brows up
+    // and in (worry).
+    const turned = (n) => T.turnOf[n];
     this.acting = {
       kessler: [
-        [0, 'composed', { frown: 0.1, brow: 0.1, worry: 0.25, tired: 0.3 }],
-        [L.k1[0], 'composed', { frown: 0.15, brow: 0.15, worry: 0.3, tired: 0.3 }],                // formal, careful
-        [L.k2[0], 'composed', { frown: 0.3, brow: 0.3, worry: 0.5, tired: 0.35 }],
-        [L.k2[0] + 0.72 * len('k2'), 'composed', { frown: 0.35, brow: 0.45, worry: 0.75, tired: 0.4 }],  // "so sorry"
-        [L.l1[0], 'composed', { frown: 0.3, brow: 0.35, worry: 0.6, tired: 0.4 }],
-        [L.k3[0], 'calm', { frown: 0.25, brow: -0.2, worry: 0.1 }],                                  // a calm warning
-        [L.n1[0], 'calm', { frown: 0.1, brow: 0.3, worry: 0.45, smile: 0.08, tired: 0.3 }],
-        [L.k4[0], 'calm', { frown: 0.25, brow: -0.3 }],                                              // a leader's order
-        [T.cut, 'composed', { brow: 0.3, worry: 0.3 }],
-        [L.p3[0], 'composed', { frown: 0.2, brow: 0.4, worry: 0.5 }],
-        [L.k5[0], 'composed', { frown: 0.4, brow: -0.25, worry: 0.35 }],                             // hurt and hard
-        [L.v1[0] + 1.0, 'composed', { frown: 0.45, brow: 0.2, worry: 0.55 }],
-        [L.k6[0], 'calm', { frown: 0.2, brow: 0.35, worry: 0.6, tired: 0.2 }],                       // soft, pleading
-        [L.v3[0] + 0.8, 'composed', { frown: 0.35, brow: 0.3, worry: 0.65, tired: 0.3 }],
-        [T.rush, 'composed', { frown: 0.4, brow: 0.5, worry: 0.8 }],
-        [L.k7[0], 'resigned', { frown: 0.3, brow: 0.4, worry: 0.7, tired: 0.35 }]                    // desperate, dignified
+        [0, 'composed', { frown: 0.25, brow: 0.15, worry: 0.4, tired: 0.35, bow: 0.08 }],             // she can't look at them
+        [L.k1[0], 'strained', { frown: 0.4, brow: 0.45, worry: 0.75, tired: 0.45, bow: 0.1 }],
+        [T.signed, 'strained', { frown: 0.55, brow: 0.5, worry: 1.0, tired: 0.5, bow: 0.15 }],       // "I signed it"
+        [L.l1[0], 'strained', { frown: 0.45, brow: 0.4, worry: 0.85, tired: 0.45, bow: 0.1 }],
+        [L.k3[0], 'calm', { frown: 0.45, brow: -0.75, tired: 0.15, bow: 0.02 }],                     // firm: a leader
+        [L.l2[0], 'calm', { frown: 0.35, brow: -0.55 }],
+        [T.cut, 'composed', { frown: 0.2, brow: 0.75, worry: 0.5, bow: -0.06 }],                     // the lights
+        [L.p3[0], 'composed', { frown: 0.35, brow: 0.6, worry: 0.85 }],                              // fear
+        [turned('kessler'), 'composed', { frown: 0.55, brow: -0.95, tired: 0.1 }],                   // it was him
+        [L.k4[0], 'composed', { frown: 0.6, brow: -0.6, worry: 0.45 }],                              // hurt and hard
+        [L.v1[0] + 0.6, 'arguing', { frown: 0.7, brow: -1.2, tired: 0.12, bow: 0.04 }],
+        [L.k5[0], 'arguing', { frown: 0.9, brow: -1.6, tired: 0.2, bow: 0.06 }],                     // she shouts
+        [L.v2[0] + 0.5, 'arguing', { frown: 0.8, brow: -1.35, tired: 0.25, bow: 0.06 }],             // contempt
+        [T.rush, 'arguing', { frown: 0.65, brow: -1.1, worry: 0.4 }],
+        [L.k6[0], 'arguing', { frown: 0.85, brow: -1.45, worry: 0.3 }],                              // "VOSS! Open it!"
+        [L.n2[0], 'strained', { frown: 0.5, brow: 0.6, worry: 1.05, tired: 0.3 }],                   // they're trapped
+        [T.leave, 'resigned', { frown: 0.4, brow: 0.5, worry: 0.95, tired: 0.4 }]
       ],
       lindqvist: [
-        [0, 'tense', { frown: 0.1, worry: 0.2 }],
-        [k2s, 'tense', { frown: 0.2, brow: 0.35, worry: 0.4 }],
-        [L.l1[0], 'arguing', { frown: 0.45, brow: 0.45, worry: 0.2 }],                              // shock turning to anger
-        [L.l1[1] + 0.3, 'tense', { frown: 0.5, brow: -0.35 }],
-        [L.n1[0], 'tense', { frown: 0.3, brow: -0.1, worry: 0.3 }],
-        [L.l2[0], 'tense', { frown: 0.15, brow: 0.1, worry: 0.25 }],                                // he chooses her side
-        [T.cut, 'tense', { frown: 0.1, brow: 0.4, worry: 0.3 }],
-        [L.p3[0], 'tense', { frown: 0.3, brow: 0.5, worry: 0.5 }],
-        [L.k5[0], 'arguing', { frown: 0.5, brow: -0.4 }],
-        [L.l3[0], 'arguing', { frown: 0.65, brow: -0.6 }],                                          // furious
-        [L.k6[0], 'arguing', { frown: 0.55, brow: -0.45 }],
-        [T.rush, 'arguing', { frown: 0.6, brow: -0.5 }],
-        [L.l4[0], 'arguing', { frown: 0.55, brow: 0.4, worry: 0.6 }],
-        [L.n3[0], 'tense', { frown: 0.45, brow: 0.45, worry: 0.65, tired: 0.2 }]
+        [0, 'tense', { frown: 0.2, brow: 0.1, worry: 0.2 }],
+        [L.k1[0] + 0.5 * len('k1'), 'tense', { frown: 0.4, brow: 0.5, worry: 0.45 }],                 // shock
+        [L.l1[0], 'arguing', { frown: 0.7, brow: -1.15 }],                                           // "You signed it?"
+        [L.l1[1] + 0.4, 'tense', { frown: 0.6, brow: -0.9 }],
+        [L.k3[0], 'tense', { frown: 0.45, brow: -0.6 }],
+        [L.l2[0], 'tense', { frown: 0.5, brow: -0.95, bow: 0.04 }],                                  // resolve
+        [T.cut, 'tense', { frown: 0.2, brow: 0.65, worry: 0.45 }],
+        [L.p3[0], 'tense', { frown: 0.4, brow: 0.5, worry: 0.75 }],
+        [turned('lindqvist'), 'arguing', { frown: 0.75, brow: -1.35, bow: 0.05 }],
+        [L.l3[0], 'arguing', { frown: 0.9, brow: -1.6, bow: 0.08 }],                                 // a growl
+        [L.v2[0] + 0.5, 'arguing', { frown: 0.8, brow: -1.4, skew: -0.3 }],                          // disbelief
+        [L.l4[0], 'arguing', { frown: 0.95, brow: -1.45, tired: 0.3, skew: 0.25 }],                  // contempt
+        [T.rush, 'arguing', { frown: 0.85, brow: -1.6 }],
+        [L.n2[0], 'strained', { frown: 0.6, brow: 0.45, worry: 0.95 }]
       ],
       navarro: [
         [0, 'calm', { brow: 0.1, worry: 0.2 }],
-        [k2s, 'calm', { frown: 0.25, brow: 0.35, worry: 0.45 }],
-        [L.k3[0], 'calm', { frown: 0.2, brow: 0.25, worry: 0.35 }],
-        [L.n1[0], 'calm', { frown: 0.1, brow: 0.3, worry: 0.45, smile: 0.1, tired: 0.25 }],          // hurt, grateful
-        [L.l2[0], 'calm', { brow: 0.1, worry: 0.25, smile: 0.05 }],
-        [T.cut, 'calm', { brow: 0.4, worry: 0.35 }],
-        [L.n2[0], 'calm', { frown: 0.1, brow: 0.55, worry: 0.35 }],                                 // disbelief
-        [L.l3[0], 'calm', { frown: 0.3, brow: 0.3, worry: 0.55 }],
-        [T.rush, 'calm', { frown: 0.35, brow: 0.45, worry: 0.7 }],
-        [L.n3[0], 'resigned', { frown: 0.25, brow: 0.45, worry: 0.75, tired: 0.35 }],               // the saddest line
-        [L.n4[0], 'calm', { brow: 0.6, worry: 0.45 }]
+        [L.k1[0] + 0.5 * len('k1'), 'calm', { frown: 0.4, brow: 0.45, worry: 0.65 }],                 // hurt
+        [L.k3[0], 'calm', { frown: 0.4, brow: -0.45, worry: 0.3 }],
+        [L.l2[0], 'calm', { frown: 0.35, brow: -0.55 }],
+        [T.cut, 'calm', { brow: 0.75, worry: 0.45 }],
+        [L.p3[0], 'calm', { frown: 0.25, brow: 0.85, worry: 0.65 }],                                 // disbelief
+        [turned('navarro'), 'tense', { frown: 0.6, brow: -0.95 }],
+        [L.v1[0] + 0.5, 'arguing', { frown: 0.7, brow: -1.25 }],
+        [L.n1[0] - 0.2, 'arguing', { frown: 0.9, brow: -1.6, bow: -0.03 }],                          // he shouts
+        [L.n1[1] + 0.5, 'arguing', { frown: 0.8, brow: -1.35 }],
+        [T.rush, 'arguing', { frown: 0.85, brow: -1.5 }],
+        [L.n2[0], 'strained', { frown: 0.5, brow: 0.75, worry: 1.05, tired: 0.2 }],                  // "Oh no"
+        [L.p5[0], 'strained', { frown: 0.3, brow: 0.85, worry: 0.95 }]
       ],
       park: [
-        [0, 'neutral', { brow: 0.15, worry: 0.3 }],
-        [k2s, 'neutral', { frown: 0.1, brow: 0.4, worry: 0.5 }],
-        [L.p1[0], 'neutral', { brow: 0.5, worry: 0.55 }],                                          // understanding slowly
-        [L.k4[0], 'neutral', { frown: 0.15, brow: 0.2, worry: 0.35 }],
-        [L.p2[0], 'tense', { frown: 0.45, brow: -0.3 }],                                            // the effort
-        [T.cut + 0.5, 'neutral', { brow: 0.45, worry: 0.4 }],
-        [L.p3[0], 'neutral', { frown: 0.2, brow: 0.65, worry: 0.75 }],                              // rising panic
-        [L.k5[0], 'neutral', { frown: 0.2, brow: 0.4, worry: 0.55 }],
-        [T.rush, 'tense', { frown: 0.4, brow: 0.4, worry: 0.7 }],
-        [L.p4[0], 'resigned', { frown: 0.35, brow: 0.5, worry: 0.85, tired: 0.25 }]                 // cracked, tearful
+        [0, 'neutral', { brow: 0.15, worry: 0.35 }],
+        [L.k1[0] + 0.5 * len('k1'), 'neutral', { frown: 0.2, brow: 0.6, worry: 0.75 }],
+        [L.p1[0], 'strained', { frown: 0.35, brow: 0.7, worry: 0.9 }],                               // understanding slowly
+        [L.k3[0], 'neutral', { frown: 0.2, brow: 0.3, worry: 0.55 }],
+        [L.p2[0], 'tense', { frown: 0.65, brow: -0.85 }],                                            // the effort
+        [T.cut + 0.5, 'neutral', { brow: 0.85, worry: 0.65 }],
+        [L.p3[0], 'strained', { frown: 0.4, brow: 0.95, worry: 1.05 }],                              // a frightened whisper
+        [turned('park'), 'strained', { frown: 0.5, brow: 0.75, worry: 1.05 }],
+        [L.v2[0], 'strained', { frown: 0.6, brow: 0.8, worry: 1.15, tired: 0.2 }],
+        [T.hide, 'resigned', { frown: 0.6, brow: 0.6, worry: 1.15, tired: 0.5, bow: 0.25 }],         // (hidden in his hands)
+        [T.rush, 'strained', { frown: 0.6, brow: 0.7, worry: 1.05 }],
+        [L.p4[0], 'resigned', { frown: 0.65, brow: 0.7, worry: 1.25, tired: 0.3 }],                  // crying
+        [L.p5[0], 'neutral', { frown: 0.2, brow: 0.6, worry: 0.65 }]                                 // a kid's question
       ]
     };
-    this.gestures = [[L.l2[1] + 0.1, 'kessler', 'nod', 0.5], [L.n2[0] + 0.3, 'navarro', 'shake', 0.6], [L.n1[1] + 0.2, 'kessler', 'nod', 0.35],
-      [L.v3[1] + 0.3, 'kessler', 'shake', 0.35], [L.p1[1] + 0.4, 'kessler', 'nod', 0.3]];
-    // Lindqvist's fists on the glass: when each lands
+    // the moments on the faces, each once: [when, who, what]
+    const set = (n, k, v) => () => { this.faces[n][k] = v; };
+    this.cues = [
+      [T.signed - 0.1, 'kessler', set('kessler', 'shut', 1)], [T.signed + 1.0, 'kessler', set('kessler', 'shut', 0)],     // her eyes shut on it
+      [L.k2[0], 'kessler', (f) => f.gesture('nod', 0.4)],
+      [L.p3[1] + 0.2, 'navarro', (f) => f.gesture('shake', 0.5)],
+      [L.v2[1] + 0.1, 'lindqvist', (f) => f.gesture('shake', 0.45)], [L.v2[1] + 0.3, 'kessler', (f) => f.gesture('shake', 0.5)],
+      [L.k1[0], 'park', (f) => f.nerves(0.35)], [T.cut, 'park', (f) => f.nerves(0.75)], [T.hide, 'park', (f) => f.nerves(0)],
+      [T.rush, 'park', (f) => f.nerves(0.6)]
+    ];
+    for (const n of CREW) {
+      this.cues.push([T.cut + 0.05, n, set(n, 'gape', 0.3)], [T.cut + 0.9, n, set(n, 'gape', 0)]);   // a gasp as the lights go
+      this.cues.push([T.turnOf[n], n, (f) => f.stare(5)]);                                           // the stare
+    }
+
+    // the bodies: [from, to, right hand, left hand, lean, options]; each eases in and out
+    const eye = (out) => out.copy(this.camera.position);
+    const chest = (out) => out.copy(this.camera.position).setY(this.camera.position.y - 0.4);
+    const parkHead = (out) => this.people.park.at('head', out, 0.05);
+    this.body = {
+      kessler: [
+        [T.signed - 0.3, L.k2[1] + 0.4, 'chest', null, 0.08],                                          // guilt
+        [L.k3[0] + 0.5, L.l2[1] + 0.3, null, 'hip', 0],                                               // firm
+        [L.k5[0] + 0.1, L.k5[1] + 0.5, 'point', null, 0.14, { at: chest, reach: 0.45 }],              // at him
+        [L.v2[0] + 0.7, T.rush - 0.1, 'cross', 'cross', 0]                                            // cold
+      ],
+      lindqvist: [
+        [L.l1[0] - 0.1, L.l1[1] + 0.6, 'open', null, 0.08],
+        [L.l2[0] + 0.6 * len('l2'), L.l2[1] + 0.9, 'point', null, 0.04, { at: parkHead, reach: 0.6 }], // "Park."
+        [turned('lindqvist') + 0.5, L.l4[0] - 0.05, 'fist', 'fist', 0.1],
+        [L.l4[0], L.l4[1] + 0.7, 'point', 'fist', 0.16, { at: eye, reach: 0.75 }],
+        [L.l4[1] + 0.7, T.rush, 'fist', 'fist', 0.12]
+      ],
+      navarro: [
+        [L.k1[0] + 1.2, L.k3[0] + 0.5, 'cross', 'cross', 0],                                         // listening, closed
+        [turned('navarro') + 0.4, L.n1[0] - 0.15, 'hip', 'hip', 0.04],
+        [L.n1[0] - 0.1, L.n1[1] + 0.6, 'open', 'open', 0.18],                                         // "who do you think you are?!"
+        [L.n1[1] + 0.6, T.rush, 'fist', 'fist', 0.1]
+      ],
+      park: [
+        [T.recoil, T.hide - 0.2, null, null, -0.07],                                                  // back from him
+        [T.hide, T.rush + 0.1, 'face', 'face', 0.22]                                                  // he can't bear to see it
+      ]
+    };
+    // Lindqvist's fists on the glass: when each lands (until "Oh no")
     this.pounds = [];
-    for (let t = T.shut + 0.25, i = 0; t < L.n3[0] + 0.6; i++) {
+    for (let t = T.shut + 0.25, i = 0; t < L.n2[0]; i++) {
       this.pounds.push(t);
       t += 0.38 + ((i * 7919) % 5) * 0.03;
     }
@@ -753,7 +846,8 @@ export class LockFlashback {
       t += 4.2 + ((i * 7919) % 31) / 10;
     }
     // the stills (slow machines): a new picture at each line, and at each beat
-    this.beats = [T.parkThere, T.cut, T.cut + 2.2, T.turn, T.rush, T.rush + 1.0, T.shut, T.coverOff, T.rip, T.watch + 0.8, T.leave + 1.0];
+    this.beats = [T.parkThere, T.cut, T.cut + 2.2, T.turn, T.turn + 1.2, T.hide + 0.5, T.rush, T.rush + 1.0, T.shut, T.coverOff, T.rip,
+      T.shake[0] + 1.0, T.watch + 0.8, T.leave + 1.0, T.stop[0] + 0.4];
   }
 
   // The way in, on the level's own frame (as Flashback 1's, in the lift): his sight blurs and throbs
@@ -987,15 +1081,17 @@ export class LockFlashback {
     for (const n of CREW) {
       const p = K[n];
       const w = this._follow(p, this.walks[n], t);
+      const backing = n === 'park' && t > T.recoil - 0.1 && t < T.recoil + 1.1;    // (half a step back, still facing him)
+      if (backing) p.speed *= 0.35;
       let y;
-      if (p.speed > 0.25) y = this._tangentYaw(w, t);
+      if (p.speed > 0.25 && !backing) y = this._tangentYaw(w, t);
       else if (n === 'park' && t > T.parkThere - 0.3 && t < T.parkBack) y = -Math.PI / 2;        // at the feed, facing it
       else if (t > T.shut - 0.2) y = Math.PI * 0.98 + 0.08 * Math.sin(n.length);                  // at the glass
-      else if (n === 'kessler' && t < T.turn) y = this._toward(p, crewMid);
-      else if (t > T.turn + (n === 'kessler' ? 0 : 0.6)) y = this._toward(p, this.camera.position);
+      else if (n === 'kessler' && t < T.turnOf.kessler) y = this._toward(p, crewMid);
+      else if (t > T.turnOf[n]) y = this._toward(p, this.camera.position) + (n === 'park' && t > T.hide && t < T.rush ? 0.55 : 0);
       else y = this._toward(p, K.kessler.pos);
       if (t === 0) p.yaw = y;
-      turnTo(p, y, step, n === 'kessler' && t > T.turn && t < T.turn + 1.5 ? 2.4 : 3.4);
+      turnTo(p, y, step, t > T.turnOf[n] && t < T.turnOf[n] + 1.5 ? 2.4 : 3.4);
       p.look ||= new THREE.Vector3();
       this._lookOf(n, t, p.look);
     }
@@ -1016,10 +1112,10 @@ export class LockFlashback {
       }
       f.pose(mood[2], 0.5);
     }
-    for (const g of this.gestures) {
-      if (!g.done && t >= g[0] && t < g[0] + 1) {
-        g.done = true;
-        this.faces[g[1]].gesture(g[2], g[3]);
+    for (const c of this.cues) {
+      if (!c.done && t >= c[0] && t < c[0] + 1) {
+        c.done = true;
+        c[2](this.faces[c[1]]);
       }
     }
     this._mouths(t);
@@ -1042,6 +1138,14 @@ export class LockFlashback {
     let get = this.attention[0][1];
     for (const [at, fn] of this.attention) if (t >= at) get = fn;
     this.eyes.update(t, step, get(this._v));
+    // after the lock: his breath goes ragged (fast, uneven heaves, a tremor in the head), then steadies
+    const rag = seg(t, T.rip - 0.1, T.rip + 0.5) * (1 - seg(t, T.shake[1] - 0.8, T.watch + 1.2));
+    if (rag > 0.001) {
+      const heave = Math.sin(t * 4.6 + 0.8 * Math.sin(t * 1.3));
+      this.camera.position.y += 0.011 * rag * heave;
+      this.camera.rotateX(-0.012 * rag * heave);
+      this.camera.rotateZ(rag * (0.004 * Math.sin(t * 23.0) + 0.003 * Math.sin(t * 31.7 + 1)));
+    }
   }
 
   // where a person is on their walks at t (and how fast they go)
@@ -1069,9 +1173,11 @@ export class LockFlashback {
     const T = this.T, L = T.line, K = this.people;
     const line = this._lineAt(t, 0.4);
     const head = (who) => K[who].at('head', out, 0.09);
-    if (t > T.turn + (n === 'kessler' ? 0 : 0.5)) {
-      // on Voss from here on (Kessler shows him the others for "Look at their faces")
-      if (n === 'kessler' && t > L.k6[0] + 0.2 && t < L.k6[0] + 1.6) return out.copy(CREW_MID);
+    const p = K[n];
+    if (t > T.turnOf[n] - 0.1) {
+      // on Voss from here on (Park, hiding his face, looks down; at the end they watch him go)
+      if (n === 'park' && t > T.hide && t < T.rush) return out.set(p.pos.x, 0.5, p.pos.z + 0.5);
+      if (n === 'park' && t > L.p5[0] - 0.3) return out.set(p.pos.x - 0.3, 0.0, p.pos.z - 0.6);   // the floor
       if (t > T.leave + 0.5) return out.set(this.voss.pos.x, 1.5, this.voss.pos.z);
       return out.copy(this.camera.position);
     }
@@ -1079,7 +1185,10 @@ export class LockFlashback {
     if (t > T.cut + 1.3) return out.copy(ARIA_AT);                                               // her light, still on
     if (n === 'park' && t > T.parkGo && t < T.cut) return out.copy(LUG);
     if (n === 'kessler') {
-      if (t > L.k2[0] + 1.6 && t < L.k2[0] + 3.0) return out.copy(this.camera.position);       // "We told you...": a glance at him
+      // she can't look at them at first; "And ARIA's awake": a glance at him
+      if (t < L.k1[0] + 0.45 * (L.k1[1] - L.k1[0])) return out.copy(p.pos).lerp(CREW_MID, 0.5).setY(0.2);
+      if (t > T.signed && t < L.l1[0]) return out.copy(p.pos).lerp(CREW_MID, 0.4).setY(0.3);
+      if (t > L.k3[0] && t < L.k3[0] + 1.3) return out.copy(this.camera.position);
       if (line && line.who !== 'kessler' && line.who !== 'voss') return head(line.who);
       return out.copy(CREW_MID);
     }
@@ -1112,24 +1221,32 @@ export class LockFlashback {
 
   _hands(t) {
     const T = this.T, L = T.line, K = this.people, v = this.voss;
-    // Kessler: her hands open toward them as she begins, and again as she warns them
-    const open = Math.max(seg(t, L.k1[0] - 0.3, L.k1[0] + 0.5) * (1 - seg(t, L.k1[0] + 3.2, L.k1[0] + 4.0)),
-      seg(t, L.k3[0] + 5.0, L.k3[0] + 5.8) * (1 - seg(t, L.k3[0] + 8.0, L.k3[0] + 8.8)));
-    const k = K.kessler;
-    if (open > 0) {
-      const fwd = this._v3.set(-Math.sin(k.yaw), 0, -Math.cos(k.yaw));
-      for (const side of ['R', 'L']) {
-        const g = this._grip('kOpen' + side, [0.1, 0.12, 0.1], [0.05, 0.05]);
-        k.at(side === 'R' ? 'rArm' : 'lArm', g.wrist, -0.32).addScaledVector(fwd, 0.3);
-        g.fingers.copy(fwd);
-        g.palm.set(0, 1, 0);
-        g.pole.set(0, -1, 0);
-        g.w = open;
-        k.grips[side] = g;
+    // the body language (this.body): each gesture eased in and out; where two meet on one hand,
+    // the stronger has it. The lean is their sum.
+    for (const n of CREW) {
+      const p = K[n];
+      let lean = 0;
+      for (const [i, [t0, t1, right, left, ln, opts]] of this.body[n].entries()) {
+        const w = seg(t, t0 - 0.35, t0) * (1 - seg(t, t1, t1 + 0.4));
+        if (w <= 0) continue;
+        lean += ln * w;
+        const at = opts?.at && opts.at(this._v2);
+        for (const [side, kind] of [['R', right], ['L', left]]) {
+          if (!kind) continue;
+          const g = ((this._bodyGrips ||= {})[`${n}${i}${side}`] ||= grip());
+          pose(p, kind, side, g, { at, reach: opts?.reach });
+          if (kind === 'face') {                     // (a little tremor in hands held to the face)
+            g.wrist.y += 0.003 * Math.sin(t * 37 + i + (side === 'R' ? 0 : 2));
+          }
+          g.w = w;
+          if (!p.grips[side] || p.grips[side].w < w) p.grips[side] = g;
+        }
       }
+      p.lean = lean;
     }
+    const k = K.kessler;
     // at the glass: Kessler's palms flat on it; Lindqvist's fists, pounding; then one fist resting
-    const kg = seg(t, T.shut + 2.0, T.shut + 2.6);
+    const kg = seg(t, T.shut + 0.9, T.shut + 1.5);
     if (kg > 0) {
       for (const [side, dx] of [['R', -0.2], ['L', 0.17]]) {          // (facing out: her right is -x)
         const g = this._grip('kGlass' + side, [0.08, 0.1, 0.05], [0.1, 0.05]);
@@ -1142,7 +1259,7 @@ export class LockFlashback {
       }
     }
     const lq = K.lindqvist;
-    const pw = seg(t, T.shut, T.shut + 0.2) * (1 - seg(t, L.p4[0], L.p4[0] + 0.8) * 0.4);
+    const pw = seg(t, T.shut, T.shut + 0.2) * (1 - seg(t, L.n2[0], L.n2[0] + 0.8) * 0.4);
     if (pw > 0) {
       for (const [side, dx, phase] of [['R', -0.17, 0], ['L', 0.15, 1]]) {
         // each fist lands on every other pound; between them it draws back
@@ -1151,7 +1268,7 @@ export class LockFlashback {
           const a = this.pounds[i];
           if (t >= a - 0.38 && t < a + 0.38) d = Math.min(d, Math.abs(t - a) / 0.38);
         }
-        const pounding = t < L.n3[0] + 0.6;
+        const pounding = t < L.n2[0];
         const back = pounding ? 0.15 * Math.pow(d, 0.6) : 0.02;
         const g = this._grip('lFist' + side, [1.3, 1.4, 1.2], [0.9, 0.6]);
         g.wrist.set(lq.pos.x + dx, 1.36 + (side === 'R' ? 0.05 : 0), -24.24 - back - 0.06);
@@ -1222,6 +1339,23 @@ export class LockFlashback {
       g.curl[0] = 0.3 + 0.9 * shut; g.curl[1] = 0.3 + 1.0 * shut; g.curl[2] = 0.25 + 0.8 * shut;
       g.w = mw;
       v.grips.R = g;
+    }
+    // ...then both hands come up in front of him, and shake (a tremor of about 10 a second, the
+    // fingers twitching with it), less and less, until he lowers them
+    const tw = seg(t, T.rip + 0.3, T.rip + 0.9) * (1 - seg(t, T.shake[1] - 0.4, T.shake[1] + 0.3));
+    if (tw > 0) {
+      const amp = 0.009 * (1 - 0.55 * seg(t, T.shake[0] + 1.2, T.shake[1]));
+      for (const [side, ph] of [['R', 0], ['L', 2.1]]) {
+        if ((v.grips[side]?.w || 0) > tw) continue;
+        const g = pose(v, 'tremble', side, ((this._bodyGrips ||= {})['voss' + side] ||= grip()));
+        g.wrist.x += amp * (0.6 * Math.sin(t * 67 + ph) + 0.4 * Math.sin(t * 41.3 + 2 * ph));
+        g.wrist.y += amp * (0.6 * Math.sin(t * 59 + 3 * ph) + 0.4 * Math.sin(t * 37.1 + ph));
+        g.wrist.z += amp * 0.5 * Math.sin(t * 53 + 1.7 * ph);
+        const twitch = 0.07 * Math.sin(t * 47 + ph);
+        g.curl[0] += twitch; g.curl[1] += twitch; g.curl[2] += 0.7 * twitch;
+        g.w = tw;
+        v.grips[side] = g;
+      }
     }
   }
 
@@ -1488,13 +1622,55 @@ export class LockFlashback {
       play('punch', p, { vol: 0.55, rate: 0.55 + Math.random() * 0.1, lp: 600 });
       this._thump(at + p, 0.45);
     }
-    // the water, faint and muffled, behind the door at the end
-    const water = play('water-pour', L.n4[0] - 0.6, { vol: 0.0, lp: 450 });
+    // the water, faint and muffled, behind the door at the end (loudest as he stands still)
+    const water = play('water-pour', L.p5[0] - 0.6, { vol: 0.0, lp: 450 });
     if (water) {
-      water.gain.gain.setValueAtTime(0.0, at + L.n4[0] - 0.6);
-      water.gain.gain.linearRampToValueAtTime(0.18, at + L.n4[0] + 1.5);
+      water.gain.gain.setValueAtTime(0.0, at + L.p5[0] - 0.6);
+      water.gain.gain.linearRampToValueAtTime(0.2, at + T.stop[0] + 0.4);
       water.gain.gain.linearRampToValueAtTime(0.0, at + T.end);
     }
+    // after the lock: his heart, fast, and his breath, ragged (in and out, uneven), dying down
+    const beat = this._gainTo(fx, 0.55);
+    for (let b = T.rip + 0.25, i = 0; b < T.shake[1] + 0.6; i++) {
+      heartbeat(ac, beat, at + b);
+      b += 0.5 + 0.12 * seg(b, T.shake[0], T.shake[1]) + ((i * 7919) % 5) * 0.012;
+    }
+    for (let b = T.rip + 0.15, i = 0; b < T.watch + 0.8; i++) {
+      const fade = 1 - 0.6 * seg(b, T.shake[0] + 1.0, T.watch + 0.8);
+      this._breath(at + b, 0.42, 1250, 0.07 * fade);                    // in
+      this._breath(at + b + 0.5, 0.55, 750, 0.085 * fade);              // out
+      b += 1.25 + ((i * 7919) % 7) * 0.05 + 0.3 * seg(b, T.shake[0], T.watch);
+    }
+  }
+
+  _gainTo(out, value) {
+    const g = this.ac.createGain();
+    g.gain.value = value;
+    g.connect(out);
+    return g;
+  }
+
+  // a breath: a puff of noise through a band, swelling and dying (seconds long, at the band's Hz)
+  _breath(when, length, hz, vol) {
+    const ac = this.ac;
+    if (!this._noise) {
+      const n = (this._noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate));
+      const d = n.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const src = ac.createBufferSource();
+    src.buffer = this._noise;
+    const f = ac.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = hz;
+    f.Q.value = 0.9;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(vol, when + length * 0.35);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + length);
+    src.connect(f).connect(g).connect(this._fx);
+    src.start(when, Math.random() * 0.4, length + 0.05);
+    this._sources.push(src);
   }
 
   // a low, heavy thud (felt more than heard)
@@ -1566,6 +1742,8 @@ export class LockFlashback {
     this.overlay?.remove();
     this.overlay = null;
     if (this.scene) {
+      for (const c of this.creases || []) c.dispose();
+      this.creases = null;
       this.scene.traverse((o) => { if (o.isSkinnedMesh) o.skeleton.dispose(); });
       for (const p of [...Object.values(this.people), this.voss]) {
         p.mixer.stopAllAction();

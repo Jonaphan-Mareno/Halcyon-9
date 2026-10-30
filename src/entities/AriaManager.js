@@ -134,9 +134,10 @@ export class AriaManager {
 
     // 3D animated face. Once its model has loaded, its offscreen render replaces
     // the video as the hologram source. If it fails to load, the video stays.
+    // headReady resolves either way (check useHead).
     this.useHead = false;
     this.head = new AriaHead();
-    this.head.load().then(() => {
+    this.headReady = this.head.load().then(() => {
       this.ariaMaterial.uniforms.uVideoTexture.value = this.head.texture;
       this.useHead = true;
       this.video.pause(); // no need to decode video any more

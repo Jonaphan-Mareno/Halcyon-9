@@ -84,10 +84,12 @@ export class Works {
     const gltf = await createGLTFLoader().loadAsync(MODEL);
     const model = gltf.scene;
     model.updateMatrixWorld(true);
-    // the collision: static, added once
+    // the collision: static, added once (each kept by name with its node, whose world matrix stays
+    // as it was in the model: RelayLock rebuilds the room's, with a doorway in its south wall)
+    this.colliders = {};
     for (const node of [...model.children]) {
       if (node.name.startsWith('COL_')) {
-        this.physics.addStaticObject(node);
+        this.colliders[node.name] = { node, collider: this.physics.addStaticObject(node) };
         model.remove(node);
       }
     }

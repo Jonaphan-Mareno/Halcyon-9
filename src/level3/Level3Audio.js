@@ -365,7 +365,10 @@ export class Level3Audio {
     const prep = this.s.prep;
     const zone = prep?.zone || 'deck';
     const p = this.s.controls.position;
-    const outside = zone === 'sea';
+    // (out of the sea in the relay's water lock once it is drained: RelayLock, whose scene breathes
+    // for him)
+    const relayLock = this.s.trench?.lock;
+    const outside = zone === 'sea' && !relayLock?.inAir(cam.position);
     const playing = this.game.state === 'PLAYING' && !this._paused;
     // everything quiet while paused (and silent while a flashback plays)
     this.bus.gain.setTargetAtTime(this._muted ? 0 : this._paused ? 0.15 : 1, t, 0.15);
@@ -376,7 +379,7 @@ export class Level3Audio {
     if (playing) this._scatter(dt, zone, p);
     this._swimSounds(outside);
     this._seaMusic(outside);
-    if (prep?.breathing && prep.suited && !outside) {
+    if (prep?.breathing && prep.suited && !outside && !relayLock?.owns) {
       this._lockBreathT = (this._lockBreathT ?? 1) - dt;
       if (this._lockBreathT <= 0) {
         this._lockBreathT = 3.8 + Math.random() * 0.8;

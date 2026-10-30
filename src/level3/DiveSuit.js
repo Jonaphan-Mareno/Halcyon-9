@@ -180,6 +180,7 @@ export function dressInSuit(model, { mutate = false, empty = false, parts: withP
   });
   if (!withParts) return { helmet: null, parts: [], mats: m };
   const parts = [helmet(m), backpack(m), belt(m)];
+  parts[0].name = 'SuitHelmet';             // (found by name in a copy of the rig: level3/RelayLock.js)
   attachAtBind(model, /Spine4/, parts[0]);       // the helmet rides on the shoulders, not the head
   attachAtBind(model, /Spine4/, parts[1]);
   attachAtBind(model, /Pelvis/, parts[2]);

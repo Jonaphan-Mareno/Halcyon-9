@@ -1,0 +1,73 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Confrontation preview</title>
+<base href="/">
+<style>html, body { margin: 0; height: 100%; overflow: hidden; background: #000; } #ui-layer { position: fixed; inset: 0; pointer-events: none; }</style>
+<div id="ui-layer"></div>
+<script type="module">
+// The confrontation on its own (dev only). Opened by check.mjs (headless: frames at given times),
+// or by hand at /scripts/confrontation/preview.html?play to watch it at normal speed with sound
+// (click once to start: the browser wants a click before it plays sound).
+import * as THREE from 'three';
+import { Confrontation } from '/src/level3/Confrontation.js';
+
+const params = new URLSearchParams(location.search);
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: !params.has('play') });
+renderer.setPixelRatio(1);
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+const conf = new Confrontation(document.getElementById('ui-layer'));
+window.__conf = conf;
+await conf.preload(renderer);
+window.__ready = conf.ready;
+
+// step the scene to time t (s) at 30 frames a second, then draw it; view: { p, l } (an outside
+// camera: [x, y, z] or 'voss' + offset for p, a point or 'R'/'L'/'head' for l) to look closely
+window.__frame = (t, view = null) => {
+  while (conf.t < t - 1e-6) {
+    const dt = Math.min(1 / 30, t - conf.t);
+    conf.t += dt;
+    conf._animate(conf.t, dt);
+  }
+  conf._subtitles(conf.t);
+  if (view) {
+    const a = conf.actor, at = (k) => k === 'R' || k === 'L' ? a.bone(k === 'R' ? 'rightHand' : 'leftHand').getWorldPosition(new THREE.Vector3())
+      : k === 'head' ? a.bone('head').getWorldPosition(new THREE.Vector3()) : k === 'hip' ? a.bone('pelvis').getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(...k);
+    const l = at(view.l);
+    const p = Array.isArray(view.p) && typeof view.p[0] === 'string' ? at(view.p[0]).add(new THREE.Vector3(...view.p.slice(1))) : new THREE.Vector3(...view.p);
+    conf.camera.position.copy(p);
+    conf.camera.fov = view.fov || 40;
+    conf.camera.updateProjectionMatrix();
+    conf.camera.lookAt(l);
+  }
+  conf._draw(renderer, conf.t, 0);
+  return renderer.domElement.toDataURL('image/jpeg', 0.85);
+};
+window.__T = conf.T;
+// the camera, frame by frame from now to t1 (30 a second): [t, shot, x, y, z, qx, qy, qz, qw]
+window.__trace = (t1) => {
+  const out = [];
+  while (conf.t < t1 - 1e-6) {
+    const dt = Math.min(1 / 30, t1 - conf.t);
+    conf.t += dt;
+    conf._animate(conf.t, dt);
+    const c = conf.camera;
+    out.push([+conf.t.toFixed(3), conf._shotIndex, ...c.position.toArray().map((v) => +v.toFixed(4)), ...c.quaternion.toArray().map((v) => +v.toFixed(5))]);
+  }
+  return out;
+};
+
+if (params.has('play')) {
+  const go = () => {
+    removeEventListener('click', go);
+    conf.warm(renderer);
+    conf.play().then((c) => console.log('chose', c));
+    const loop = () => { conf.render(renderer); requestAnimationFrame(loop); };
+    loop();
+  };
+  addEventListener('click', go);
+  document.getElementById('ui-layer').innerHTML = '<div style="color:#cfefff;font:16px monospace;position:absolute;top:45%;width:100%;text-align:center">click to play</div>';
+  addEventListener('click', () => { document.getElementById('ui-layer').firstChild?.remove(); }, { once: true, capture: true });
+}
+</script>

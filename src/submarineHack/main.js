@@ -20,7 +20,7 @@ import { sfx } from "./audio/audio.js";
 
 const gameState = new GameState();
 document.querySelector("#round-time").textContent = String(gameState.timeLimit);
-document.querySelector("#timer").title = `Take control of ARIA's uplink before the ${gameState.timeLimit}-second breach window closes.`;
+document.querySelector("#timer").title = `Power the lock's pump controller before the backup cell's ${gameState.timeLimit} seconds run out.`;
 
 const canvas = document.querySelector("#game");
 const { renderer, scene, camera, controls } = createScene(canvas);
@@ -65,27 +65,27 @@ let roundStarted = false;
 function describeNode(node) {
   if (node.kind === "target") {
     if (node.owner === "red") {
-      return ["ARIA FIREWALL · OVERRIDE NODE", "Breach from a powered blue neighbor with three rapid clicks. Keep this node connected to your access core to take control.", "gold"];
+      return ["PUMP CONTROLLER · BREAKER TRIPPED", "Reset it from a powered blue neighbor with three rapid clicks. Keep it connected to your access core to power the pumps.", "gold"];
     }
     if (node.owner === "blue" && !node.active) {
-      return ["OVERRIDE NODE · OFFLINE", "ARIA severed your route. Reconnect blue nodes to the access core to restore power here.", "gold"];
+      return ["PUMP CONTROLLER · NO POWER", "Seawater shorted your path. Reconnect blue nodes to the access core to restore power here.", "gold"];
     }
-    return ["ARIA OVERRIDE NODE", "Capture this node from a powered blue neighbor and hold its connection to the access core.", "gold"];
+    return ["PUMP CONTROLLER", "Bring this node online from a powered blue neighbor and keep its connection to the access core.", "gold"];
   }
-  if (node.kind === "core") return ["UPLINK ACCESS CORE", "Your entry point into ARIA's network. Connected blue nodes extend your access route.", "blue"];
-  if (node.kind === "spawner") return ["ARIA FIREWALL NODE", "ARIA's counter-intrusion spreads from here and tries to cut off your access core.", "red"];
+  if (node.kind === "core") return ["RELAY ACCESS CORE", "Your way into the relay's network. Connected blue nodes extend your path.", "blue"];
+  if (node.kind === "spawner") return ["SHORTED JUNCTION", "Seawater in the lines: the short spreads from here and tries to cut off your access core.", "red"];
 
   const known = node.visibility.blue === "visible" || node.owner === "blue";
-  if (!known) return ["UNKNOWN ARIA SIGNAL", "Press Space from a powered blue node to scan nearby. A blind click may hit an active firewall.", "neutral"];
-  if (node.owner === "blue" && !node.active) return ["ACCESS NODE · OFFLINE", "ARIA cut this connection. Reconnect the path to restore access through this branch.", "blue"];
-  if (node.owner === "blue") return ["ACCESS NODE · POWERED", "Click to select this node as your sonar origin. Capture from any powered blue neighbor.", "blue"];
+  if (!known) return ["UNKNOWN SIGNAL", "Press Space from a powered blue node to scan nearby. A blind click may hit a tripped breaker.", "neutral"];
+  if (node.owner === "blue" && !node.active) return ["ACCESS NODE · OFFLINE", "A short cut this connection. Reconnect the path to restore power through this branch.", "blue"];
+  if (node.owner === "blue") return ["ACCESS NODE · POWERED", "Click to select this node as your sonar origin. Bring junctions online from any powered blue neighbor.", "blue"];
   if (node.owner === "red") {
     const clicks = Math.round(node.breachProgress * 3);
-    const progress = clicks > 0 ? ` Breach: ${clicks}/3—keep the burst going.` : "";
-    return ["ARIA FIREWALL", `Click three times within 1.25 seconds. A 0.5-second pause resets your breach.${progress}`, "red"];
+    const progress = clicks > 0 ? ` Reset: ${clicks}/3—keep the burst going.` : "";
+    return ["TRIPPED BREAKER", `Click three times within 1.25 seconds. A 0.5-second pause lets it trip again.${progress}`, "red"];
   }
-  if (node.owner === "dead") return ["SEVERED · OFFLINE", "This node has been cut from the AI network.", "neutral"];
-  return ["UNCLAIMED RELAY", "One click brings it under your control when it touches a powered blue node.", "neutral"];
+  if (node.owner === "dead") return ["DEAD · OFFLINE", "This junction has burnt out of the network.", "neutral"];
+  return ["DEAD JUNCTION", "One click brings it back online when it touches a powered blue node.", "neutral"];
 }
 
 function showNodeTooltip(node, event) {

@@ -23,10 +23,13 @@
 // Acting on top of the preset (the video logs cue these on words, LogHead.cue): pose() a passing
 // expression, look() away, gesture() a nod or a shake, tic(), laugh(), stare() (no blinking),
 // `stillness` (0..1, the sway and breathing die away) and nerves() (0..1: unprompted darting looks,
-// tics, double blinks and brow flicks, more and more often).
+// tics, double blinks and brow flicks, more and more often). Held on top of all that: `shut` (0..1,
+// the eyes closed and kept closed) and `gape` (0..1, the mouth held open: a gasp, a heavy breath),
+// both eased in and out.
 //
 // A head may carry a lip seal (material M_LipSeal): the faces closing the lips, shown only while
-// the mouth is shut, so a closed mouth looks exactly as modelled.
+// the mouth is shut, so a closed mouth looks exactly as modelled. And creases (FaceCreases,
+// attachCreases()): the folds between the brows as they knit, and across the forehead as they rise.
 
 const PRESETS = {
   //            resting face                                                          jaw range  blinks: gap (s), length, lids      head: bow, sway, sag
@@ -139,6 +142,12 @@ export class FaceRig {
     this.blink = 0;
     this._nextBlink = 1 + Math.random() * 2;
     this._blinkT = -1;
+
+    // held: the eyes shut, the mouth open (eased toward these)
+    this.shut = 0;
+    this.gape = 0;
+    this._shut = 0;
+    this._gape = 0;
 
     this.calm();
   }
@@ -337,9 +346,12 @@ export class FaceRig {
 
     this._mouth(dt);
     this._blink(dt);
+    this._shut += (this.shut - this._shut) * (1 - Math.exp(-3 * dt));
+    this._gape += (this.gape - this._gape) * (1 - Math.exp(-8 * dt));
+    const blink = Math.max(this.blink, this._shut);
 
     const e = this.expr;
-    const jaw = Math.min(1, Math.max(this.jaw * p.jaw, laughJaw));
+    const jaw = Math.min(1, Math.max(this.jaw * p.jaw, laughJaw, this._gape));
     const smile = Math.min(1, e.smile + this.laughing * 0.35) * this.gain;
     this._set('jaw_open', jaw);
     this._set('mouth_wide', this.wide * p.jaw);
@@ -349,8 +361,8 @@ export class FaceRig {
     this._brows(e);
     // the lids: a blink closes them from wherever they rest (heavy, tired lids rest lower)
     const rest = Math.max(e.tired, p.lids);
-    this._set('eyes_tired', rest * (1 - this.blink));
-    this._set('blink', this.blink);
+    this._set('eyes_tired', rest * (1 - blink));
+    this._set('blink', blink);
     const shut = jaw < 0.03 && this.pucker < 0.5;
     for (const s of this.seals) s.visible = shut;
 
@@ -422,11 +434,20 @@ export class FaceRig {
     const raise = Math.max(0, brow) * this.gain;
     const inner = !!this.slots.brow_inner_up;
     const worried = inner ? clamp01(e.frown * WORRY_PER_FROWN) : 0;
-    this._set('brow_up', Math.min(1.6, raise * (1 - worried)));
-    this._set('brow_inner_up', Math.min(1.6, raise * worried + Math.max(0, e.worry) * this.gain));
-    this._set('brow_down', Math.min(1.6, Math.max(0, -brow) * this.gain));
+    const up = Math.min(1.6, raise * (1 - worried));
+    const inn = Math.min(1.6, raise * worried + Math.max(0, e.worry) * this.gain);
+    const down = Math.min(1.6, Math.max(0, -brow) * this.gain);
+    this._set('brow_up', up);
+    this._set('brow_inner_up', inn);
+    this._set('brow_down', down);
     this._set('brow_up_L', Math.min(1.4, Math.max(0, e.skew) * this.gain));
     this._set('brow_up_R', Math.min(1.4, Math.max(0, -e.skew) * this.gain));
+    this.creases?.set(down, Math.max(up, inn));
+  }
+
+  // The skin's folds with the brows (FaceCreases: knit, raised), for a face that has them
+  attachCreases(creases) {
+    this.creases = creases?.ok ? creases : null;
   }
 
   _set(name, value) {

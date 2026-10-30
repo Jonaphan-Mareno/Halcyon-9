@@ -1,0 +1,199 @@
+{
+ "aria/end-aria-1": {
+  "seconds": 4.559,
+  "peakDb": -3,
+  "lufs": -19,
+  "speechFrom": 0.06,
+  "speechTo": 4.54
+ },
+ "aria/end-aria-2": {
+  "seconds": 3.07,
+  "peakDb": -2.4,
+  "lufs": -20.7,
+  "speechFrom": 0.06,
+  "speechTo": 3.06
+ },
+ "aria/end-aria-3": {
+  "seconds": 2.194,
+  "peakDb": -1.6,
+  "lufs": -17.1,
+  "speechFrom": 0.14,
+  "speechTo": 1.82
+ },
+ "aria/end-aria-4": {
+  "seconds": 3.709,
+  "peakDb": -1.8,
+  "lufs": -16.5,
+  "speechFrom": 0.08,
+  "speechTo": 3.5
+ },
+ "aria/end-aria-5": {
+  "seconds": 2.691,
+  "peakDb": -1.1,
+  "lufs": -15,
+  "speechFrom": 0.04,
+  "speechTo": 2.38
+ },
+ "aria/end-aria-6": {
+  "seconds": 6.922,
+  "peakDb": -1.1,
+  "lufs": -17.2,
+  "speechFrom": 0.1,
+  "speechTo": 6.76
+ },
+ "aria/end-aria-7": {
+  "seconds": 4.676,
+  "peakDb": -1.1,
+  "lufs": -17.1,
+  "speechFrom": 0.06,
+  "speechTo": 4.36
+ },
+ "voss/end-voss-1": {
+  "seconds": 4.206,
+  "peakDb": -3.7,
+  "lufs": -20.8,
+  "speechFrom": 0.06,
+  "speechTo": 3.86
+ },
+ "voss/end-voss-2": {
+  "seconds": 0.993,
+  "peakDb": -2.6,
+  "lufs": -19.4,
+  "speechFrom": 0.06,
+  "speechTo": 0.54
+ },
+ "voss/end-voss-3": {
+  "seconds": 5.068,
+  "peakDb": -2.2,
+  "lufs": -20.3,
+  "speechFrom": 0.08,
+  "speechTo": 4.8
+ },
+ "voss/end-voss-4": {
+  "seconds": 2.273,
+  "peakDb": -3.7,
+  "lufs": -17.5,
+  "speechFrom": 0.04,
+  "speechTo": 1.94
+ },
+ "voss/end-voss-5": {
+  "seconds": 2.586,
+  "peakDb": -2.6,
+  "lufs": -16.6,
+  "speechFrom": 0.14,
+  "speechTo": 2.22
+ },
+ "voss/end-voss-6": {
+  "seconds": 4.284,
+  "peakDb": -1.5,
+  "lufs": -17.8,
+  "speechFrom": 0.06,
+  "speechTo": 3.84
+ },
+ "voss/end-voss-7": {
+  "seconds": 5.878,
+  "peakDb": -3.6,
+  "lufs": -21.2,
+  "speechFrom": 0.06,
+  "speechTo": 5.48
+ },
+ "voss/end-voss-8": {
+  "seconds": 0.406,
+  "peakDb": -10.6,
+  "lufs": -28.3,
+  "speechFrom": 0.1,
+  "speechTo": 0.3
+ },
+ "aria/end-aria-8": {
+  "seconds": 2.429,
+  "peakDb": -12.9,
+  "lufs": -27.6,
+  "speechFrom": 0.18,
+  "speechTo": 2.26
+ },
+ "aria/end-aria-10": null,
+ "voss/end-voss-9": {
+  "seconds": 4.911,
+  "peakDb": -8.9,
+  "lufs": -27.4,
+  "speechFrom": 0.06,
+  "speechTo": 4.6
+ },
+ "voss/end-voss-10": {
+  "seconds": 3.318,
+  "peakDb": -13.4,
+  "lufs": -28.9,
+  "speechFrom": 0.12,
+  "speechTo": 3.14
+ },
+ "voss/end-voss-11": {
+  "seconds": 2.351,
+  "peakDb": -13.9,
+  "lufs": -28.2,
+  "speechFrom": 0.16,
+  "speechTo": 2.12
+ },
+ "voss/end-voss-12": {
+  "seconds": 5.407,
+  "peakDb": -9.1,
+  "lufs": -27.6,
+  "speechFrom": 0.16,
+  "speechTo": 5.18
+ },
+ "voss/end-voss-13": {
+  "seconds": 6.113,
+  "peakDb": -8.4,
+  "lufs": -26.7,
+  "speechFrom": 0.08,
+  "speechTo": 5.78
+ },
+ "voss/end-voss-14": {
+  "seconds": 8.678,
+  "peakDb": -3.2,
+  "lufs": -15.3,
+  "speechFrom": 0.32,
+  "speechTo": 8.22
+ },
+ "ending/end-narrator-1": {
+  "seconds": 2.508,
+  "peakDb": -3.2,
+  "lufs": -19.9,
+  "speechFrom": 0.2,
+  "speechTo": 2.26
+ },
+ "ending/end-narrator-2": {
+  "seconds": 3.788,
+  "peakDb": -3.7,
+  "lufs": -16.8,
+  "speechFrom": 0.1,
+  "speechTo": 3.54
+ },
+ "ending/end-narrator-3": {
+  "seconds": 7.549,
+  "peakDb": -2.4,
+  "lufs": -17.6,
+  "speechFrom": 0.08,
+  "speechTo": 7.38
+ },
+ "ending/end-narrator-4": {
+  "seconds": 9.404,
+  "peakDb": -3.3,
+  "lufs": -18.1,
+  "speechFrom": 0.08,
+  "speechTo": 9.14
+ },
+ "ending/end-narrator-5": {
+  "seconds": 5.721,
+  "peakDb": -3.5,
+  "lufs": -16.8,
+  "speechFrom": 0.04,
+  "speechTo": 5.5
+ },
+ "ending/the-end": {
+  "seconds": 3.709,
+  "peakDb": -4.4,
+  "lufs": -19.6,
+  "speechFrom": 0.06,
+  "speechTo": 3.44
+ }
+}

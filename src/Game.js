@@ -20,6 +20,7 @@ import { Soundtrack } from './audio/Soundtrack.js';
 import { PauseMenu } from './ui/PauseMenu.js';
 import { DeckSession } from './level3/DeckSession.js';
 import { settings } from './core/Settings.js';
+import { getDifficulty, puzzleSeconds } from './core/Difficulty.js';
 import { pauseClock } from './core/PauseClock.js';
 import { MoodLight } from './graphics/MoodLight.js';
 import { CircuitPuzzle } from './puzzles/CircuitPuzzle.js';
@@ -283,7 +284,7 @@ export class Game {
     });
 
     this.ui = new UIManager();
-    this.hud = new HUD(uiRoot, { onRestart: () => this.restart() });
+    this.hud = new HUD(uiRoot, { onRestart: () => this.restartAfterGameOver() });
     this.inventory = new Inventory(uiRoot);
     this.preview = new ItemPreview();
     this.preview.load().catch((e) => console.warn('Torch preview failed to load.', e));
@@ -392,6 +393,17 @@ export class Game {
 
   restartSession() {
     this._swapSession(this.startLevel);
+  }
+
+  // The game-over screen's action. Ordinary difficulties restart the current level; Super hard
+  // ends the run altogether and returns to the title instead of offering another attempt.
+  restartAfterGameOver() {
+    if (getDifficulty().permadeath) {
+      window.location.href = window.location.pathname;
+      return;
+    }
+    if (this.level2 && !this.level2.disposed) this.restartSession();
+    else this.restart();
   }
 
   // The running Level 2 or 3 session torn down (its scene, physics, listeners and screens) and
@@ -564,6 +576,7 @@ export class Game {
     document.body.classList.toggle('hide-fps', !s.get('fps'));
     this.perf?.setMode(s.get('quality'));
     this.level2?.setQualityMode?.(s.get('quality'));
+    for (const player of [this.player, this.level2?.player]) player?.setDifficulty?.();
   }
 
   // ---------------------------------------------------------
@@ -1019,6 +1032,8 @@ export class Game {
 
   startLoop() {
     this.applySettings();
+    // The opening selector can change the preset after this player was constructed.
+    if (!this.level2Mode) this.player.reset();
     const loop = (time) => {
       requestAnimationFrame(loop);
       const delta = (time - this.lastTime) / 1000;
@@ -1726,7 +1741,7 @@ export class Game {
   // ---------------------------------------------------------
   _puzzleSeconds() {
     const bonus = Math.min(PUZZLE_MAX_BONUS, PUZZLE_BONUS_PER_FAILURE * this.currentLevel.failures);
-    return PUZZLE_BASE_SECONDS + bonus;
+    return puzzleSeconds(PUZZLE_BASE_SECONDS + bonus);
   }
 
   _puzzleUsable() {

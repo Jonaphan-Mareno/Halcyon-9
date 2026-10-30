@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { loopClip, playClip, CLIPS } from '../audio/AudioCache.js';
 import { frame } from '../ui/hudFrame.js';
+import { puzzleSeconds } from '../core/Difficulty.js';
 
 // ============================================================================
 // GAMEPLAY & HARDWARE CONSTANTS
@@ -117,7 +118,7 @@ export class FuseboxPuzzle {
 
     // Gameplay values
     this.lives = MAX_LIVES;
-    this.timeLeft = ROUND_TIME;
+    this.timeLeft = puzzleSeconds(ROUND_TIME);
     this.speedMultiplier = 1.0;
     this.activeRingIndex = 0;
     this.lockedCount = 0;
@@ -166,7 +167,7 @@ export class FuseboxPuzzle {
     // newly randomized ring order and target angles, with nothing left over.
     this._reset();
     // (the first go is three times as long: time to read how to play, on the left)
-    if (!this._played) this.timeLeft = FIRST_ROUND_TIME;
+    if (!this._played) this.timeLeft = puzzleSeconds(FIRST_ROUND_TIME);
     this._played = true;
 
     this._onResize();
@@ -209,7 +210,7 @@ export class FuseboxPuzzle {
     this.isGameOver = false;
     this.showingEndMessage = false;
     this.lives = MAX_LIVES;
-    this.timeLeft = ROUND_TIME;
+    this.timeLeft = puzzleSeconds(ROUND_TIME);
     this.speedMultiplier = 1.0;
     this.lockedCount = 0;
     this.elapsedTime = 0;

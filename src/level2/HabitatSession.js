@@ -156,7 +156,7 @@ export class HabitatSession {
     const root = document.getElementById('ui-layer');
     // Voss's health (integrity), the same as in Level 1, on the same HUD
     this.player = new PlayerStats();
-    this.hud = new HUD(root, { onRestart: () => this.game.restartSession() });
+    this.hud = new HUD(root, { onRestart: () => this.game.restartAfterGameOver() });
     this.fightHelp = new FightHelp(root);
     // everything he reads, hears or watches upstairs (the game waits while it is open)
     this.reader = new Readables(root, {

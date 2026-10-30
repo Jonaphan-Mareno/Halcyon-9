@@ -1,4 +1,5 @@
 import { MAX_INTEGRITY, MAX_RESTORES } from '../player/PlayerStats.js';
+import { getDifficulty } from '../core/Difficulty.js';
 import { frame } from './hudFrame.js';
 
 // The always-visible heads-up display: a health bar, lives (shown as discs),
@@ -72,13 +73,14 @@ export class HUD {
       <button id="gameover-restart">RESTART</button>`;
     this.gameOverAria = this.gameOver.querySelector('#gameover-aria');
     this.gameOverStats = this.gameOver.querySelector('#gameover-stats');
+    this.gameOverTitle = this.gameOver.querySelector('#gameover-title');
     this.restartButton = this.gameOver.querySelector('#gameover-restart');
     this.restartButton.addEventListener('click', (e) => {
       e.stopPropagation();
       this.onRestart?.();
     });
 
-    this._last = { integrity: -1, restores: -1 };
+    this._last = { integrity: -1, restores: -1, maxRestores: -1 };
     this.setVisible(false);
   }
 
@@ -105,6 +107,16 @@ export class HUD {
       this.value.textContent = `${Math.round(player.integrity)}%`;
       this.panel.classList.toggle('critical', fraction <= 0.25);
     }
+    if (player.maxRestores !== this._last.maxRestores) {
+      this._last.maxRestores = player.maxRestores;
+      this.restoreBox.replaceChildren();
+      for (let i = 0; i < player.maxRestores; i++) {
+        const disk = document.createElement('span');
+        disk.className = 'restore-disk';
+        this.restoreBox.appendChild(disk);
+      }
+      this._last.restores = -1;
+    }
     if (player.restores !== this._last.restores) {
       this._last.restores = player.restores;
       [...this.restoreBox.children].forEach((disk, i) => disk.classList.toggle('spent', i >= player.restores));
@@ -117,6 +129,10 @@ export class HUD {
   }
 
   showTutorial() {
+    const restores = getDifficulty().restores;
+    this.tutorial.querySelector('.tut-lives + span').textContent = restores === 1
+      ? 'One dot under it. You have two lives in total: one now and one restore. Lose both and the run ends for good.'
+      : `The ${restores} dots under it. Lose a life and ARIA brings you back right where you were, with full health. Lose all ${restores} and the level starts again.`;
     this.tutorial.classList.add('visible');
   }
 
@@ -142,6 +158,9 @@ export class HUD {
   }
 
   showGameOver(ariaText, statsText) {
+    const permadeath = getDifficulty().permadeath;
+    this.gameOverTitle.textContent = permadeath ? 'PERMADEATH' : 'CONNECTION LOST';
+    this.restartButton.textContent = permadeath ? 'BACK TO TITLE' : 'RESTART';
     this.gameOverAria.textContent = ariaText;
     this.gameOverStats.textContent = statsText;
     this.gameOver.classList.add('visible');

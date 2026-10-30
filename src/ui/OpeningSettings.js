@@ -1,4 +1,5 @@
 import { settings } from '../core/Settings.js';
+import { DIFFICULTIES, getDifficulty } from '../core/Difficulty.js';
 
 const SLIDERS = [
   ['music', 'Music', 0, 1, 0.05, (v) => Math.round(v * 100) + '%'],
@@ -35,7 +36,8 @@ export function createOpeningSettings(host, buttonClass = '') {
   host.appendChild(panel);
 
   const rows = panel.querySelector('.opening-settings__rows');
-  let html = '';
+  let html = `<label class="opening-settings__row"><span>Difficulty</span><select data-opt="difficulty">${Object.entries(DIFFICULTIES).map(([id, d]) => `<option value="${id}">${d.label}</option>`).join('')}</select></label>`;
+  html += '<p class="opening-settings__hint" data-difficulty-note></p>';
   for (const [key, label, min, max, step] of SLIDERS) {
     html += `<label class="opening-settings__row"><span>${label}</span><input type="range" data-opt="${key}" min="${min}" max="${max}" step="${step}"><output data-out="${key}"></output></label>`;
   }
@@ -50,6 +52,8 @@ export function createOpeningSettings(host, buttonClass = '') {
       panel.querySelector(`[data-out="${key}"]`).textContent = format(settings.get(key));
     }
     inputs.quality.value = settings.get('quality');
+    inputs.difficulty.value = settings.get('difficulty');
+    panel.querySelector('[data-difficulty-note]').textContent = getDifficulty().description;
     inputs.fps.checked = settings.get('fps');
   };
   for (const [key, el] of Object.entries(inputs)) {

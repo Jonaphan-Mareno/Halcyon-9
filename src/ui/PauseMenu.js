@@ -1,5 +1,6 @@
 import './pause.css';
 import { settings } from '../core/Settings.js';
+import { DIFFICULTIES, getDifficulty } from '../core/Difficulty.js';
 
 // The pause menu, for Level 1 and Level 2: Resume, Restart level, Options, Controls, Back to
 // title. Esc opens it (so does P, and the pause button in the corner), and Esc again resumes.
@@ -82,7 +83,9 @@ export class PauseMenu {
 
   _buildOptions() {
     const page = this.el.querySelector('[data-page="options"]');
-    let html = '<div class="pm-sub">OPTIONS</div>';
+    let html = `<div class="pm-sub">OPTIONS</div>
+      <label class="pm-row"><span>Difficulty</span><select data-opt="difficulty">${Object.entries(DIFFICULTIES).map(([id, d]) => `<option value="${id}">${d.label}</option>`).join('')}</select><output></output></label>
+      <div class="pm-hint" data-difficulty-note></div>`;
     for (const [key, label, min, max, step] of SLIDERS) {
       html += `<label class="pm-row"><span>${label}</span><input type="range" data-opt="${key}" min="${min}" max="${max}" step="${step}"><output data-out="${key}"></output></label>`;
     }
@@ -114,6 +117,8 @@ export class PauseMenu {
       this.el.querySelector(`[data-out="${key}"]`).textContent = fmt(settings.get(key));
     }
     this.inputs.quality.value = settings.get('quality');
+    this.inputs.difficulty.value = settings.get('difficulty');
+    this.el.querySelector('[data-difficulty-note]').textContent = getDifficulty().description;
     this.inputs.fps.checked = settings.get('fps');
   }
 

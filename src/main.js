@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Game } from './Game.js';
 import { startIntro } from './intro/intro-cinematic.js';
 import { createOpeningSettings } from './ui/OpeningSettings.js';
+import { createDifficultyPicker } from './ui/DifficultyPicker.js';
 import './ui/opening-settings.css';
 import './style.css';
 
@@ -23,6 +24,8 @@ function setUpStartScreen() {
 
   if (startBtn && welcomeScreen && welcomeContent) {
     const openingSettings = createOpeningSettings(document.body, 'opening-options-btn');
+    const difficultyPicker = createDifficultyPicker();
+    welcomeContent.insertBefore(difficultyPicker.element, startBtn);
     welcomeContent.appendChild(openingSettings.button);
 
     // Preload the background image to prevent Flash of Unstyled Content (FOUC)
@@ -36,6 +39,7 @@ function setUpStartScreen() {
 
     startBtn.addEventListener('click', () => {
       openingSettings.dispose();
+      difficultyPicker.dispose();
       // Fade out welcome screen
       welcomeScreen.style.opacity = '0';
 

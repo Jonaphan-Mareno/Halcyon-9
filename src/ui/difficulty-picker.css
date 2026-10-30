@@ -1,0 +1,66 @@
+.difficulty-picker {
+  width: 20rem;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0 0 0.35rem;
+  padding: 0;
+  border: 0;
+  color: #eef5f3;
+  text-align: left;
+}
+.difficulty-picker legend {
+  margin-bottom: 0.55rem;
+  padding: 0;
+  color: rgba(207, 232, 230, 0.75);
+  font-size: 0.7rem;
+  letter-spacing: 0.28em;
+}
+.difficulty-picker__options {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.45rem;
+}
+.difficulty-picker__options button {
+  min-width: 0;
+  padding: 0.65rem 0.45rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(207, 232, 230, 0.35);
+  color: rgba(238, 245, 243, 0.72);
+  font: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+.difficulty-picker__options button:hover,
+.difficulty-picker__options button:focus-visible {
+  border-color: rgba(0, 229, 255, 0.8);
+  color: #eef5f3;
+  outline: none;
+}
+.difficulty-picker__options button[aria-checked="true"] {
+  background: rgba(0, 229, 255, 0.16);
+  border-color: #00e5ff;
+  color: #eef5f3;
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.2), inset 0 0 10px rgba(0, 229, 255, 0.08);
+}
+.difficulty-picker__description {
+  min-height: 2.8em;
+  margin: 0.55rem 0 0;
+  color: rgba(207, 232, 230, 0.82);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+.welcome-content .difficulty-picker__description {
+  color: rgba(0, 229, 255, 0.78);
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+}
+@media (max-height: 560px) {
+  .difficulty-picker { margin-bottom: 0; }
+  .difficulty-picker legend { margin-bottom: 0.35rem; }
+  .difficulty-picker__options button { padding: 0.45rem 0.35rem; }
+  .difficulty-picker__description { min-height: 0; margin-top: 0.35rem; }
+}

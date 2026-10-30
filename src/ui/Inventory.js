@@ -113,14 +113,17 @@ export class Inventory {
         <div class="inv-title small">STATUS</div>
         <div class="inv-stats">
           <div><span>Health</span><b>${Math.round(player.integrity)}%</b></div>
-          <div><span>Lives left</span><b>${player.restores}</b></div>
+          <div><span>Difficulty</span><b>${player.difficulty.label}</b></div>
+          <div><span>Restores left</span><b>${player.restores}</b></div>
           <div><span>Generator overloads</span><b>${player.overloads}</b></div>
           <div><span>Live fuses touched</span><b>${player.zaps}</b></div>
           <div><span>Times revived</span><b>${player.deaths}</b></div>
           <div><span>Puzzles solved</span><b>${player.puzzlesSolved}</b></div>
           <div><span>Time played</span><b>${formatTime(player.playSeconds)}</b></div>
         </div>
-        <div class="inv-help">Health: if it runs out you lose a life and ARIA brings you back. Lose all three lives and the level starts again.</div>
+        <div class="inv-help">${player.difficulty.permadeath
+          ? 'Health: if it runs out you lose a life. You have two lives in total; lose both and the run ends for good.'
+          : `Health: if it runs out you lose a life and ARIA brings you back. Lose all ${player.maxRestores} restores and the level starts again.`}</div>
         <div class="inv-objective"><span>Current objective</span> ${objective || '-'}</div>
       </div>`;
   }

@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { KrakenFight, WOUNDS as WOUNDS_TOTAL } from './KrakenFight.js';
 import { SEA } from './SeaScene.js';
 import { PLAN } from './Works.js';
-import { MAX_RESTORES } from '../player/PlayerStats.js';
 
 // The bottom of the trench and the drowned works behind the cliff (Level 3): the kraken, the maze,
 // the fight, and the shaft down to the buried relay. The works are Blender/scripts/build_l3_works.py
@@ -733,9 +732,9 @@ export class Trench {
     const p = this.s.player;
     if (p.useRestore()) {
       sub += `   |   Lives left: ${p.restores}`;
-    } else if (this.stage === 'hunt' || this.stage === 'show') {
+    } else if ((this.stage === 'hunt' || this.stage === 'show') && !p.difficulty.permadeath) {
       p.deaths++;
-      p.restores = MAX_RESTORES;
+      p.restores = p.maxRestores;
       // (the fight from the start, unless the place is already coming down round it)
       if (this.stage === 'show' && this.fight.woundLimit === FINALE_AT) this.fight.wounds = 0;
       sub = 'All backups spent: starting again outside its lair';

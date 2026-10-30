@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { frame } from '../ui/hudFrame.js';
+import { damageAmount } from '../core/Difficulty.js';
 
 // The chute: the way down from Level 2's hatch to the drowned deck, ridden at the start of Level 3
 // (straight after its title). Under the hatch the shaft bends into a steep round steel pipe, and
@@ -474,7 +475,7 @@ export class Chute {
 
   _hit(o) {
     const p = this.s.player;
-    if (p) p.integrity = Math.min(p.integrity, Math.max(HIT_FLOOR, p.integrity - HIT_COST));
+    if (p) p.integrity = Math.min(p.integrity, Math.max(HIT_FLOOR, p.integrity - damageAmount(HIT_COST, p.difficulty)));
     this.s.hud?.flash();
     this.shake = 0.35;
     this.slow = 1;

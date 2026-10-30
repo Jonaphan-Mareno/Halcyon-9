@@ -1,3 +1,5 @@
+import { damageAmount, getDifficulty } from '../core/Difficulty.js';
+
 // Voss's condition and running statistics.
 //
 // Integrity is his health. Voss is secretly a digital copy of a dead man, so
@@ -5,16 +7,28 @@
 // from backup. Restores are his lives. When the backups run out it is game over.
 
 export const MAX_INTEGRITY = 100;
-export const MAX_RESTORES = 3;
+export const MAX_RESTORES = 3; // the standard (Medium) number, for displays that need a default
 
 export class PlayerStats {
   constructor() {
+    this.difficulty = getDifficulty();
     this.reset();
+  }
+
+  get maxRestores() {
+    return this.difficulty.restores;
+  }
+
+  // Difficulty can be changed in Options. Lowering the life limit never kills him outright, and
+  // raising it does not hand him free restores halfway through a level.
+  setDifficulty(difficulty = getDifficulty()) {
+    this.difficulty = difficulty;
+    this.restores = Math.min(this.restores, this.maxRestores);
   }
 
   reset() {
     this.integrity = MAX_INTEGRITY;
-    this.restores = MAX_RESTORES;
+    this.restores = this.maxRestores;
 
     // Shown on the inventory screen (and worth talking about when replaying)
     this.overloads = 0;      // generator overloads caused by running out of time
@@ -24,9 +38,9 @@ export class PlayerStats {
     this.playSeconds = 0;
   }
 
-  // Take damage. Returns true if this flatlined him.
+  // Take damage, scaled by the selected difficulty. Returns true if this flatlined him.
   damage(amount) {
-    this.integrity = Math.max(0, this.integrity - amount);
+    this.integrity = Math.max(0, this.integrity - damageAmount(amount, this.difficulty));
     return this.integrity <= 0;
   }
 

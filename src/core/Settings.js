@@ -8,6 +8,7 @@ const DEFAULTS = {
   voice: 1,           // 0 to 1: ARIA's voice
   effects: 0.8,       // 0 to 1: sound effects (water, ice, the hum)
   sensitivity: 1,     // 0.3 to 2.5: mouse look speed
+  difficulty: 'medium', // 'easy' | 'medium' | 'hard' | 'superHard' (see Difficulty.js)
   quality: 'auto',    // 'auto' | 'high' | 'medium' | 'low'
   fps: true           // the frame counter, top right
 };

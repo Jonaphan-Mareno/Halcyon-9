@@ -4,6 +4,7 @@ import { settings } from '../core/Settings.js';
 import { CREDITS_HTML } from './credits.js';
 import { preloadPrologue, playPrologue } from '../story/PrologueSequence.js';
 import { createOpeningSettings } from '../ui/OpeningSettings.js';
+import { createDifficultyPicker } from '../ui/DifficultyPicker.js';
 
 // HALCYON-9's opening cinematic.
 //
@@ -12,9 +13,9 @@ import { createOpeningSettings } from '../ui/OpeningSettings.js';
 //      moody shot of the generated video, 4.5 s, cut before it changes to a brighter shot; the
 //      whole video is kept as reference/intro-original.mp4.)
 //   2. a few seconds in, at the music's drop, the title and then the subtitle fade in
-//   3. near the end the title holds (the video plays out and stays on its last frame) with two
-//      buttons under it: BEGIN, and CREDITS (CREDITS.md, on a panel over the title; Esc or Close
-//      takes it away). Begin (or Enter) fades the picture, the titles and the sound to black.
+//   3. near the end the title holds (the video plays out and stays on its last frame) with the
+//      difficulty picker and BEGIN, SETTINGS and CREDITS under it (CREDITS.md opens over the title;
+//      Esc or Close takes it away). Begin fades the picture, the titles and the sound to black.
 //   4. the prologue (src/story/PrologueSequence.js): six Polaroids of Voss and his mother, then
 //      their last day over black. The game is built behind it. Enter skips it.
 //      Then a short black hold
@@ -135,6 +136,10 @@ const STYLE = `
 #hi-menu { position: absolute; right: max(16px, 8vw); top: 55%; transform: translateY(-50%); display: flex;
   flex-direction: column; align-items: stretch; gap: 1.1rem; opacity: 0; transition: opacity 0.9s ease; pointer-events: none; }
 #hi-menu.on { opacity: 1; pointer-events: auto; }
+#hi-difficulty { position: absolute; left: max(16px, 8vw); top: 55%; transform: translateY(-50%);
+  width: 15rem; opacity: 0; transition: opacity 0.9s ease; pointer-events: none; }
+#hi-difficulty.on { opacity: 1; pointer-events: auto; }
+#hi-difficulty .difficulty-picker__options button { text-align: left; padding-left: 0.8rem; }
 .hi-btn { min-width: 15rem; background: rgba(0, 0, 0, 0.25); color: #eef5f3; border: 1px solid rgba(207, 232, 230, 0.45);
   padding: 0.85rem 2.4rem; font: 200 clamp(0.95rem, 1.4vw, 1.3rem)/1 'Helvetica Neue', 'Segoe UI Light', 'Segoe UI', Arial, sans-serif;
   letter-spacing: 0.42em; padding-left: calc(2.4rem + 0.42em); cursor: pointer;
@@ -329,6 +334,8 @@ export function startIntro(options = {}) {
   creditsBtn.textContent = 'CREDITS';
   const openingSettings = createOpeningSettings(root, 'hi-btn');
   openingSettings.button.classList.add('hi-settings-btn');
+  const difficultyPicker = createDifficultyPicker();
+  difficultyPicker.element.id = 'hi-difficulty';
   menu.append(beginBtn, openingSettings.button, creditsBtn);
   const credits = document.createElement('div');
   credits.id = 'hi-credits';
@@ -337,7 +344,7 @@ export function startIntro(options = {}) {
   credits.innerHTML = `<button type="button" class="hi-btn" id="hi-credits-close">CLOSE</button>
     <div id="hi-credits-scroll"><div id="hi-credits-body">${CREDITS_HTML}</div></div>`;
   const closeBtn = credits.querySelector('#hi-credits-close');
-  root.append(video, titles, fade, menu, credits, skipHint, soundHint);
+  root.append(video, titles, fade, menu, difficultyPicker.element, credits, skipHint, soundHint);
   document.body.appendChild(root);
 
   const timers = new Set();
@@ -375,7 +382,7 @@ export function startIntro(options = {}) {
     if (state.phase === 'menu') {
       if (e.code === 'Escape' && credits.classList.contains('on')) openCredits(false);
       else if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !credits.classList.contains('on') && !openingSettings.isOpen &&
-               document.activeElement !== creditsBtn && document.activeElement !== openingSettings.button) {
+               ((!menu.contains(document.activeElement) && !difficultyPicker.element.contains(document.activeElement)) || document.activeElement === beginBtn)) {
         e.preventDefault();
         beginBtn.click();
       }
@@ -403,6 +410,7 @@ export function startIntro(options = {}) {
     window.removeEventListener('pointerdown', unlock, true);
     window.removeEventListener('keydown', unlock, true);
     openingSettings.dispose();
+    difficultyPicker.dispose();
     video.pause();
     video.removeAttribute('src');
     video.src = '';
@@ -528,8 +536,8 @@ export function startIntro(options = {}) {
       }
     });
 
-    // ---- the title holds, with BEGIN and CREDITS under it (the video plays out and stays on its
-    // last frame). If Enter got here early, the titles come up at once ----
+    // ---- the title holds, with the difficulty picker and menu under it (the video plays out and
+    // stays on its last frame). If Enter got here early, the titles come up at once ----
     state.phase = 'menu';
     skipHint.classList.remove('on');
     if (state.skip) {
@@ -539,9 +547,11 @@ export function startIntro(options = {}) {
       }
     }
     menu.classList.add('on');
+    difficultyPicker.element.classList.add('on');
     beginBtn.focus({ preventScroll: true });
     await new Promise((resolve) => beginBtn.addEventListener('click', resolve, { once: true }));
     menu.classList.remove('on');
+    difficultyPicker.element.classList.remove('on');
 
     // ---- Begin: the picture, the titles and the sound fade to black together ----
     soundHint.classList.remove('on');

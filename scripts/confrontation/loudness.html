@@ -19,7 +19,13 @@ const FILES = [
   // Level 3's ARIA around the relay and the water lock (level3/RelayLock.js), and her earlier lines
   // there, to compare
   ...['l3-relay-1', 'l3-relay-2', 'l3-relay-3', 'l3-relay-4', 'l3-relay-5', 'l3-kraken-2', 'l3-works-1', 'l3-trench-1'].map((id) => `aria/${id}`),
-  'voss/v-lock-land', 'voss/v-helmet-gasp'
+  'voss/v-lock-land', 'voss/v-helmet-gasp',
+  // Flashback 3 (level3/LockFlashback.js)
+  ...[1, 2, 3, 4, 5, 6].map((i) => `flashback3/fb3-kessler-${i}`),
+  ...[1, 2, 3, 4].map((i) => `flashback3/fb3-lindqvist-${i}`),
+  ...[1, 2].map((i) => `flashback3/fb3-navarro-${i}`),
+  ...[1, 2, 3, 4, 5].map((i) => `flashback3/fb3-park-${i}`),
+  ...[1, 2, 3, 4].map((i) => `voss/fb3-voss-${i}`)
 ];
 
 async function kWeighted(buffer) {
@@ -75,6 +81,37 @@ function speech(buffer, peak) {
   return { speechFrom: +(Math.max(0, first) / buffer.sampleRate).toFixed(2), speechTo: +(last / buffer.sampleRate).toFixed(2) };
 }
 
+// A file as a scene plays it: through a low-pass (hz; 0: none, for lines heard through a door), its
+// gain (dB) and the dialogue bus. Its loudness, or its peak (dB).
+const chain = async (f, db, hz) => {
+  const { voiceBus, dbGain } = await import('/src/level3/endingAudio.js');
+  const ac = new AudioContext();
+  const r = await fetch(`/assets/audio/${f}.mp3`);
+  const buffer = await ac.decodeAudioData(await r.arrayBuffer());
+  const off = new OfflineAudioContext(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+  const src = off.createBufferSource();
+  src.buffer = buffer;
+  const g = off.createGain();
+  g.gain.value = dbGain(db);
+  const bus = voiceBus(off, off.destination);
+  let node = src;
+  if (hz) {
+    const lp = off.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = hz;
+    node = node.connect(lp);
+  }
+  node.connect(g).connect(bus.input);
+  src.start();
+  return off.startRendering();
+};
+window.__chain = async (f, db, hz) => +lufs(await kWeighted(await chain(f, db, hz))).toFixed(1);
+window.__chainPeak = async (f, db, hz) => {
+  const out = await chain(f, db, hz);
+  let peak = 0;
+  for (const v of out.getChannelData(0)) peak = Math.max(peak, Math.abs(v));
+  return +(20 * Math.log10(peak)).toFixed(1);
+};
 window.__measure = async () => {
   const ac = new AudioContext();
   const out = {};

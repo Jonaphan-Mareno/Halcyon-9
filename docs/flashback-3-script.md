@@ -99,7 +99,9 @@ The `[tags]` are delivery directions for the voice generator, not spoken text.
 | Park | `fb3-park-1` to `-5` (5) | same |
 | Voss | `fb3-voss-1` to `-4` (4) | `public/assets/audio/voss/` |
 
-The first draft's takes were moved out of the game to `audio-archive/flashback3-v1/`, so they can't play under the new lines. Until a new take is in place, its line shows as a timed subtitle and the mouth moves on its own. The pounding on the glass, the crowd sounds, Voss's heartbeat and breathing are effects.
+All 21 are in place and play (2026-10-30). The first draft's takes were moved out of the game to `audio-archive/flashback3-v1/`, so they can't play under the new lines. If a take is ever missing, its line shows as a timed subtitle and the mouth moves on its own. The pounding on the glass, the crowd sounds, Voss's heartbeat and breathing are effects.
+
+**Levels.** As recorded the takes run from -29 LUFS (V3) to -15 (N1). `VOICE_GAIN_DB` in `src/level3/LockFlashback.js` brings each to about -16 LUFS through the dialogue bus (the ending's compressor and limiter), the quietest deliveries down to -18 and the two shouts up to -15.5. To re-measure a new take: `window.__chain(file, gainDb, lowpassHz)` in `scripts/confrontation/loudness.html`.
 
 ## Cost and risks
 

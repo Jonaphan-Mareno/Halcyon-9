@@ -41,30 +41,27 @@ const FACES = { from: v3(0.34, 1.26, -1.72), to: v3(0.34, 1.24, -1.42), aim: v3(
 const SHOCK = { jaw_open: 0.5, mouth_wide: 0.06, brow_up: 1.4, brow_inner_up: 1.0, blink: 0 };
 
 // ARIA on the screen: her face in dots, as her hologram draws her, with her name along the bottom.
-// While she speaks her mouth moves (the picture is drawn apart at her lips, her chin drops, the dark
-// of her mouth shows between; MOUTH and FACE place it on the canvas of _faceTexture) and her light
+// While she speaks her own lips part: the picture is pulled apart along the line of her mouth in the
+// avatar (LIPS, its slope, LIP_W; most in the middle, nothing at the corners), her lower lip and chin
+// go down, and only a dim shade shows between. Her light
 // moves with it; a scan line rolls down.
 const ARIA_SCREEN = {
-  uniforms: { tFace: { value: null }, uTime: { value: 0 }, uTalk: { value: 0 }, uWide: { value: 0 } },
+  uniforms: { tFace: { value: null }, uTime: { value: 0 }, uTalk: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: /* glsl */`
-    uniform sampler2D tFace; uniform float uTime, uTalk, uWide;
+    uniform sampler2D tFace; uniform float uTime, uTalk;
     varying vec2 vUv;
-    const vec2 MOUTH = vec2(0.5625, 0.228), FACE = vec2(0.5175, 0.92);
+    const vec2 LIPS = vec2(0.54, 0.206), FACE = vec2(0.5175, 0.92);
+    const float SLOPE = 0.13, LIP_W = 0.2;
     void main() {
-      vec2 q = (vUv - MOUTH) / FACE;                     // from her lips, in shares of her face
-      float across = smoothstep(0.36, 0.14, abs(q.x));
-      float open = 0.048 * uTalk;
-      // her chin down (most at the lips, nothing past the chin), her top lip up a touch
-      float chin = smoothstep(0.012, -0.012, q.y) * smoothstep(-0.26, -0.1, q.y) * across;
-      float lip = smoothstep(-0.012, 0.012, q.y) * smoothstep(0.1, 0.02, q.y) * across;
-      vec3 c = texture2D(tFace, vUv + vec2(0.0, (chin * open - lip * open * 0.22) * FACE.y)).rgb;
-      // the dark of her mouth between them
-      vec2 m = vec2(q.x / (0.105 + 0.035 * uWide), (q.y + open * 0.4) / (open * 0.62 + 0.0005));
-      float inside = smoothstep(1.0, 0.55, dot(m, m)) * smoothstep(0.0, 0.12, uTalk);
-      // (never a black hole: a dim teal, and the light of her top teeth along its upper edge)
-      vec3 dark = mix(vec3(0.02, 0.09, 0.11), vec3(0.5, 0.8, 0.86), smoothstep(0.15, 0.6, m.y));
-      c = mix(c, dark, inside * 0.92);
+      vec2 q = (vUv - LIPS) / FACE;                      // from the middle of her lips, in shares of her face
+      float y = q.y - SLOPE * q.x;                       // from the line of her mouth
+      float gap = 0.05 * uTalk * max(0.0, 1.0 - q.x * q.x / (LIP_W * LIP_W));
+      // below the line everything goes down by the gap, less and less toward her chin
+      float drop = gap * smoothstep(-0.2, -0.05, y) * step(y, 0.0);
+      vec3 c = texture2D(tFace, vUv + vec2(0.0, drop * FACE.y)).rgb;
+      float inside = smoothstep(0.0, 0.004, y + gap) * smoothstep(0.0, -0.004, y) * step(0.001, gap);
+      c = mix(c, vec3(0.03, 0.13, 0.16), inside * 0.9);
       float roll = fract(uTime * 0.17);
       c += vec3(0.015, 0.04, 0.05) * smoothstep(0.03, 0.0, abs(vUv.y - 1.0 + roll));
       c *= 0.94 + 0.06 * sin(vUv.y * 420.0);
@@ -292,7 +289,6 @@ export class ConferenceScene {
     const su = this.screen.uniforms;
     su.uTime.value = t;
     su.uTalk.value = talk;
-    su.uWide.value = 0.5 + 0.5 * Math.sin(t * 4.3);
     this.room.screenGlow.intensity = 1.2 + 0.7 * talk;
     const room = this.room, u2 = room.post.material.uniforms;
     u2.uAspect.value = cam.aspect;

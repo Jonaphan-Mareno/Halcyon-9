@@ -30,6 +30,14 @@ const SCALE = 1.8 / 1.394;
 
 const cache = new Map();     // file -> the loaded file, kept: a flashback can play more than once
 
+// A crewmate's loaded file, as it is (Level 3's drowned crew dress their own copies of it)
+export function loadCrewFile(name) {
+  const file = CREW_MODELS[name];
+  if (!file) return Promise.reject(new Error(`CrewMember: no model for "${name}"`));
+  if (!cache.has(file)) cache.set(file, createGLTFLoader().loadAsync(file));
+  return cache.get(file);
+}
+
 export class CrewMember {
   constructor(name) {
     this.name = name;
@@ -40,10 +48,7 @@ export class CrewMember {
   }
 
   async load() {
-    const file = CREW_MODELS[this.name];
-    if (!file) throw new Error(`CrewMember: no model for "${this.name}"`);
-    if (!cache.has(file)) cache.set(file, createGLTFLoader().loadAsync(file));
-    const gltf = await cache.get(file);
+    const gltf = await loadCrewFile(this.name);
     const ramp = makeToonRamp();
     const materials = new Map();
     this.root = new THREE.Group();

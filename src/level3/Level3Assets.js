@@ -18,7 +18,7 @@ const FLASHBACK3 = [
 
 export const LEVEL3_FILES = [
   // the deck and the drowned crew: needed to start
-  M + 'l3-drowned.glb', M + 'human_scientist.glb',
+  M + 'l3-drowned.glb', M + 'human_scientist.glb', M + 'kessler.glb', M + 'lindqvist.glb', M + 'navarro.glb', M + 'park.glb',
   ...TEXTURE_SETS.flatMap((s) => ['color', 'normal', 'orm'].map((k) => `${T}${s}_${k}.webp`)),
   ...SFX.map((f) => `${A}sfx/l3/${f}.ogg`),
   // outside, the works and the kraken

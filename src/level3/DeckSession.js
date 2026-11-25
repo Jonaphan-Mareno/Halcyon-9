@@ -46,6 +46,7 @@ import { buildLockPanel, Sparks, crackle, PANEL_SIZE } from './LockPanel.js';
 import '../ui/level3.css';
 import { LINES, TALKS } from './Level3Lines.js';
 import { disposeScene } from '../core/disposeScene.js';
+import { DEMO, DEMO_JUMP, demoCard } from '../demo/demo.js';
 
 // Level 3, the drowned deck (Blender/scripts/build_l3_drowned.py): the lowest deck, flooded.
 // Voss drops in through the shaft from the hatch in the garden and lands in the pump room, in
@@ -183,6 +184,8 @@ export class DeckSession {
         else if (TEST_LOCK) this.trench.lock.test();
       }
       else if (TEST_FLASHBACK !== null) outside.then(() => this._testLockFlashback());
+      // ?demo&jump=works / jump=kraken: straight to the works' entrance, or into the fight (demo/demo.js)
+      else if (DEMO_JUMP === 'works' || DEMO_JUMP === 'kraken') this._demoToWorks({ instant: true, kraken: DEMO_JUMP === 'kraken' });
       else this._arrive();
     }).catch((e) => console.error('Level 3 failed to load.', e));
   }
@@ -339,7 +342,8 @@ export class DeckSession {
     // (?afterkraken: the same, but standing in the clearing the moment the kraken has fled)
     this._afterKraken = params.has('afterkraken');
     this._skipRelay = params.has('relay') || this._afterKraken || TEST_CONFRONTATION !== null || TEST_ENDING === 'yes' || TEST_STAY || TEST_LOCK;
-    if (!params.has('nochute') && !this._skipRelay && TEST_FLASHBACK === null) this.chute = new Chute(this);
+    const demoJump = DEMO_JUMP === 'works' || DEMO_JUMP === 'kraken';
+    if (!params.has('nochute') && !this._skipRelay && TEST_FLASHBACK === null && !demoJump) this.chute = new Chute(this);
   }
 
   // the window's glass: a faint green tint with a brighter rim, so the room behind reads as water
@@ -499,7 +503,64 @@ export class DeckSession {
   _skipToRelay() {
     const prep = this.prep, trench = this.trench;
     if (!prep || !trench || !trench.pts?.inside) return this._arrive();
-    // the prep room, as if he had done it all (no sounds, no dialogue, no waits)
+    this._suitUp();
+    // the kraken is already beaten; the relay's door is free
+    const fight = trench.fight;
+    fight.wounds = WOUNDS;
+    fight.state = 'gone';
+    fight.kraken.root.visible = false;
+    if (this._afterKraken) {
+      // just after the fight: it has dug away, the shaft's cover opens, ARIA says her line
+      trench._open('front');
+      trench._showBoss(false);
+      trench.onFled();
+    } else {
+      trench.stage = 'inside';
+      trench._relayBriefingDone = true;
+      trench._open('front');
+      trench._showBoss(false);
+    }
+    this._toSea();
+    // PT_RelayInside is the Blender screenshot location, already converted by the GLB loader to
+    // Three.js axes (10.729, -41.708, -22.5).
+    const spawn = this._afterKraken
+      ? trench._clearingEntry?.() || trench.pts.shaftTop.clone().add(new THREE.Vector3(0, 1, 3))
+      : trench.pts.inside.clone().add(new THREE.Vector3(0, 0.3, 0));
+    trench.checkpoint = spawn.clone();
+    // the uplink cable is already run in and plugged at the relay's port, so its tether no longer
+    // holds him back (Swim._limit returns early once the end is plugged)
+    if (this.swim) this.swim.plugged = (trench.pts.port || spawn).clone();
+    this._placeSwimming(spawn, trench.pts.roomDoor || trench.pts.door);
+    RELAY.enter?.(trench);
+    this.preloadConfrontation();
+    this.game.ui.showToast('Skipped inside the relay station. The kraken is beaten.', 6000);
+  }
+
+  // Hide the deck and activate the sea environment: a spawn far beyond the outer hatch would not
+  // fire the position-based zone transition. The game state is handed over before teleporting so
+  // that _swim()'s first frame gets canMove=true (a skip at load: the wake-up blink may not have run)
+  _toSea() {
+    if (this.deck) this.deck.visible = false;
+    this.prep._setZone('sea');
+    if (this.game.state === 'WAKING' || this.game.state === 'INIT') this.game.state = 'PLAYING';
+  }
+
+  // put him at `spawn`, swimming, facing `toward` (again on the first live frame: see update)
+  _placeSwimming(spawn, toward) {
+    this._relayStart = spawn.clone();
+    this._relayStartPending = true;
+    this.controls.teleport(spawn);
+    const to = toward.clone().sub(spawn);
+    const yaw = Math.atan2(-to.x, -to.z);
+    this.controls.camera.rotation.set(0, yaw, 0);
+    this.controls.facing = yaw;
+    this.controls.setSwimming(true);
+  }
+
+  // The prep room, as if he had done it all (no sounds, no dialogue, no waits): suited, the cable
+  // and the rifle taken, the gate and the lock open, the visor's screens on
+  _suitUp() {
+    const prep = this.prep;
     prep.suited = true;
     prep.cable = true;
     prep.harpoon = true;
@@ -522,49 +583,58 @@ export class DeckSession {
     prep._oxy.classList.add('on');
     prep._carry.classList.add('on');
     prep._drawScreen();
-    // the kraken is already beaten; the relay's door is free
-    const fight = trench.fight;
-    fight.wounds = WOUNDS;
-    fight.state = 'gone';
-    fight.kraken.root.visible = false;
-    if (this._afterKraken) {
-      // just after the fight: it has dug away, the shaft's cover opens, ARIA says her line
-      trench._open('front');
-      trench._showBoss(false);
-      trench.onFled();
-    } else {
-      trench.stage = 'inside';
-      trench._relayBriefingDone = true;
-      trench._open('front');
-      trench._showBoss(false);
+  }
+
+  // ?demo (demo/demo.js): after Flashback 3, the prep room, the water lock and the swim are
+  // skipped; he is put suited at the works' entrance in the cliff (kraken: on into the clearing,
+  // where the fight starts)
+  async _demoToWorks({ instant = false, kraken = false } = {}) {
+    if (this._demoWorks || this.disposed || !this.prep || !this.trench?.pts?.respawn) return;
+    this._demoWorks = true;
+    let card = null;
+    if (!instant) {
+      await sleep(800);
+      const quietBy = performance.now() + 25000;
+      while (!this.disposed && (((this.aria.speaking || this.game.ui.dialogue?.classList.contains('visible')) && performance.now() < quietBy) || this.game.state !== 'PLAYING')) await sleep(300);
+      if (this.disposed) return;
+      card = await demoCard('Skipping the suit-up and the swim out', 'The EVA prep room, the water lock and the swim down the trench');
+      if (this.disposed) return;
     }
-    // Hide the deck and activate the sea environment: this spawn is far beyond the outer hatch,
-    // so the position-based zone transition would not fire from the relay's coordinates.
-    if (this.deck) this.deck.visible = false;
-    prep._setZone('sea');
-    // hand the game state over before teleporting so that _swim()'s first frame gets canMove=true
-    // (?relay is instant: the wake-up blink may not have run yet)
-    if (this.game.state === 'WAKING' || this.game.state === 'INIT') this.game.state = 'PLAYING';
-    // PT_RelayInside is the Blender screenshot location, already converted by the GLB loader to
-    // Three.js axes (10.729, -41.708, -22.5).
-    const spawn = this._afterKraken
-      ? trench._clearingEntry?.() || trench.pts.shaftTop.clone().add(new THREE.Vector3(0, 1, 3))
-      : trench.pts.inside.clone().add(new THREE.Vector3(0, 0.3, 0));
-    this._relayStart = spawn.clone();
-    this._relayStartPending = true;
-    trench.checkpoint = spawn.clone();
-    // the uplink cable is already run in and plugged at the relay's port, so its tether no longer
-    // holds him back (Swim._limit returns early once the end is plugged)
-    if (this.swim) this.swim.plugged = (trench.pts.port || spawn).clone();
-    this.controls.teleport(spawn);
-    const toDoor = (trench.pts.roomDoor || trench.pts.door).clone().sub(spawn);
-    const yaw = Math.atan2(-toDoor.x, -toDoor.z);
-    this.controls.camera.rotation.set(0, yaw, 0);
-    this.controls.facing = yaw;
-    this.controls.setSwimming(true);
-    RELAY.enter?.(trench);
+    const trench = this.trench, P = trench.pts;
+    this._suitUp();
+    if (this.swim) this.swim._told = true;
+    this._toSea();
+    trench._toldDescend = true;
+    trench.stage = 'front';
+    trench.checkpoint = P.respawn.clone();
+    this._placeSwimming(P.respawn, P.mouth);
+    if (kraken) {
+      // into the works, the route done: the fight starts once he is well inside the clearing
+      trench._enterWorks();
+      const door = trench.works.doorPoint('W1');
+      const toward = new THREE.Vector3().subVectors(P.clear, door).setY(0).normalize();
+      const at = door.clone().addScaledVector(toward, 7).setY(trench.caveFloor + 1.0);
+      trench._toClearing = true;
+      this._placeSwimming(at, P.clear);
+    }
+    if (card) card.close();
+    else this.game.ui.showToast(kraken ? 'Demo: the kraken fight.' : 'Demo: the works. Swim in through the lights in the cliff.', 5000);
+  }
+
+  // ?demo: the kraken is gone (Trench.onFled); the shaft, the relay hack, the valves and the water
+  // lock are skipped, and the confrontation plays
+  async demoAfterKraken() {
+    if (!DEMO || this._demoConf || this.disposed) return;
+    this._demoConf = true;
     this.preloadConfrontation();
-    this.game.ui.showToast('Skipped inside the relay station. The kraken is beaten.', 6000);
+    await sleep(1500);
+    await (this.trench?._postBossDescentPromise || Promise.resolve());
+    const quietBy = performance.now() + 25000;
+    while (!this.disposed && (this.aria.speaking || this.game.ui.dialogue?.classList.contains('visible')) && performance.now() < quietBy) await sleep(300);
+    if (this.disposed) return;
+    const card = await demoCard('Skipping the relay room', 'The shaft, the ARIA network hack, the pressure valves and the water lock');
+    if (this.disposed) return card.remove();
+    this.startConfrontation({ veil: card });
   }
 
   update(delta) {
@@ -816,6 +886,7 @@ export class DeckSession {
   _afterLockFlashback() {
     this.game.holdMusic?.('silence', 8);
     this.say('window');
+    if (DEMO) this._demoToWorks();
   }
 
   // a black sheet over the frame (under the flashback's subtitles): fading in, or at `opacity`

@@ -51,6 +51,7 @@ import { disposeScene } from '../core/disposeScene.js';
 import '../ui/level2.css';
 import { RoboArmHazard } from './RoboArmHazard.js';
 import { FuseboxPuzzle } from './FuseboxPuzzle.js';
+import { DEMO, DEMO_JUMP, demoCard } from '../demo/demo.js';
 
 // Level 2, the new build: the habitat atrium (Blender/scripts/build_l2_atrium.py), shown as an
 // ENVIRONMENT PREVIEW. You arrive in the lift, the doors open, and you can walk the whole space.
@@ -303,6 +304,8 @@ export class HabitatSession {
       // ?arm (with ?level=2): straight to Kessler's room, the garden and the rooms before it done,
       // the arm swinging and him standing at its fusebox (for testing the breaker puzzle)
       if (new URLSearchParams(window.location.search).has('arm')) this.worldReady.then(() => this._testArm());
+      // ?demo&jump=kessler: straight into Kessler's room (demo/demo.js)
+      if (DEMO_JUMP === 'kessler') this.worldReady.then(() => this._demoToKessler({ instant: true }));
     }).catch((e) => console.error('Level 2 atrium failed to load.', e));
   }
 
@@ -954,10 +957,10 @@ export class HabitatSession {
   // controls on screen. The doors stay shut until she has finished (Enter skips her lines).
   async _arrive() {
     await this.say('arrival');
-    await this.say('visor');
+    if (!this._demoKessler) await this.say('visor');
     this.controls.viewLocked = false;
-    this._fightHelpOn = true;
-    await this.say('briefing');
+    this._fightHelpOn = !this._demoKessler;
+    if (!this._demoKessler) await this.say('briefing');
     this._arrivalDone = true;
   }
 
@@ -1320,7 +1323,7 @@ export class HabitatSession {
   // ---------------------------------------------------------
   _onStory(flag) {
     console.log('Level 2 story:', flag);
-    if ((flag === 'cardTaken' || flag === 'labDone') && this._kesslerUnlocked()) {
+    if ((flag === 'cardTaken' || flag === 'labDone') && this._kesslerUnlocked() && !this.story.has('fuseSolved')) {
       this._startRoboArm();
     }
     // on the way to Kessler's room: load her for the flashback ahead of time
@@ -1331,6 +1334,7 @@ export class HabitatSession {
     if (flag === 'gardenCleared') {
       this.garden?.end();
       this._powerReturns();
+      if (DEMO) this._demoToKessler();
     }
     if (flag === 'pipeTaken' && !this.garden?.holding) this.garden?.takePipe();   // (the debug key)
     if (flag === 'codeFound') {
@@ -1441,6 +1445,70 @@ export class HabitatSession {
     await sleep(700);
     await this.say('kessler');
     this.story.set('codeFound');
+    if (DEMO) this._demoToHatch();
+  }
+
+  // ?demo (demo/demo.js): after the garden, the bunk's logs, the lab's terminal and the fusebox are
+  // skipped; he is put inside Kessler's room, her door open and the arm already off
+  async _demoToKessler({ instant = false } = {}) {
+    if (this._demoKessler || this.disposed) return;
+    this._demoKessler = true;
+    let card = null;
+    if (!instant) {
+      await sleep(6000);
+      const quietBy = performance.now() + 25000;
+      while (!this.disposed && ((this._talking() && performance.now() < quietBy) || this.game.state !== 'PLAYING')) await sleep(300);
+      if (this.disposed) return;
+      card = await demoCard("Skipping the upstairs search", "Voss's personal logs, the lab terminal and the fusebox puzzle");
+    } else {
+      while (!this.disposed && this.game.state !== 'PLAYING') await sleep(200);
+      // (the lift's briefing is for the garden: cut it short)
+      this._talkToken++;
+      if (this.aria.speaking) this.aria.skip();
+      this.game.ui.hideDialogue();
+    }
+    if (this.disposed) return;
+    // (fuseSolved first: the arm is never started)
+    for (const f of ['leftLift', 'dronesWoken', 'pipeTaken', 'gardenCleared', 'hatchTried', 'fuseSolved', 'logWatched', 'cardTaken', 'labDone']) {
+      if (!this.story.has(f)) this.story.set(f);
+    }
+    this.inventory.add('card');
+    // just inside her door, facing her final log
+    const door = this.story.targets.kessler, log = this.story.targets.kesslerLog;
+    if (door && log) {
+      const dir = new THREE.Vector3(log.x - door.x, 0, log.z - door.z).normalize();
+      const at = door.clone().addScaledVector(dir, 2.2);
+      at.y = Math.max(door.y, 5.4);
+      this.controls.teleport(at);
+      const yaw = Math.atan2(-(log.x - at.x), -(log.z - at.z));
+      this.controls.camera.rotation.set(0, yaw, 0);
+      this.controls.facing = yaw;
+    }
+    if (card) card.close();
+    this.game.ui.showToast("DR. KESSLER'S ROOM. PLAY HER FINAL LOG, THEN READ THE CARD.", 6000);
+  }
+
+  // ?demo: after her room, the walk back and the hatch keypad are skipped; the hatch opens beside
+  // him and he climbs down
+  async _demoToHatch() {
+    if (this._demoHatch || this.disposed) return;
+    this._demoHatch = true;
+    const quietBy = performance.now() + 25000;
+    while (!this.disposed && ((this._talking() && performance.now() < quietBy) || this.game.state !== 'PLAYING')) await sleep(300);
+    if (this.disposed) return;
+    const card = await demoCard('Skipping the walk back to the hatch', 'The hatch keypad takes the code Voss just found');
+    if (this.disposed) return;
+    const c = this.gates?.hatchCentre;
+    if (c) {
+      const at = c.clone().add(new THREE.Vector3(-2.2, 0.3, 0));
+      this.controls.teleport(at);
+      const yaw = Math.atan2(-(c.x - at.x), -(c.z - at.z));
+      this.controls.camera.rotation.set(-0.3, yaw, 0);
+      this.controls.facing = yaw;
+    }
+    card.close();
+    await sleep(900);
+    if (!this.disposed) this.story.set('hatchOpen');
   }
 
   // Before the flashback: the card in his hand, his head starts to pound. Through his eyes the room

@@ -528,6 +528,7 @@ export class Trench {
     this.works.openShaft();
     this.checkpoint = this.pts.shaftTop.clone();
     this.game.ui.showToast("It's gone, down into the rock. The shaft's cover is open: get down to the relay.", 6000);
+    this.s.demoAfterKraken?.();      // (?demo: on to the confrontation)
     if (!this._postBossDescentPlayed) {
       this._postBossDescentPlayed = true;
       this._postBossDescentPromise = new Promise((r) => setTimeout(r, 1200)).then(() => this.s.say('postBossDescent'));

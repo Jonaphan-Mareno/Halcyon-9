@@ -7,9 +7,12 @@ import { EndingNarration } from './level3/EndingNarration.js';
 import { showEndCredits } from './ui/EndCredits.js';
 import './ui/opening-settings.css';
 import './style.css';
+import { installDemoUI } from './demo/demo.js';
 
 // Entry point for Halcyon-9
 const params = new URLSearchParams(window.location.search);
+// ?demo: the presenting build (src/demo/demo.js): minor parts skipped, F9 for the chapter list
+installDemoUI();
 // ?voss-anim (dev only): the preview of Voss's acting clips (src/dev/voss-anim-preview.js) instead of the game
 const vossAnim = import.meta.env.DEV && params.has('voss-anim');
 if (vossAnim) import('./dev/voss-anim-preview.js').then((m) => m.startVossAnimPreview());

@@ -27,6 +27,7 @@ import { PlayerStats } from './player/PlayerStats.js';
 import { vossVoice, vossSays } from './audio/VossVoice.js';
 import { preloadVoices, playClip } from './audio/AudioCache.js';
 import { BriefingFlashback } from './story/BriefingFlashback.js';
+import { DEMO, demoCard } from './demo/demo.js';
 
 // The goal shown top-left for each stage of the opening
 const OBJECTIVES = [
@@ -1166,6 +1167,9 @@ export class Game {
     } else if (stage !== this._stage) {
       this._stage = stage;
       this.ui.setObjective(OBJECTIVES[stage]);
+      // the demo: once ARIA has had her first talk, the torch, the circuit, the rings and the
+      // keypad are skipped, and he is put in the lift's doorway facing the photograph
+      if (DEMO && stage === 2) this._demoSkipToLift();
     }
     this.updateIdleQuip(stage, delta);
 
@@ -1611,6 +1615,18 @@ export class Game {
 
   _hideCodeNote() {
     this.codeNote?.classList.remove('visible');
+  }
+
+  // ?demo: Level 1's puzzles skipped (see demo/demo.js)
+  async _demoSkipToLift() {
+    if (this._demoSkipped) return;
+    this._demoSkipped = true;
+    const quietBy = performance.now() + 25000;   // (a line left on screen never holds it up for long)
+    while (this.state !== 'PLAYING' || (this.ui.dialogue?.classList.contains('visible') && performance.now() < quietBy)) await sleep(300);
+    const card = await demoCard('Skipping the Level 1 puzzles', 'The torch, the generator circuit, the relay rings and the lift keypad');
+    await this._skipToLift(false);
+    this._stage = -1;
+    card.close();
   }
 
   _skipToKeypad() {
